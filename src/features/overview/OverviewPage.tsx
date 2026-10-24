@@ -4,6 +4,7 @@ import { useWorkspace } from '../../app/AppContext';
 import { buildPortfolioModel, type PortfolioGoal, type PortfolioOverall } from './portfolio-model';
 import { formatDate, formatValue, type GoalStatus } from './overview-model';
 import './overview-portfolio.css';
+import { PlanningOverviewStrip } from '../planning/PlanningOverviewStrip';
 
 const statuses: { status: GoalStatus; label: string; color: string; icon: typeof Target }[] = [
   { status: 'confirmed', label: 'Подтверждено УОР', color: '#0c8059', icon: CheckCircle2 },
@@ -15,7 +16,7 @@ const overallLabels: Record<PortfolioOverall, string> = { no_goals: 'Нет це
 function PortfolioStatus({ status }: { status: GoalStatus }) { const item = statuses.find(item => item.status === status)!; return <span className={`pf-status pf-status-${status}`}><item.icon size={12}/>{item.label}</span>; }
 function actualOf(row?: PortfolioGoal) { const actual = row?.evaluation?.actual; return actual !== null && actual !== undefined && Number.isFinite(actual) ? actual : null; }
 
-export function OverviewPage({ onLeader, onGoal, onMatrix, onSources }: { onLeader: (id: string) => void; onGoal: (goalId: string, leaderId?: string) => void; onMatrix: () => void; onSources: () => void }) {
+export function OverviewPage({ onLeader, onGoal, onMatrix, onSources, onPlanning }: { onLeader: (id: string) => void; onGoal: (goalId: string, leaderId?: string) => void; onMatrix: () => void; onSources: () => void; onPlanning?: () => void }) {
   const { state } = useWorkspace();
   const [selection, setSelection] = useState('all');
   const [filter, setFilter] = useState<GoalStatus | 'all'>('all');
@@ -38,6 +39,7 @@ export function OverviewPage({ onLeader, onGoal, onMatrix, onSources }: { onLead
   function choose(value: string) { setSelection(value); setFilter('all'); setSearch(''); }
   return <div className="uor-portfolio">
     <header className="pf-heading"><div><span className="pf-kicker">ТЕХНОЛОГИЧЕСКАЯ ПОВЕСТКА</span><h1>Общая картина ДИТ</h1></div><label className="pf-selector">Статистика<select aria-label="Статистика" value={selection} onChange={event => choose(event.target.value)}><option value="all">Все цели</option>{catalogGoals.map(goal => <option value={goal.id} key={goal.id}>{goal.title}</option>)}</select></label></header>
+    {onPlanning && <PlanningOverviewStrip goalId={selection === 'all' ? undefined : selection} onOpen={onPlanning}/>}
     <div className="pf-overview-grid">
       <section className={`pf-panel pf-hero ${selected ? 'pf-focused-hero' : ''}`} aria-label={selected ? 'Статус выбранной цели' : 'Общий статус ДИТ'}>
         <div className="pf-panel-heading"><h2>{selected ? 'Статус выбранной цели' : 'Общий статус ДИТ'}</h2><span className="pf-level">{selected ? '1 цель' : `${model.goalCount} активных целей`}</span></div>

@@ -14,6 +14,8 @@ Preserve the key domain rules: separate official/internal targets; separate actu
 
 The director's view opens on all active goals, a separate goal-level DIT status, named IT leaders and drill-down. Any goal can be selected, including one without data. Never average unlike goal metrics or confuse goals with assignments. Use a coherent visual design and verify it in a real browser when the viewer is available; record unperformed visual checks honestly.
 
+Keep declared execution plans separate from measured results. Official due date, work commitment and curator forecast are different fields. Plan edits never confirm achievement or alter facts. Global plans do not silently become personal leader commitments. IT leaders/clusters have an explicit curator management page and pass through the shared catalog publishing process.
+
 Curators publish shared content to `release/current`; the UOR lead releases to `main` using a merge commit. Never resolve independent curator writes by overwriting remote history. Preserve drafts on errors.
 
 Git hosting, allowed paths, source URLs and platform-specific browser/auth settings belong in configuration and adapters, not business calculations.

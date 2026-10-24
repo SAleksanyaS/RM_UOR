@@ -26,9 +26,9 @@ export async function readLocalRelease(root: string, base: CatalogSnapshot) {
     const normalized = normalizeDirections(catalog);
     catalog.directions = normalized.directions; catalog.goals = normalized.goals;
   }
-  const collections: Record<string, { id: string }[]> = { goals: catalog.goals, assignments: catalog.assignments, sources: catalog.sources, entities: catalog.entities, comments: catalog.comments, directions: catalog.directions ?? [] };
+  const collections: Record<string, { id: string }[]> = { leaders: catalog.leaders, goals: catalog.goals, assignments: catalog.assignments, sources: catalog.sources, entities: catalog.entities, comments: catalog.comments, directions: catalog.directions ?? [] };
   for (const [file, content] of Object.entries(files)) {
-    const match = file.match(/^catalog\/(goals|assignments|sources|entities|comments|directions)\/[^/]+\.json$/);
+    const match = file.match(/^catalog\/(leaders|goals|assignments|sources|entities|comments|directions)\/[^/]+\.json$/);
     if (!match) continue;
     const item = JSON.parse(content) as { id: string }; const collection = collections[match[1]];
     const index = collection.findIndex(value => value.id === item.id);

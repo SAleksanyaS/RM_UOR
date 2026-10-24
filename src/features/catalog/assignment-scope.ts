@@ -6,6 +6,7 @@ import { ActionError } from '../identity/role-service';
 import { canonicalJson } from '../publishing/merge-object';
 import { validateCatalog } from '../publishing/validate-version';
 import type { AssignmentScopeInput, AssignmentScopeResult } from './scope-contracts';
+import { applyDraft } from './catalog-store';
 
 const name = z.string().trim().min(1).max(500);
 const inputSchema = z.object({ baseAssignment: z.object({ id: name, goalId: name, leaderId: name }).passthrough(),
@@ -23,11 +24,7 @@ function signature(context: ApplicationContext, session: CuratorSession) {
 function sharedBase(context: ApplicationContext, session: CuratorSession): CatalogSnapshot {
   const catalog = structuredClone(context.db.get<CatalogSnapshot>('catalog', 'active')!);
   for (const draft of context.db.list<Draft>('drafts').filter(item => item.curatorId === session.curatorId && item.status === 'published').sort((a, b) => a.createdAt.localeCompare(b.createdAt))) {
-    const collection = draft.change.kind === 'goal' ? catalog.goals : draft.change.kind === 'assignment' ? catalog.assignments
-      : draft.change.kind === 'entity' ? catalog.entities : draft.change.kind === 'source' ? catalog.sources
-        : draft.change.kind === 'comment' ? catalog.comments : (catalog.directions ??= []);
-    const existing = collection.find(item => item.id === draft.change.id);
-    if (existing) Object.assign(existing, draft.change.patch); else collection.push(draft.change.patch as never);
+    applyDraft(catalog, draft);
   }
   return catalog;
 }

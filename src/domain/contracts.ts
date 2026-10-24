@@ -3,6 +3,13 @@ export type Classification = 'demo' | 'corporate';
 export type Role = 'reader' | 'curator';
 export interface GoalLink { label: string; url: string; kind: string }
 export interface WorkDirection { id: string; name: string; description: string; color: string; order: number }
+export type WorkStage = 'planned' | 'in_progress' | 'blocked' | 'paused' | 'ready_for_review' | 'monitoring';
+/** Declared work plan, independent of measured facts and curator confirmation. */
+export interface ExecutionPlan {
+  stage: WorkStage; plannedStartDate: string | null; targetDate: string | null; forecastDate: string | null;
+  nextCheckDate: string | null; nextAction: string; blocker: string; decisionNeeded: string;
+  updatedAt: string; updatedBy: string; revision: string;
+}
 export interface Goal {
   id: string; category: Category; title: string; target: string; metric: string;
   status: string; summary: string; actions: string[]; scopeType: string; links: GoalLink[];
@@ -12,13 +19,15 @@ export interface Goal {
   dueDate: string | null; revision: string;
   requiredMetricIds?: string[];
   workDirectionId?: string | null;
+  plan?: ExecutionPlan;
 }
-export interface Leader { id: string; name: string; teams: string[] }
+export interface Leader { id: string; name: string; teams: string[]; clusterName?: string | null }
 export interface Assignment {
   id: string; goalId: string; leaderId: string; teams: string[]; agents?: string[];
   participantType?: string; active?: boolean; allProducts?: boolean; target?: string;
   summary?: string; actions?: string[]; metric?: string;
   participantIds?: string[];
+  plan?: ExecutionPlan;
 }
 export interface SourceDefinition {
   id: string; name: string; kind: 'dashboard' | 'attachment' | 'manual' | 'file' | 'demo';
@@ -77,7 +86,7 @@ export interface Attestation {
 }
 export interface Session { id: string; role: Role; curatorId: string | null; name: string; createdAt: string }
 export type CuratorSession = Session & { role: 'curator'; curatorId: string };
-export interface CatalogChange { kind: 'goal' | 'assignment' | 'comment' | 'source' | 'entity' | 'direction'; id: string; baseRevision: string | null; patch: Record<string, unknown> }
+export interface CatalogChange { kind: 'goal' | 'assignment' | 'comment' | 'source' | 'entity' | 'direction' | 'leader'; id: string; baseRevision: string | null; patch: Record<string, unknown> }
 export interface Draft { id: string; curatorId: string; change: CatalogChange; base: Record<string, unknown> | null; createdAt: string; status: 'local' | 'published'; error: string | null }
 export interface DomainChangeEvent {
   id: string; kind: string; objectId: string; objectLabel: string; actor: string; at: string;

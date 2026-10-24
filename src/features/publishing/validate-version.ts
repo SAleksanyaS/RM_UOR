@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { Attestation, CatalogSnapshot, DomainChangeEvent, LocalSnapshot, SnapshotEvaluationBasis } from '../../domain/contracts';
 import { getDirections } from '../catalog/directions';
+import { executionPlanSchema } from '../planning/plan-schema';
 
 const id = z.string().min(1).max(500);
 const text = z.string();
@@ -15,15 +16,15 @@ const goal = z.object({ id, category: z.enum(['process', 'data', 'architecture',
   status: text, summary: text, actions: z.array(text), scopeType: text, links: z.array(link), ownerId: nullableId, curatorId: nullableId,
   officialTarget: nullableNumber, internalTarget: nullableNumber, unit: text, direction: z.enum(['increase', 'decrease']), baseline: nullableNumber,
   weight: number.nonnegative().nullable(), priority: z.enum(['high', 'normal', 'low']).nullable(), dueDate: z.iso.date().nullable(), revision: id,
-  requiredMetricIds: ids.max(100).optional(), workDirectionId: nullableId.optional() }).passthrough();
+  requiredMetricIds: ids.max(100).optional(), workDirectionId: nullableId.optional(), plan: executionPlanSchema.optional() }).passthrough();
 const assignment = z.object({ id, goalId: id, leaderId: id, teams: z.array(text), agents: z.array(text).optional(), participantIds: ids.optional(),
   participantType: text.optional(), active: z.boolean().optional(), allProducts: z.boolean().optional(), target: text.optional(),
-  summary: text.optional(), actions: z.array(text).optional(), metric: text.optional() }).passthrough();
+  summary: text.optional(), actions: z.array(text).optional(), metric: text.optional(), plan: executionPlanSchema.optional() }).passthrough();
 const source = z.object({ id, name: id, kind: z.enum(['dashboard', 'attachment', 'manual', 'file', 'demo']), url: url.nullable(), accessUrl: url.nullable(),
   goalIds: ids, freshnessHours: number.positive(), mode: z.enum(['stub', 'local']), lastAttemptAt: date.nullable().optional(),
   importProfile: z.object({ parser: z.literal('maturity-xlsx-v1'), teamMapping: z.record(id, id), metricMapping: z.record(id, id) }).optional() }).passthrough();
 const catalogSchema = z.object({ schemaVersion: z.literal(1), id, name: id, classification: z.enum(['demo', 'corporate']), importedAt: date,
-  goals: z.array(goal), leaders: z.array(z.object({ id, name: id, teams: z.array(text) }).passthrough()), assignments: z.array(assignment), sources: z.array(source),
+  goals: z.array(goal), leaders: z.array(z.object({ id, name: id, teams: z.array(text), clusterName: z.string().max(500).nullable().optional() }).passthrough()), assignments: z.array(assignment), sources: z.array(source),
   comments: z.array(z.object({ id, goalId: id, leaderId: nullableId, text, author: id, createdAt: date, validUntil: date.nullable(), revision: id }).passthrough()),
   entities: z.array(z.object({ id, type: id, name: id, leaderId: id.nullable().optional(), productId: id.nullable().optional(), aliases: z.array(text).optional() }).passthrough()),
   directions: z.array(z.object({ id, name: id, description: text, color: z.string().regex(/^#[0-9a-fA-F]{6}$/), order: number.nonnegative() }).passthrough()).optional() }).passthrough();

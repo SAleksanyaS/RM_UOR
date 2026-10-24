@@ -4,6 +4,7 @@ import type { CatalogSnapshot, CatalogChange, Session, Draft, DomainChangeEvent,
 import { LocalDatabase } from '../../server/storage/database';
 import { ActionError } from '../identity/role-service';
 import { getDirections, normalizeDirections } from './directions';
+import { executionPlanSchema } from '../planning/plan-schema';
 
 export const goalPatchSchema = z.object({
   title: z.string().trim().min(1).max(500).optional(), summary: z.string().max(10000).optional(),
@@ -16,13 +17,16 @@ export const goalPatchSchema = z.object({
   unit: z.string().max(50).optional(), status: z.string().max(100).optional(), category: z.enum(['process', 'data', 'architecture', 'security']).optional(),
   actions: z.array(z.string().max(2000)).max(50).optional(), links: z.array(z.object({ label: z.string().max(200), url: z.string().url().refine(s => /^https?:\/\//.test(s)), kind: z.string().max(50) })).max(50).optional(),
   requiredMetricIds: z.array(z.string().min(1).max(200)).max(100).optional(),
-  workDirectionId: z.string().min(1).max(500).nullable().optional()
+  workDirectionId: z.string().min(1).max(500).nullable().optional(), plan: executionPlanSchema.optional()
 });
 export const directionPatchSchema = z.object({ name: z.string().trim().min(1).max(200).optional(),
   description: z.string().max(5000).optional(), color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
   order: z.number().finite().min(0).max(100000).optional() });
-function applyDraft(catalog: CatalogSnapshot, draft: Draft) {
-  const collection = draft.change.kind === 'direction' ? (catalog.directions ??= []) : draft.change.kind === 'goal' ? catalog.goals : draft.change.kind === 'assignment' ? catalog.assignments : draft.change.kind === 'comment' ? catalog.comments : draft.change.kind === 'source' ? catalog.sources : catalog.entities;
+export function catalogCollection(catalog: CatalogSnapshot, kind: CatalogChange['kind']): { id: string }[] {
+  return kind === 'leader' ? catalog.leaders : kind === 'direction' ? (catalog.directions ??= []) : kind === 'goal' ? catalog.goals : kind === 'assignment' ? catalog.assignments : kind === 'comment' ? catalog.comments : kind === 'source' ? catalog.sources : catalog.entities;
+}
+export function applyDraft(catalog: CatalogSnapshot, draft: Draft) {
+  const collection = catalogCollection(catalog, draft.change.kind);
   const item = collection.find(value => value.id === draft.change.id);
   if (item) Object.assign(item, draft.change.patch); else collection.push(draft.change.patch as never);
 }
@@ -39,13 +43,13 @@ export class CatalogStore {
     for (const draft of drafts.filter(item => item.status === 'local')) applyDraft(catalog, draft);
     return catalog;
   }
-  async saveDraft(session: Session, change: CatalogChange): Promise<Draft> {
+  async saveDraft(session: Session, change: CatalogChange, options?: { beforeSave?: () => void; afterSave?: (draft: Draft) => void }): Promise<Draft> {
     if (session.role !== 'curator' || !session.curatorId) throw new ActionError('Изменение доступно куратору УОР', 403);
     const baseCatalog = structuredClone(await this.read());
     // Main may still await the release chief's merge. A new edit is based on
     // already-sent content visible to this curator, never on its own local edit.
     for (const sent of (await this.listDrafts(session, true)).filter(item => item.status === 'published')) applyDraft(baseCatalog, sent);
-    const collection = change.kind === 'direction' ? (baseCatalog.directions ??= []) : change.kind === 'goal' ? baseCatalog.goals : change.kind === 'assignment' ? baseCatalog.assignments : change.kind === 'comment' ? baseCatalog.comments : change.kind === 'source' ? baseCatalog.sources : baseCatalog.entities;
+    const collection = catalogCollection(baseCatalog, change.kind);
     const original = collection.find(item => item.id === change.id) as unknown as Record<string, unknown> | undefined;
     const existing = this.db.list<Draft>('drafts').find(d => d.curatorId === session.curatorId && d.change.kind === change.kind && d.change.id === change.id && d.status === 'local');
     if (change.kind === 'goal') {
@@ -56,7 +60,9 @@ export class CatalogStore {
     }
     if (change.kind === 'direction') change.patch = { id: change.id, ...directionPatchSchema.parse(change.patch) };
     const draft: Draft = { id: existing?.id ?? randomUUID(), curatorId: session.curatorId, change: { ...change, patch: { ...(existing?.change.patch ?? {}), ...change.patch } }, base: existing ? existing.base : (original ? structuredClone(original) : null), createdAt: new Date().toISOString(), status: 'local', error: null };
-    this.db.set('drafts', draft.id, draft); return draft;
+    if (options) this.db.transaction(() => { options.beforeSave?.(); this.db.set('drafts', draft.id, draft); options.afterSave?.(draft); });
+    else this.db.set('drafts', draft.id, draft);
+    return draft;
   }
   async listDrafts(session: Session, includePublished = false): Promise<Draft[]> {
     return this.db.list<Draft>('drafts').filter(d => session.role === 'curator' && d.curatorId === session.curatorId && (includePublished || d.status === 'local')).sort((a, b) => a.createdAt.localeCompare(b.createdAt));

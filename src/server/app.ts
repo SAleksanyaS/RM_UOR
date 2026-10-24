@@ -15,6 +15,8 @@ import { checkRemoteUpdates, publishChanges, syncPublished } from '../features/p
 import { registerMaturityImportRoutes } from '../features/importing/import-routes';
 import { registerHistoryRoutes } from '../features/history/history-routes';
 import { registerScopeRoutes } from '../features/catalog/scope-routes';
+import { registerLeaderRoutes } from '../features/leaders/leader-routes';
+import { registerPlanRoutes } from '../features/planning/plan-routes';
 
 export async function createApp(options: AppOptions) {
   const context = await createContext(options);
@@ -47,6 +49,8 @@ export async function createApp(options: AppOptions) {
   registerMaturityImportRoutes(app, context);
   registerHistoryRoutes(app, context);
   registerScopeRoutes(app, context);
+  registerLeaderRoutes(app, context);
+  registerPlanRoutes(app, context);
   app.get('/api/health', async () => ({ status: 'ready', name: 'УОР ДИТ Operations', version: '0.1.0' }));
   app.get('/api/state', async (request, reply) => context.state(await sessionFor(request, reply)));
   app.post('/api/login', async (request, reply) => {
@@ -58,7 +62,9 @@ export async function createApp(options: AppOptions) {
   app.post<{ Params: { id: string } }>('/api/goals/:id', async request => {
     const session = await curator(request); const catalog = await context.catalogs.readForSession(session);
     const goal = catalog.goals.find(g => g.id === request.params.id); if (!goal) throw new ActionError('Цель не найдена', 404);
-    const raw = z.record(z.string(), z.unknown()).parse(request.body); const patch = goalPatchSchema.parse(raw);
+    const raw = z.record(z.string(), z.unknown()).parse(request.body);
+    if (Object.hasOwn(raw, 'plan')) throw new ActionError('Ход работ и сроки сохраняются отдельно в панели плана цели.', 400);
+    const patch = goalPatchSchema.parse(raw);
     if (patch.workDirectionId && !getDirections(catalog).some(direction => direction.id === patch.workDirectionId)) throw new ActionError('Направление не найдено', 400);
     if (raw.baseRevision && raw.baseRevision !== goal.revision) throw new ActionError('Цель уже изменилась. Обновите данные перед сохранением.', 409);
     const op = await context.operations.start('import', 'Сохранение цели');

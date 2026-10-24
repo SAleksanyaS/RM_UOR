@@ -10,7 +10,7 @@ import { validateAttestation, validateCatalog, validateChangeEvent, validateSnap
 import { getDirections, normalizeDirections } from '../catalog/directions';
 
 const execute = promisify(execFile);
-const folderFor = (kind: string) => ({ goal: 'goals', assignment: 'assignments', comment: 'comments', source: 'sources', entity: 'entities', direction: 'directions' })[kind] ?? 'entities';
+const folderFor = (kind: string) => ({ leader: 'leaders', goal: 'goals', assignment: 'assignments', comment: 'comments', source: 'sources', entity: 'entities', direction: 'directions' })[kind] ?? 'entities';
 const safeId = (id: string) => {
   if (!id || /[\x00-\x1f]/.test(id)) throw new Error('Недопустимый идентификатор публикации');
   return /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,149}$/.test(id) && !id.includes('..') && !id.endsWith('.') && !/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(id)
@@ -20,7 +20,7 @@ const markerId = (draft: Draft) => `publication-${safeId(draft.id)}-${createHash
 const markerFor = (draft: Draft) => `changes/${markerId(draft)}.json`;
 function catalogItem(catalog: CatalogSnapshot | null, folder: string, id: string): Record<string, unknown> | null {
   const collections: Record<string, { id: string }[] | undefined> = catalog ? {
-    goals: catalog.goals, assignments: catalog.assignments, comments: catalog.comments, sources: catalog.sources, entities: catalog.entities, directions: getDirections(catalog),
+    leaders: catalog.leaders, goals: catalog.goals, assignments: catalog.assignments, comments: catalog.comments, sources: catalog.sources, entities: catalog.entities, directions: getDirections(catalog),
   } : {};
   return (collections[folder]?.find(item => item.id === id) as unknown as Record<string, unknown>) ?? null;
 }
@@ -69,9 +69,9 @@ export async function syncPublished(context: ApplicationContext) {
   const catalog = normalizeDirections(remoteBase && remoteBase.classification === current.classification ? remoteBase : current);
   const acceptRemoteCatalog = (!remoteBase || remoteBase.classification === current.classification)
     && !(current.classification === 'corporate' && context.config.publicationMode === 'demo-only');
-  const collections: Record<string, { id: string }[]> = { goals: catalog.goals, assignments: catalog.assignments, sources: catalog.sources, entities: catalog.entities, comments: catalog.comments, directions: catalog.directions! };
+  const collections: Record<string, { id: string }[]> = { leaders: catalog.leaders, goals: catalog.goals, assignments: catalog.assignments, sources: catalog.sources, entities: catalog.entities, comments: catalog.comments, directions: catalog.directions! };
   for (const [file, content] of Object.entries(version.files)) {
-    const match = file.match(/^catalog\/(goals|assignments|sources|entities|comments|directions)\/[^/]+\.json$/);
+    const match = file.match(/^catalog\/(leaders|goals|assignments|sources|entities|comments|directions)\/[^/]+\.json$/);
     if (match && acceptRemoteCatalog) {
       const item = JSON.parse(content) as { id: string; classification?: string };
       if (!item.id || (catalog.classification === 'corporate' && remoteBase?.classification === 'demo' && !collections[match[1]].some(i => i.id === item.id))) continue;
@@ -180,6 +180,14 @@ export async function publishChanges(context: ApplicationContext, session: Curat
       const required = publishedObjects.get(draft.id)?.workDirectionId;
       if (typeof required === 'string' && !availableDirections.has(required))
         throw new Error(`Сначала включите в публикацию направление «${getDirections(catalog).find(direction => direction.id === required)?.name ?? required}». Локальные черновики сохранены.`);
+    }
+    const availableLeaders = new Set(embedded?.leaders.map(leader => leader.id) ?? []);
+    for (const [file, content] of Object.entries(release.files)) if (/^catalog\/leaders\/[^/]+\.json$/.test(file)) availableLeaders.add((JSON.parse(content) as { id: string }).id);
+    for (const draft of drafts.filter(item => item.change.kind === 'leader')) availableLeaders.add(draft.change.id);
+    for (const draft of drafts) {
+      const required = publishedObjects.get(draft.id)?.leaderId;
+      if (typeof required === 'string' && !availableLeaders.has(required))
+        throw new Error(`Сначала включите в публикацию ИТ-лидера «${catalog.leaders.find(leader => leader.id === required)?.name ?? required}». Локальные черновики сохранены.`);
     }
     const validated = context.db.list<LocalSnapshot>('snapshots').filter(s => s.status === 'validated' && s.curatorId === session.curatorId && !context.db.get('published-items', `snapshot:${s.id}`));
     const { preparePublication } = await import('../snapshots/publication-package');
