@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import demoSnapshots from '../../catalog/demo-snapshots.json';
+import demoCatalog from '../../catalog/demo.json';
 import type { CuratorSession, LocalSnapshot } from '../../src/domain/contracts';
 import { preparePublication } from '../../src/features/snapshots/publication-package';
 
@@ -40,5 +41,19 @@ describe('curator snapshot publication boundary', () => {
     expect(() => preparePublication(session, { ...data, sourceId: 'CON' }, 'demo-only')).toThrow(/идентификатор/i);
     expect(() => preparePublication(session, { ...data, period: 'different-period' }, 'demo-only')).toThrow(/период/i);
     expect(data).toEqual(before);
+  });
+
+  it('preserves historical rules while stripping unknown fields at every basis boundary', () => {
+    const data = snapshot();
+    data.evaluationBasis = { methodVersion: 'participant-all-applicable-metrics-v1',
+      goal: structuredClone(demoCatalog.goals[0]) as never,
+      assignments: structuredClone(demoCatalog.assignments.filter(item => item.goalId === demoCatalog.goals[0].id)) };
+    Object.assign(data.evaluationBasis, { browserProfile: 'private-profile' });
+    Object.assign(data.evaluationBasis.goal, { cookie: 'private-cookie', links: [{ label: 'Источник', kind: 'dashboard', url: 'https://example.com/', privateKey: 'private-key' }] });
+    if (data.evaluationBasis.assignments[0]) Object.assign(data.evaluationBasis.assignments[0], { localPath: 'private-path' });
+    const pack = preparePublication(session, data, 'demo-only');
+    const manifest = JSON.parse(pack.files[0].content);
+    expect(manifest.evaluationBasis.goal.id).toBe(demoCatalog.goals[0].id);
+    expect(pack.files[0].content).not.toMatch(/private-profile|private-cookie|private-key|private-path/);
   });
 });

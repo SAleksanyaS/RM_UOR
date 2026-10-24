@@ -24,6 +24,7 @@ export interface SourceDefinition {
   id: string; name: string; kind: 'dashboard' | 'attachment' | 'manual' | 'file' | 'demo';
   url: string | null; accessUrl: string | null; goalIds: string[]; freshnessHours: number;
   mode: 'stub' | 'local'; lastAttemptAt?: string | null;
+  importProfile?: { parser: 'maturity-xlsx-v1'; teamMapping: Record<string, string>; metricMapping: Record<string, string> };
 }
 export interface KnowledgeEntity { id: string; type: string; name: string; leaderId?: string | null; productId?: string | null; aliases?: string[] }
 export interface GoalComment {
@@ -43,11 +44,16 @@ export interface Observation {
   period: string; sourceId: string; sourceUpdatedAt: string | null; downloadedAt: string;
 }
 export interface Evidence { id: string; name: string; relativePath: string; sha256: string; size: number }
+/** Rules and cohort captured when facts were accepted, never inferred for older imports. */
+export interface SnapshotEvaluationBasis {
+  methodVersion: 'participant-all-applicable-metrics-v1'; goal: Goal; assignments: Assignment[];
+}
 export interface LocalSnapshot {
   id: string; classification: Classification; sourceId: string; period: string; observations: Observation[];
   collectedAt: string; sourceUpdatedAt: string | null; origin: 'file' | 'manual' | 'demo' | 'dashboard';
   dataHash: string; status: 'personal' | 'validated'; curatorId: string | null; curatorName: string | null;
   validatedAt: string | null; limitations: string[]; evidenceIds: string[];
+  evaluationBasis?: SnapshotEvaluationBasis;
 }
 export type ValidatedSnapshot = LocalSnapshot & { status: 'validated' };
 export interface EvaluationInput {

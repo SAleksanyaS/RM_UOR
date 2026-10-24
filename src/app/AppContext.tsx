@@ -17,6 +17,8 @@ export function useDialog(onClose: () => void) {
     const focusable = () => [...(dialog?.querySelectorAll<HTMLElement>('button:not([disabled]),a[href],input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex="0"]') || [])].filter(element => element.offsetParent !== null);
     if (dialog && !dialog.contains(document.activeElement)) focusable()[0]?.focus();
     function keydown(event: KeyboardEvent) {
+      const activeDialogs = document.querySelectorAll<HTMLElement>('.modal, .goal-drawer');
+      if (activeDialogs[activeDialogs.length - 1] !== dialog) return;
       if (event.key === 'Escape') { event.preventDefault(); close.current(); }
       if (event.key !== 'Tab') return;
       const elements = focusable();

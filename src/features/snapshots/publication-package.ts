@@ -1,4 +1,5 @@
 import type { CuratorSession, LocalSnapshot } from '../../domain/contracts';
+import { validateEvaluationBasis } from '../publishing/validate-version';
 export interface PublicationFile { path: string; content: string }
 export interface PublicationPackage { snapshotId: string; classification: LocalSnapshot['classification']; files: PublicationFile[]; manifest: Omit<LocalSnapshot, 'observations'> & { schemaVersion: 1 } }
 const safeSegment = (value: string) => /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,149}$/.test(value)
@@ -31,6 +32,7 @@ export function preparePublication(session: CuratorSession, snapshot: LocalSnaps
     curatorName: snapshot.curatorName, validatedAt: snapshot.validatedAt, limitations: [...snapshot.limitations],
     // Evidence is a separate reviewed publishing flow; local attachment paths never enter this package.
     evidenceIds: [],
+    ...(snapshot.evaluationBasis ? { evaluationBasis: validateEvaluationBasis(snapshot.evaluationBasis) } : {}),
   };
   const base = `published/snapshots/${snapshot.sourceId}/${snapshot.id}`;
   return { snapshotId: snapshot.id, classification: snapshot.classification, manifest, files: [

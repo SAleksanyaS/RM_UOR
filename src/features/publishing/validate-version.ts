@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { Attestation, CatalogSnapshot, DomainChangeEvent, LocalSnapshot } from '../../domain/contracts';
+import type { Attestation, CatalogSnapshot, DomainChangeEvent, LocalSnapshot, SnapshotEvaluationBasis } from '../../domain/contracts';
 import { getDirections } from '../catalog/directions';
 
 const id = z.string().min(1).max(500);
@@ -20,7 +20,8 @@ const assignment = z.object({ id, goalId: id, leaderId: id, teams: z.array(text)
   participantType: text.optional(), active: z.boolean().optional(), allProducts: z.boolean().optional(), target: text.optional(),
   summary: text.optional(), actions: z.array(text).optional(), metric: text.optional() }).passthrough();
 const source = z.object({ id, name: id, kind: z.enum(['dashboard', 'attachment', 'manual', 'file', 'demo']), url: url.nullable(), accessUrl: url.nullable(),
-  goalIds: ids, freshnessHours: number.positive(), mode: z.enum(['stub', 'local']), lastAttemptAt: date.nullable().optional() }).passthrough();
+  goalIds: ids, freshnessHours: number.positive(), mode: z.enum(['stub', 'local']), lastAttemptAt: date.nullable().optional(),
+  importProfile: z.object({ parser: z.literal('maturity-xlsx-v1'), teamMapping: z.record(id, id), metricMapping: z.record(id, id) }).optional() }).passthrough();
 const catalogSchema = z.object({ schemaVersion: z.literal(1), id, name: id, classification: z.enum(['demo', 'corporate']), importedAt: date,
   goals: z.array(goal), leaders: z.array(z.object({ id, name: id, teams: z.array(text) }).passthrough()), assignments: z.array(assignment), sources: z.array(source),
   comments: z.array(z.object({ id, goalId: id, leaderId: nullableId, text, author: id, createdAt: date, validUntil: date.nullable(), revision: id }).passthrough()),
@@ -29,9 +30,12 @@ const catalogSchema = z.object({ schemaVersion: z.literal(1), id, name: id, clas
 const observation = z.object({ id, goalId: id, leaderId: nullableId, participantId: id, participantName: text, metricId: id, metricName: text,
   value: nullableNumber, target: nullableNumber, unit: text, state: z.enum(['numeric', 'exception', 'no_events', 'missing']), reason: text.nullable(),
   period: id, sourceId: id, sourceUpdatedAt: date.nullable(), downloadedAt: date }).passthrough();
+const basisSchema = z.object({ methodVersion: z.literal('participant-all-applicable-metrics-v1'),
+  goal: goal.strip().extend({ links: z.array(link.strip()) }), assignments: z.array(assignment.strip()) }).strip();
 const snapshotSchema = z.object({ id, classification: z.enum(['demo', 'corporate']), sourceId: id, period: id, observations: z.array(observation),
   collectedAt: date, sourceUpdatedAt: date.nullable(), origin: z.enum(['file', 'manual', 'demo', 'dashboard']), dataHash: id,
-  status: z.enum(['personal', 'validated']), curatorId: nullableId, curatorName: text.nullable(), validatedAt: date.nullable(), limitations: z.array(text), evidenceIds: ids }).passthrough();
+  status: z.enum(['personal', 'validated']), curatorId: nullableId, curatorName: text.nullable(), validatedAt: date.nullable(), limitations: z.array(text), evidenceIds: ids,
+  evaluationBasis: basisSchema.optional() }).passthrough();
 
 function parse<T>(schema: z.ZodType, value: unknown, label: string): T {
   const result = schema.safeParse(value);
@@ -68,6 +72,12 @@ export function validateCatalog(value: unknown): CatalogSnapshot {
 export function validateSnapshot(value: unknown, catalog?: CatalogSnapshot): LocalSnapshot {
   const snapshot = parse<LocalSnapshot>(snapshotSchema, value, 'Некорректный снимок');
   requireReference(snapshot.observations.every(row => row.period === snapshot.period && row.sourceId === snapshot.sourceId), `снимок ${snapshot.id}: периоды или источники наблюдений не совпадают`);
+  if (snapshot.evaluationBasis) {
+    const basis = snapshot.evaluationBasis;
+    unique(basis.assignments, 'historical assignments');
+    requireReference(basis.assignments.every(item => item.goalId === basis.goal.id), `снимок ${snapshot.id}: состав методики относится к другой цели`);
+    requireReference(snapshot.observations.every(row => row.goalId === basis.goal.id), `снимок ${snapshot.id}: методика относится к другой цели`);
+  }
   if (snapshot.status === 'validated') requireReference(!!snapshot.curatorId && !!snapshot.curatorName?.trim() && !!snapshot.validatedAt && snapshot.observations.length > 0,
     `снимок ${snapshot.id}: отсутствуют автор/дата проверки или факты`);
   if (catalog) {
@@ -79,6 +89,11 @@ export function validateSnapshot(value: unknown, catalog?: CatalogSnapshot): Loc
     requireReference(snapshot.observations.every(row => row.leaderId === null || leaders.has(row.leaderId)), `снимок ${snapshot.id} ссылается на неизвестного лидера`);
   }
   return snapshot;
+}
+
+/** Strip unrecognised fields before a historical basis enters the shared manifest. */
+export function validateEvaluationBasis(value: unknown): SnapshotEvaluationBasis {
+  return parse<SnapshotEvaluationBasis>(basisSchema, value, 'Некорректная историческая методика');
 }
 
 export function validateAttestation(value: unknown, catalog: CatalogSnapshot): Attestation {

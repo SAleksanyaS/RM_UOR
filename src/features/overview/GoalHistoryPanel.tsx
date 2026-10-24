@@ -1,0 +1,30 @@
+import { Clock3, LoaderCircle, RefreshCw } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import type { GoalHistory } from '../history/history-contracts';
+import { useWorkspace } from '../../app/AppContext';
+import { buildHistoryChart } from './history-model';
+import { formatDate, formatValue, type GoalStatus } from './overview-model';
+import { StatusBadge } from './GoalLeaderMatrix';
+
+export function GoalHistoryPanel({ goalId, leaderId, unit }: { goalId: string; leaderId: string | null; unit: string }) {
+  const { state } = useWorkspace();
+  const [history, setHistory] = useState<GoalHistory | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [retry, setRetry] = useState(0);
+  const snapshotVersion = state.snapshots.filter(snapshot => snapshot.observations.some(observation => observation.goalId === goalId)).map(snapshot => `${snapshot.id}:${snapshot.dataHash}`).sort().join('|');
+  useEffect(() => {
+    const controller = new AbortController(); setLoading(true); setError('');
+    const query = leaderId ? `?leaderId=${encodeURIComponent(leaderId)}` : '';
+    void fetch(`/api/goals/${encodeURIComponent(goalId)}/history${query}`, { signal: controller.signal }).then(async response => { if (!response.ok) { const result = await response.json().catch(() => ({})); throw new Error(result.message || 'Не удалось загрузить историю цели.'); } return response.json() as Promise<GoalHistory>; }).then(result => { if (!controller.signal.aborted) setHistory(result); }).catch(failure => { if (!controller.signal.aborted) setError((failure as Error).message); }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
+  }, [goalId, leaderId, snapshotVersion, retry]);
+  const chart = useMemo(() => buildHistoryChart(history?.points || [], unit), [history, unit]);
+  const labelEvery = Math.max(1, Math.ceil(chart.points.length / 5));
+  return <div className="goal-history-panel">{loading && !history && <div className="history-loading"><LoaderCircle size={17} className="spinning"/>Загружаем сохранённые периоды…</div>}{error && <div className="error-inline" role="alert">{error}<button className="text-button" onClick={() => setRetry(value => value + 1)}><RefreshCw size={13}/>Повторить</button></div>}{history && <>
+    {chart.ordered.length === 0 ? <div className="history-no-trend"><Clock3 size={19}/><span>Сохранённых срезов пока нет. История появится после первой загрузки фактов.</span></div> : chart.ordered.length === 1 ? <div className="history-no-trend"><Clock3 size={19}/><span>Есть один период: {formatDate(chart.ordered[0].period)}. Для динамики нужен второй сопоставимый срез.</span></div> : !chart.hasTrend && <div className="history-no-trend"><Clock3 size={19}/><span>Срезы есть, но сопоставимого ряда пока нет: различаются состав, методика или полнота числовых фактов.</span></div>}
+    {chart.hasTrend && <div className="history-chart"><svg viewBox="0 0 565 198" role="img" aria-label="Динамика фактического значения по сопоставимым сохранённым периодам"><line x1="44" y1="159" x2="532" y2="159" className="history-grid-line"/><line x1="44" y1="26" x2="532" y2="26" className="history-grid-line"/><text x="35" y="162" className="history-axis-label" textAnchor="end">{formatValue(chart.minimum, unit)}</text><text x="35" y="29" className="history-axis-label" textAnchor="end">{formatValue(chart.maximum, unit)}</text>{chart.segments.map(segment => <line key={`${segment.from.period}-${segment.to.period}`} x1={segment.from.x} y1={segment.from.y} x2={segment.to.x} y2={segment.to.y} className="history-fact-line"/>)}{chart.points.map((point, index) => <g key={point.period}>{point.targetY !== null && <line x1={point.x - 5} y1={point.targetY} x2={point.x + 5} y2={point.targetY} className="history-target-mark"/>}<circle cx={point.x} cy={point.y} r="4" className="history-point"><title>{formatDate(point.period)}: {formatValue(point.actual, unit)}</title></circle>{(index % labelEvery === 0 || index === chart.points.length - 1) && <text x={point.x} y="184" className="history-axis-label" textAnchor="middle">{new Date(point.period).toLocaleDateString('ru-RU', { day: '2-digit', month: 'short' })}</text>}</g>)}</svg><div className="history-chart-legend"><span><i/>Факт</span><span><b/>Официальный порог</span></div></div>}
+    {chart.hasIncompatiblePeriods && chart.ordered.length > 1 && <p className="history-method-note">Периоды с разным составом или методикой не соединяются линией.</p>}{chart.ordered.some(point => point.qualityFlags.includes('historical_rules_unknown')) && <p className="history-method-note">Для части старых срезов методика не была сохранена. Такие факты пересчитаны по текущим правилам и не образуют сопоставимый тренд.</p>}{chart.ordered.some(point => point.qualityFlags.includes('historical_rules_conflict')) && <p className="history-method-note">В нескольких источниках сохранены несовместимые правила расчёта. Такие срезы не объединяются в общий результат или непрерывный тренд.</p>}
+    {chart.ordered.length > 0 && <div className="observations-table history-table"><table><thead><tr><th>Период</th><th>Факт</th><th>Порог</th><th>Проверка</th></tr></thead><tbody>{[...chart.ordered].reverse().map(point => { const status: GoalStatus = point.official === 'unknown' ? 'unknown' : point.official === 'not_met' ? 'not_met' : point.validation === 'confirmed' ? 'confirmed' : 'pending'; return <tr key={point.period}><td><strong>{formatDate(point.period)}</strong>{point.revisions && point.revisions > 1 ? <small>{point.revisions} редакций</small> : null}{point.changes && <small>+{point.changes.added} · изменено {point.changes.changed} · не вошло {point.changes.removed}</small>}</td><td>{formatValue(point.actual, unit)}</td><td>{formatValue(point.officialTarget, unit)}</td><td><StatusBadge status={status}/>{point.historicalConfirmedAt && <small>Подтверждалось {formatDate(point.historicalConfirmedAt, true)}</small>}</td></tr>; })}</tbody></table></div>}
+  </>}</div>;
+}
