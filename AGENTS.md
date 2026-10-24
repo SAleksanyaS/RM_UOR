@@ -12,7 +12,7 @@ Keep application startup inside an approved workspace. Keep `.runtime`, personal
 
 Preserve the key domain rules: separate official/internal targets; separate actual result and curator validation; regression becomes not-met automatically; attestations are bound to an evaluation fingerprint; zero applicable data is unknown.
 
-The director's view must include named IT leaders and drill-down, with consistent totals and visible provenance. Use a coherent visual design and verify it in a real browser.
+The director's view opens on all active goals, a separate goal-level DIT status, named IT leaders and drill-down. Any goal can be selected, including one without data. Never average unlike goal metrics or confuse goals with assignments. Use a coherent visual design and verify it in a real browser when the viewer is available; record unperformed visual checks honestly.
 
 Curators publish shared content to `release/current`; the UOR lead releases to `main` using a merge commit. Never resolve independent curator writes by overwriting remote history. Preserve drafts on errors.
 

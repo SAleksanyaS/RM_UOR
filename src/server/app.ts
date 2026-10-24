@@ -14,6 +14,7 @@ import { importGoalMap } from '../features/catalog/import-map';
 import { checkRemoteUpdates, publishChanges, syncPublished } from '../features/publishing/application-publishing';
 import { registerMaturityImportRoutes } from '../features/importing/import-routes';
 import { registerHistoryRoutes } from '../features/history/history-routes';
+import { registerScopeRoutes } from '../features/catalog/scope-routes';
 
 export async function createApp(options: AppOptions) {
   const context = await createContext(options);
@@ -45,6 +46,7 @@ export async function createApp(options: AppOptions) {
   const curator = async (request: { cookies: Record<string, string | undefined> }) => context.roles.requireCurator(request.cookies.uor_session ?? '');
   registerMaturityImportRoutes(app, context);
   registerHistoryRoutes(app, context);
+  registerScopeRoutes(app, context);
   app.get('/api/health', async () => ({ status: 'ready', name: 'УОР ДИТ Operations', version: '0.1.0' }));
   app.get('/api/state', async (request, reply) => context.state(await sessionFor(request, reply)));
   app.post('/api/login', async (request, reply) => {
