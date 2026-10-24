@@ -1,0 +1,10 @@
+{
+  "allowedWorkspaceRoots": [],
+  "repositoryUrl": "https://github.com/SAleksanyaS/RM_UOR.git",
+  "publishedBranch": "main",
+  "releaseBranch": "release/current",
+  "publicationMode": "demo-only",
+  "port": 4174,
+  "clientPort": 5173,
+  "autoOpen": true
+}

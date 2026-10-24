@@ -1,0 +1,1590 @@
+{
+  "schemaVersion": 1,
+  "id": "demo-catalog",
+  "name": "Демонстрационная карта целей",
+  "classification": "demo",
+  "importedAt": "2026-10-01T09:00:00Z",
+  "goals": [
+    {
+      "id": "DEMO-01",
+      "category": "process",
+      "title": "Практики разработки",
+      "target": "Не менее 80% участников достигли согласованных значений.",
+      "metric": "80% участников",
+      "status": "active",
+      "summary": "Вымышленная цель для знакомства с приложением. Замените ее данными своей карты целей.",
+      "actions": [
+        "Уточнить состав участников",
+        "Проверить значения и контекст",
+        "Подтвердить достигнутый результат"
+      ],
+      "scopeType": "allSystems",
+      "links": [],
+      "ownerId": null,
+      "curatorId": null,
+      "officialTarget": 80,
+      "internalTarget": 90,
+      "unit": "%",
+      "direction": "increase",
+      "baseline": null,
+      "weight": null,
+      "priority": null,
+      "dueDate": null,
+      "revision": "demo-v1",
+      "requiredMetricIds": [
+        "demo-metric-1",
+        "demo-metric-2",
+        "demo-metric-3"
+      ]
+    },
+    {
+      "id": "DEMO-02",
+      "category": "process",
+      "title": "Надежность поставки",
+      "target": "Не менее 80% участников достигли согласованных значений.",
+      "metric": "80% участников",
+      "status": "active",
+      "summary": "Вымышленная цель для знакомства с приложением. Замените ее данными своей карты целей.",
+      "actions": [
+        "Уточнить состав участников",
+        "Проверить значения и контекст",
+        "Подтвердить достигнутый результат"
+      ],
+      "scopeType": "allSystems",
+      "links": [],
+      "ownerId": null,
+      "curatorId": null,
+      "officialTarget": 80,
+      "internalTarget": 90,
+      "unit": "%",
+      "direction": "increase",
+      "baseline": null,
+      "weight": null,
+      "priority": null,
+      "dueDate": null,
+      "revision": "demo-v1",
+      "requiredMetricIds": [
+        "demo-metric-1",
+        "demo-metric-2",
+        "demo-metric-3"
+      ]
+    },
+    {
+      "id": "DEMO-03",
+      "category": "process",
+      "title": "Обучение команд",
+      "target": "Не менее 80% участников достигли согласованных значений.",
+      "metric": "80% участников",
+      "status": "active",
+      "summary": "Вымышленная цель для знакомства с приложением. Замените ее данными своей карты целей.",
+      "actions": [
+        "Уточнить состав участников",
+        "Проверить значения и контекст",
+        "Подтвердить достигнутый результат"
+      ],
+      "scopeType": "allSystems",
+      "links": [],
+      "ownerId": null,
+      "curatorId": null,
+      "officialTarget": 80,
+      "internalTarget": 90,
+      "unit": "%",
+      "direction": "increase",
+      "baseline": null,
+      "weight": null,
+      "priority": null,
+      "dueDate": null,
+      "revision": "demo-v1",
+      "requiredMetricIds": [
+        "demo-metric-1",
+        "demo-metric-2",
+        "demo-metric-3"
+      ]
+    },
+    {
+      "id": "DEMO-04",
+      "category": "data",
+      "title": "Качество справочников",
+      "target": "Не менее 80% участников достигли согласованных значений.",
+      "metric": "80% участников",
+      "status": "active",
+      "summary": "Вымышленная цель для знакомства с приложением. Замените ее данными своей карты целей.",
+      "actions": [
+        "Уточнить состав участников",
+        "Проверить значения и контекст",
+        "Подтвердить достигнутый результат"
+      ],
+      "scopeType": "allSystems",
+      "links": [],
+      "ownerId": null,
+      "curatorId": null,
+      "officialTarget": 80,
+      "internalTarget": 90,
+      "unit": "%",
+      "direction": "increase",
+      "baseline": null,
+      "weight": null,
+      "priority": null,
+      "dueDate": null,
+      "revision": "demo-v1",
+      "requiredMetricIds": [
+        "demo-metric-1",
+        "demo-metric-2",
+        "demo-metric-3"
+      ]
+    },
+    {
+      "id": "DEMO-05",
+      "category": "data",
+      "title": "Своевременность данных",
+      "target": "Не менее 80% участников достигли согласованных значений.",
+      "metric": "80% участников",
+      "status": "active",
+      "summary": "Вымышленная цель для знакомства с приложением. Замените ее данными своей карты целей.",
+      "actions": [
+        "Уточнить состав участников",
+        "Проверить значения и контекст",
+        "Подтвердить достигнутый результат"
+      ],
+      "scopeType": "allSystems",
+      "links": [],
+      "ownerId": null,
+      "curatorId": null,
+      "officialTarget": 80,
+      "internalTarget": 90,
+      "unit": "%",
+      "direction": "increase",
+      "baseline": null,
+      "weight": null,
+      "priority": null,
+      "dueDate": null,
+      "revision": "demo-v1"
+    },
+    {
+      "id": "DEMO-06",
+      "category": "data",
+      "title": "Описание наборов данных",
+      "target": "Не менее 80% участников достигли согласованных значений.",
+      "metric": "80% участников",
+      "status": "active",
+      "summary": "Вымышленная цель для знакомства с приложением. Замените ее данными своей карты целей.",
+      "actions": [
+        "Уточнить состав участников",
+        "Проверить значения и контекст",
+        "Подтвердить достигнутый результат"
+      ],
+      "scopeType": "allSystems",
+      "links": [],
+      "ownerId": null,
+      "curatorId": null,
+      "officialTarget": 80,
+      "internalTarget": 90,
+      "unit": "%",
+      "direction": "increase",
+      "baseline": null,
+      "weight": null,
+      "priority": null,
+      "dueDate": null,
+      "revision": "demo-v1",
+      "requiredMetricIds": [
+        "demo-metric-1",
+        "demo-metric-2",
+        "demo-metric-3"
+      ]
+    },
+    {
+      "id": "DEMO-07",
+      "category": "architecture",
+      "title": "Каталог сервисов",
+      "target": "Не менее 80% участников достигли согласованных значений.",
+      "metric": "80% участников",
+      "status": "active",
+      "summary": "Вымышленная цель для знакомства с приложением. Замените ее данными своей карты целей.",
+      "actions": [
+        "Уточнить состав участников",
+        "Проверить значения и контекст",
+        "Подтвердить достигнутый результат"
+      ],
+      "scopeType": "allSystems",
+      "links": [],
+      "ownerId": null,
+      "curatorId": null,
+      "officialTarget": 80,
+      "internalTarget": null,
+      "unit": "%",
+      "direction": "increase",
+      "baseline": null,
+      "weight": null,
+      "priority": null,
+      "dueDate": null,
+      "revision": "demo-v1",
+      "requiredMetricIds": [
+        "demo-metric-1",
+        "demo-metric-2",
+        "demo-metric-3"
+      ]
+    },
+    {
+      "id": "DEMO-08",
+      "category": "architecture",
+      "title": "Устойчивость решений",
+      "target": "Не менее 80% участников достигли согласованных значений.",
+      "metric": "80% участников",
+      "status": "active",
+      "summary": "Вымышленная цель для знакомства с приложением. Замените ее данными своей карты целей.",
+      "actions": [
+        "Уточнить состав участников",
+        "Проверить значения и контекст",
+        "Подтвердить достигнутый результат"
+      ],
+      "scopeType": "allSystems",
+      "links": [],
+      "ownerId": null,
+      "curatorId": null,
+      "officialTarget": 80,
+      "internalTarget": null,
+      "unit": "%",
+      "direction": "increase",
+      "baseline": null,
+      "weight": null,
+      "priority": null,
+      "dueDate": null,
+      "revision": "demo-v1",
+      "requiredMetricIds": [
+        "demo-metric-1",
+        "demo-metric-2",
+        "demo-metric-3"
+      ]
+    },
+    {
+      "id": "DEMO-09",
+      "category": "architecture",
+      "title": "Планирование изменений",
+      "target": "Не менее 80% участников достигли согласованных значений.",
+      "metric": "80% участников",
+      "status": "active",
+      "summary": "Вымышленная цель для знакомства с приложением. Замените ее данными своей карты целей.",
+      "actions": [
+        "Уточнить состав участников",
+        "Проверить значения и контекст",
+        "Подтвердить достигнутый результат"
+      ],
+      "scopeType": "allSystems",
+      "links": [],
+      "ownerId": null,
+      "curatorId": null,
+      "officialTarget": 80,
+      "internalTarget": null,
+      "unit": "%",
+      "direction": "increase",
+      "baseline": null,
+      "weight": null,
+      "priority": null,
+      "dueDate": null,
+      "revision": "demo-v1"
+    },
+    {
+      "id": "DEMO-10",
+      "category": "security",
+      "title": "Проверка доступов",
+      "target": "Не менее 80% участников достигли согласованных значений.",
+      "metric": "80% участников",
+      "status": "planned",
+      "summary": "Вымышленная цель для знакомства с приложением. Замените ее данными своей карты целей.",
+      "actions": [
+        "Уточнить состав участников",
+        "Проверить значения и контекст",
+        "Подтвердить достигнутый результат"
+      ],
+      "scopeType": "allSystems",
+      "links": [],
+      "ownerId": null,
+      "curatorId": null,
+      "officialTarget": 80,
+      "internalTarget": null,
+      "unit": "%",
+      "direction": "increase",
+      "baseline": null,
+      "weight": null,
+      "priority": null,
+      "dueDate": null,
+      "revision": "demo-v1"
+    },
+    {
+      "id": "DEMO-11",
+      "category": "security",
+      "title": "Устранение замечаний",
+      "target": "Не менее 80% участников достигли согласованных значений.",
+      "metric": "80% участников",
+      "status": "planned",
+      "summary": "Вымышленная цель для знакомства с приложением. Замените ее данными своей карты целей.",
+      "actions": [
+        "Уточнить состав участников",
+        "Проверить значения и контекст",
+        "Подтвердить достигнутый результат"
+      ],
+      "scopeType": "allSystems",
+      "links": [],
+      "ownerId": null,
+      "curatorId": null,
+      "officialTarget": null,
+      "internalTarget": null,
+      "unit": "%",
+      "direction": "increase",
+      "baseline": null,
+      "weight": null,
+      "priority": null,
+      "dueDate": null,
+      "revision": "demo-v1"
+    },
+    {
+      "id": "DEMO-12",
+      "category": "security",
+      "title": "Готовность восстановления",
+      "target": "Не менее 80% участников достигли согласованных значений.",
+      "metric": "80% участников",
+      "status": "planned",
+      "summary": "Вымышленная цель для знакомства с приложением. Замените ее данными своей карты целей.",
+      "actions": [
+        "Уточнить состав участников",
+        "Проверить значения и контекст",
+        "Подтвердить достигнутый результат"
+      ],
+      "scopeType": "allSystems",
+      "links": [],
+      "ownerId": null,
+      "curatorId": null,
+      "officialTarget": null,
+      "internalTarget": null,
+      "unit": "%",
+      "direction": "increase",
+      "baseline": null,
+      "weight": null,
+      "priority": null,
+      "dueDate": null,
+      "revision": "demo-v1"
+    }
+  ],
+  "leaders": [
+    {
+      "id": "leader-01",
+      "name": "Лидер 01",
+      "teams": [
+        "Команда 01-А",
+        "Команда 01-Б"
+      ]
+    },
+    {
+      "id": "leader-02",
+      "name": "Лидер 02",
+      "teams": [
+        "Команда 02-А",
+        "Команда 02-Б"
+      ]
+    },
+    {
+      "id": "leader-03",
+      "name": "Лидер 03",
+      "teams": [
+        "Команда 03-А",
+        "Команда 03-Б"
+      ]
+    },
+    {
+      "id": "leader-04",
+      "name": "Лидер 04",
+      "teams": [
+        "Команда 04-А",
+        "Команда 04-Б"
+      ]
+    },
+    {
+      "id": "leader-05",
+      "name": "Лидер 05",
+      "teams": [
+        "Команда 05-А",
+        "Команда 05-Б"
+      ]
+    },
+    {
+      "id": "leader-06",
+      "name": "Лидер 06",
+      "teams": [
+        "Команда 06-А",
+        "Команда 06-Б"
+      ]
+    },
+    {
+      "id": "leader-07",
+      "name": "Лидер 07",
+      "teams": [
+        "Команда 07-А",
+        "Команда 07-Б"
+      ]
+    },
+    {
+      "id": "leader-08",
+      "name": "Лидер 08",
+      "teams": [
+        "Команда 08-А",
+        "Команда 08-Б"
+      ]
+    }
+  ],
+  "assignments": [
+    {
+      "id": "leader-01:DEMO-01",
+      "goalId": "DEMO-01",
+      "leaderId": "leader-01",
+      "teams": [
+        "Команда 01-А",
+        "Команда 01-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-01:team:1",
+        "leader-01:team:2"
+      ]
+    },
+    {
+      "id": "leader-01:DEMO-02",
+      "goalId": "DEMO-02",
+      "leaderId": "leader-01",
+      "teams": [
+        "Команда 01-А",
+        "Команда 01-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-01:team:1",
+        "leader-01:team:2"
+      ]
+    },
+    {
+      "id": "leader-01:DEMO-03",
+      "goalId": "DEMO-03",
+      "leaderId": "leader-01",
+      "teams": [
+        "Команда 01-А",
+        "Команда 01-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-01:team:1",
+        "leader-01:team:2"
+      ]
+    },
+    {
+      "id": "leader-01:DEMO-04",
+      "goalId": "DEMO-04",
+      "leaderId": "leader-01",
+      "teams": [
+        "Команда 01-А",
+        "Команда 01-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-01:team:1",
+        "leader-01:team:2"
+      ]
+    },
+    {
+      "id": "leader-01:DEMO-05",
+      "goalId": "DEMO-05",
+      "leaderId": "leader-01",
+      "teams": [
+        "Команда 01-А",
+        "Команда 01-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-01:team:1",
+        "leader-01:team:2"
+      ]
+    },
+    {
+      "id": "leader-01:DEMO-06",
+      "goalId": "DEMO-06",
+      "leaderId": "leader-01",
+      "teams": [
+        "Команда 01-А",
+        "Команда 01-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-01:team:1",
+        "leader-01:team:2"
+      ]
+    },
+    {
+      "id": "leader-01:DEMO-07",
+      "goalId": "DEMO-07",
+      "leaderId": "leader-01",
+      "teams": [
+        "Команда 01-А",
+        "Команда 01-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-01:team:1",
+        "leader-01:team:2"
+      ]
+    },
+    {
+      "id": "leader-01:DEMO-09",
+      "goalId": "DEMO-09",
+      "leaderId": "leader-01",
+      "teams": [
+        "Команда 01-А",
+        "Команда 01-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-01:team:1",
+        "leader-01:team:2"
+      ]
+    },
+    {
+      "id": "leader-01:DEMO-11",
+      "goalId": "DEMO-11",
+      "leaderId": "leader-01",
+      "teams": [
+        "Команда 01-А",
+        "Команда 01-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-01:team:1",
+        "leader-01:team:2"
+      ]
+    },
+    {
+      "id": "leader-02:DEMO-01",
+      "goalId": "DEMO-01",
+      "leaderId": "leader-02",
+      "teams": [
+        "Команда 02-А",
+        "Команда 02-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-02:team:1",
+        "leader-02:team:2"
+      ]
+    },
+    {
+      "id": "leader-02:DEMO-02",
+      "goalId": "DEMO-02",
+      "leaderId": "leader-02",
+      "teams": [
+        "Команда 02-А",
+        "Команда 02-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-02:team:1",
+        "leader-02:team:2"
+      ]
+    },
+    {
+      "id": "leader-02:DEMO-03",
+      "goalId": "DEMO-03",
+      "leaderId": "leader-02",
+      "teams": [
+        "Команда 02-А",
+        "Команда 02-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-02:team:1",
+        "leader-02:team:2"
+      ]
+    },
+    {
+      "id": "leader-02:DEMO-04",
+      "goalId": "DEMO-04",
+      "leaderId": "leader-02",
+      "teams": [
+        "Команда 02-А",
+        "Команда 02-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-02:team:1",
+        "leader-02:team:2"
+      ]
+    },
+    {
+      "id": "leader-02:DEMO-05",
+      "goalId": "DEMO-05",
+      "leaderId": "leader-02",
+      "teams": [
+        "Команда 02-А",
+        "Команда 02-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-02:team:1",
+        "leader-02:team:2"
+      ]
+    },
+    {
+      "id": "leader-02:DEMO-06",
+      "goalId": "DEMO-06",
+      "leaderId": "leader-02",
+      "teams": [
+        "Команда 02-А",
+        "Команда 02-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-02:team:1",
+        "leader-02:team:2"
+      ]
+    },
+    {
+      "id": "leader-02:DEMO-08",
+      "goalId": "DEMO-08",
+      "leaderId": "leader-02",
+      "teams": [
+        "Команда 02-А",
+        "Команда 02-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-02:team:1",
+        "leader-02:team:2"
+      ]
+    },
+    {
+      "id": "leader-02:DEMO-10",
+      "goalId": "DEMO-10",
+      "leaderId": "leader-02",
+      "teams": [
+        "Команда 02-А",
+        "Команда 02-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-02:team:1",
+        "leader-02:team:2"
+      ]
+    },
+    {
+      "id": "leader-02:DEMO-12",
+      "goalId": "DEMO-12",
+      "leaderId": "leader-02",
+      "teams": [
+        "Команда 02-А",
+        "Команда 02-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-02:team:1",
+        "leader-02:team:2"
+      ]
+    },
+    {
+      "id": "leader-03:DEMO-01",
+      "goalId": "DEMO-01",
+      "leaderId": "leader-03",
+      "teams": [
+        "Команда 03-А",
+        "Команда 03-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-03:team:1",
+        "leader-03:team:2"
+      ]
+    },
+    {
+      "id": "leader-03:DEMO-02",
+      "goalId": "DEMO-02",
+      "leaderId": "leader-03",
+      "teams": [
+        "Команда 03-А",
+        "Команда 03-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-03:team:1",
+        "leader-03:team:2"
+      ]
+    },
+    {
+      "id": "leader-03:DEMO-03",
+      "goalId": "DEMO-03",
+      "leaderId": "leader-03",
+      "teams": [
+        "Команда 03-А",
+        "Команда 03-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-03:team:1",
+        "leader-03:team:2"
+      ]
+    },
+    {
+      "id": "leader-03:DEMO-04",
+      "goalId": "DEMO-04",
+      "leaderId": "leader-03",
+      "teams": [
+        "Команда 03-А",
+        "Команда 03-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-03:team:1",
+        "leader-03:team:2"
+      ]
+    },
+    {
+      "id": "leader-03:DEMO-05",
+      "goalId": "DEMO-05",
+      "leaderId": "leader-03",
+      "teams": [
+        "Команда 03-А",
+        "Команда 03-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-03:team:1",
+        "leader-03:team:2"
+      ]
+    },
+    {
+      "id": "leader-03:DEMO-06",
+      "goalId": "DEMO-06",
+      "leaderId": "leader-03",
+      "teams": [
+        "Команда 03-А",
+        "Команда 03-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-03:team:1",
+        "leader-03:team:2"
+      ]
+    },
+    {
+      "id": "leader-03:DEMO-07",
+      "goalId": "DEMO-07",
+      "leaderId": "leader-03",
+      "teams": [
+        "Команда 03-А",
+        "Команда 03-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-03:team:1",
+        "leader-03:team:2"
+      ]
+    },
+    {
+      "id": "leader-03:DEMO-09",
+      "goalId": "DEMO-09",
+      "leaderId": "leader-03",
+      "teams": [
+        "Команда 03-А",
+        "Команда 03-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-03:team:1",
+        "leader-03:team:2"
+      ]
+    },
+    {
+      "id": "leader-03:DEMO-11",
+      "goalId": "DEMO-11",
+      "leaderId": "leader-03",
+      "teams": [
+        "Команда 03-А",
+        "Команда 03-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-03:team:1",
+        "leader-03:team:2"
+      ]
+    },
+    {
+      "id": "leader-04:DEMO-01",
+      "goalId": "DEMO-01",
+      "leaderId": "leader-04",
+      "teams": [
+        "Команда 04-А",
+        "Команда 04-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-04:team:1",
+        "leader-04:team:2"
+      ]
+    },
+    {
+      "id": "leader-04:DEMO-02",
+      "goalId": "DEMO-02",
+      "leaderId": "leader-04",
+      "teams": [
+        "Команда 04-А",
+        "Команда 04-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-04:team:1",
+        "leader-04:team:2"
+      ]
+    },
+    {
+      "id": "leader-04:DEMO-03",
+      "goalId": "DEMO-03",
+      "leaderId": "leader-04",
+      "teams": [
+        "Команда 04-А",
+        "Команда 04-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-04:team:1",
+        "leader-04:team:2"
+      ]
+    },
+    {
+      "id": "leader-04:DEMO-04",
+      "goalId": "DEMO-04",
+      "leaderId": "leader-04",
+      "teams": [
+        "Команда 04-А",
+        "Команда 04-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-04:team:1",
+        "leader-04:team:2"
+      ]
+    },
+    {
+      "id": "leader-04:DEMO-05",
+      "goalId": "DEMO-05",
+      "leaderId": "leader-04",
+      "teams": [
+        "Команда 04-А",
+        "Команда 04-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-04:team:1",
+        "leader-04:team:2"
+      ]
+    },
+    {
+      "id": "leader-04:DEMO-06",
+      "goalId": "DEMO-06",
+      "leaderId": "leader-04",
+      "teams": [
+        "Команда 04-А",
+        "Команда 04-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-04:team:1",
+        "leader-04:team:2"
+      ]
+    },
+    {
+      "id": "leader-04:DEMO-08",
+      "goalId": "DEMO-08",
+      "leaderId": "leader-04",
+      "teams": [
+        "Команда 04-А",
+        "Команда 04-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-04:team:1",
+        "leader-04:team:2"
+      ]
+    },
+    {
+      "id": "leader-04:DEMO-10",
+      "goalId": "DEMO-10",
+      "leaderId": "leader-04",
+      "teams": [
+        "Команда 04-А",
+        "Команда 04-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-04:team:1",
+        "leader-04:team:2"
+      ]
+    },
+    {
+      "id": "leader-04:DEMO-12",
+      "goalId": "DEMO-12",
+      "leaderId": "leader-04",
+      "teams": [
+        "Команда 04-А",
+        "Команда 04-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-04:team:1",
+        "leader-04:team:2"
+      ]
+    },
+    {
+      "id": "leader-05:DEMO-01",
+      "goalId": "DEMO-01",
+      "leaderId": "leader-05",
+      "teams": [
+        "Команда 05-А",
+        "Команда 05-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-05:team:1",
+        "leader-05:team:2"
+      ]
+    },
+    {
+      "id": "leader-05:DEMO-02",
+      "goalId": "DEMO-02",
+      "leaderId": "leader-05",
+      "teams": [
+        "Команда 05-А",
+        "Команда 05-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-05:team:1",
+        "leader-05:team:2"
+      ]
+    },
+    {
+      "id": "leader-05:DEMO-03",
+      "goalId": "DEMO-03",
+      "leaderId": "leader-05",
+      "teams": [
+        "Команда 05-А",
+        "Команда 05-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-05:team:1",
+        "leader-05:team:2"
+      ]
+    },
+    {
+      "id": "leader-05:DEMO-04",
+      "goalId": "DEMO-04",
+      "leaderId": "leader-05",
+      "teams": [
+        "Команда 05-А",
+        "Команда 05-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-05:team:1",
+        "leader-05:team:2"
+      ]
+    },
+    {
+      "id": "leader-05:DEMO-05",
+      "goalId": "DEMO-05",
+      "leaderId": "leader-05",
+      "teams": [
+        "Команда 05-А",
+        "Команда 05-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-05:team:1",
+        "leader-05:team:2"
+      ]
+    },
+    {
+      "id": "leader-05:DEMO-06",
+      "goalId": "DEMO-06",
+      "leaderId": "leader-05",
+      "teams": [
+        "Команда 05-А",
+        "Команда 05-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-05:team:1",
+        "leader-05:team:2"
+      ]
+    },
+    {
+      "id": "leader-05:DEMO-07",
+      "goalId": "DEMO-07",
+      "leaderId": "leader-05",
+      "teams": [
+        "Команда 05-А",
+        "Команда 05-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-05:team:1",
+        "leader-05:team:2"
+      ]
+    },
+    {
+      "id": "leader-05:DEMO-09",
+      "goalId": "DEMO-09",
+      "leaderId": "leader-05",
+      "teams": [
+        "Команда 05-А",
+        "Команда 05-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-05:team:1",
+        "leader-05:team:2"
+      ]
+    },
+    {
+      "id": "leader-05:DEMO-11",
+      "goalId": "DEMO-11",
+      "leaderId": "leader-05",
+      "teams": [
+        "Команда 05-А",
+        "Команда 05-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-05:team:1",
+        "leader-05:team:2"
+      ]
+    },
+    {
+      "id": "leader-06:DEMO-01",
+      "goalId": "DEMO-01",
+      "leaderId": "leader-06",
+      "teams": [
+        "Команда 06-А",
+        "Команда 06-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-06:team:1",
+        "leader-06:team:2"
+      ]
+    },
+    {
+      "id": "leader-06:DEMO-02",
+      "goalId": "DEMO-02",
+      "leaderId": "leader-06",
+      "teams": [
+        "Команда 06-А",
+        "Команда 06-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-06:team:1",
+        "leader-06:team:2"
+      ]
+    },
+    {
+      "id": "leader-06:DEMO-03",
+      "goalId": "DEMO-03",
+      "leaderId": "leader-06",
+      "teams": [
+        "Команда 06-А",
+        "Команда 06-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-06:team:1",
+        "leader-06:team:2"
+      ]
+    },
+    {
+      "id": "leader-06:DEMO-04",
+      "goalId": "DEMO-04",
+      "leaderId": "leader-06",
+      "teams": [
+        "Команда 06-А",
+        "Команда 06-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-06:team:1",
+        "leader-06:team:2"
+      ]
+    },
+    {
+      "id": "leader-06:DEMO-05",
+      "goalId": "DEMO-05",
+      "leaderId": "leader-06",
+      "teams": [
+        "Команда 06-А",
+        "Команда 06-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-06:team:1",
+        "leader-06:team:2"
+      ]
+    },
+    {
+      "id": "leader-06:DEMO-06",
+      "goalId": "DEMO-06",
+      "leaderId": "leader-06",
+      "teams": [
+        "Команда 06-А",
+        "Команда 06-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-06:team:1",
+        "leader-06:team:2"
+      ]
+    },
+    {
+      "id": "leader-06:DEMO-08",
+      "goalId": "DEMO-08",
+      "leaderId": "leader-06",
+      "teams": [
+        "Команда 06-А",
+        "Команда 06-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-06:team:1",
+        "leader-06:team:2"
+      ]
+    },
+    {
+      "id": "leader-06:DEMO-10",
+      "goalId": "DEMO-10",
+      "leaderId": "leader-06",
+      "teams": [
+        "Команда 06-А",
+        "Команда 06-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-06:team:1",
+        "leader-06:team:2"
+      ]
+    },
+    {
+      "id": "leader-06:DEMO-12",
+      "goalId": "DEMO-12",
+      "leaderId": "leader-06",
+      "teams": [
+        "Команда 06-А",
+        "Команда 06-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-06:team:1",
+        "leader-06:team:2"
+      ]
+    },
+    {
+      "id": "leader-07:DEMO-01",
+      "goalId": "DEMO-01",
+      "leaderId": "leader-07",
+      "teams": [
+        "Команда 07-А",
+        "Команда 07-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-07:team:1",
+        "leader-07:team:2"
+      ]
+    },
+    {
+      "id": "leader-07:DEMO-02",
+      "goalId": "DEMO-02",
+      "leaderId": "leader-07",
+      "teams": [
+        "Команда 07-А",
+        "Команда 07-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-07:team:1",
+        "leader-07:team:2"
+      ]
+    },
+    {
+      "id": "leader-07:DEMO-03",
+      "goalId": "DEMO-03",
+      "leaderId": "leader-07",
+      "teams": [
+        "Команда 07-А",
+        "Команда 07-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-07:team:1",
+        "leader-07:team:2"
+      ]
+    },
+    {
+      "id": "leader-07:DEMO-04",
+      "goalId": "DEMO-04",
+      "leaderId": "leader-07",
+      "teams": [
+        "Команда 07-А",
+        "Команда 07-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-07:team:1",
+        "leader-07:team:2"
+      ]
+    },
+    {
+      "id": "leader-07:DEMO-05",
+      "goalId": "DEMO-05",
+      "leaderId": "leader-07",
+      "teams": [
+        "Команда 07-А",
+        "Команда 07-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-07:team:1",
+        "leader-07:team:2"
+      ]
+    },
+    {
+      "id": "leader-07:DEMO-06",
+      "goalId": "DEMO-06",
+      "leaderId": "leader-07",
+      "teams": [
+        "Команда 07-А",
+        "Команда 07-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-07:team:1",
+        "leader-07:team:2"
+      ]
+    },
+    {
+      "id": "leader-07:DEMO-07",
+      "goalId": "DEMO-07",
+      "leaderId": "leader-07",
+      "teams": [
+        "Команда 07-А",
+        "Команда 07-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-07:team:1",
+        "leader-07:team:2"
+      ]
+    },
+    {
+      "id": "leader-07:DEMO-09",
+      "goalId": "DEMO-09",
+      "leaderId": "leader-07",
+      "teams": [
+        "Команда 07-А",
+        "Команда 07-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-07:team:1",
+        "leader-07:team:2"
+      ]
+    },
+    {
+      "id": "leader-07:DEMO-11",
+      "goalId": "DEMO-11",
+      "leaderId": "leader-07",
+      "teams": [
+        "Команда 07-А",
+        "Команда 07-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-07:team:1",
+        "leader-07:team:2"
+      ]
+    },
+    {
+      "id": "leader-08:DEMO-01",
+      "goalId": "DEMO-01",
+      "leaderId": "leader-08",
+      "teams": [
+        "Команда 08-А",
+        "Команда 08-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-08:team:1",
+        "leader-08:team:2"
+      ]
+    },
+    {
+      "id": "leader-08:DEMO-02",
+      "goalId": "DEMO-02",
+      "leaderId": "leader-08",
+      "teams": [
+        "Команда 08-А",
+        "Команда 08-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-08:team:1",
+        "leader-08:team:2"
+      ]
+    },
+    {
+      "id": "leader-08:DEMO-03",
+      "goalId": "DEMO-03",
+      "leaderId": "leader-08",
+      "teams": [
+        "Команда 08-А",
+        "Команда 08-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-08:team:1",
+        "leader-08:team:2"
+      ]
+    },
+    {
+      "id": "leader-08:DEMO-04",
+      "goalId": "DEMO-04",
+      "leaderId": "leader-08",
+      "teams": [
+        "Команда 08-А",
+        "Команда 08-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-08:team:1",
+        "leader-08:team:2"
+      ]
+    },
+    {
+      "id": "leader-08:DEMO-05",
+      "goalId": "DEMO-05",
+      "leaderId": "leader-08",
+      "teams": [
+        "Команда 08-А",
+        "Команда 08-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-08:team:1",
+        "leader-08:team:2"
+      ]
+    },
+    {
+      "id": "leader-08:DEMO-06",
+      "goalId": "DEMO-06",
+      "leaderId": "leader-08",
+      "teams": [
+        "Команда 08-А",
+        "Команда 08-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-08:team:1",
+        "leader-08:team:2"
+      ]
+    },
+    {
+      "id": "leader-08:DEMO-08",
+      "goalId": "DEMO-08",
+      "leaderId": "leader-08",
+      "teams": [
+        "Команда 08-А",
+        "Команда 08-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-08:team:1",
+        "leader-08:team:2"
+      ]
+    },
+    {
+      "id": "leader-08:DEMO-10",
+      "goalId": "DEMO-10",
+      "leaderId": "leader-08",
+      "teams": [
+        "Команда 08-А",
+        "Команда 08-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-08:team:1",
+        "leader-08:team:2"
+      ]
+    },
+    {
+      "id": "leader-08:DEMO-12",
+      "goalId": "DEMO-12",
+      "leaderId": "leader-08",
+      "teams": [
+        "Команда 08-А",
+        "Команда 08-Б"
+      ],
+      "active": true,
+      "participantIds": [
+        "leader-08:team:1",
+        "leader-08:team:2"
+      ]
+    }
+  ],
+  "sources": [
+    {
+      "id": "demo-values",
+      "name": "Демонстрационные значения",
+      "kind": "demo",
+      "url": null,
+      "accessUrl": null,
+      "goalIds": [
+        "DEMO-01",
+        "DEMO-02",
+        "DEMO-04",
+        "DEMO-05",
+        "DEMO-06",
+        "DEMO-07",
+        "DEMO-08",
+        "DEMO-09",
+        "DEMO-10",
+        "DEMO-11",
+        "DEMO-12"
+      ],
+      "freshnessHours": 168,
+      "mode": "local"
+    },
+    {
+      "id": "demo-manual",
+      "name": "Пример ручного ввода куратора",
+      "kind": "manual",
+      "url": null,
+      "accessUrl": null,
+      "goalIds": [
+        "DEMO-03"
+      ],
+      "freshnessHours": 168,
+      "mode": "local"
+    }
+  ],
+  "comments": [
+    {
+      "id": "demo-comment-1",
+      "goalId": "DEMO-01",
+      "leaderId": "leader-02",
+      "text": "Демонстрационный комментарий: уточняем данные по двум показателям. Проверить после следующего обновления.",
+      "author": "Демо-куратор",
+      "createdAt": "2026-10-01T09:00:00Z",
+      "validUntil": null,
+      "revision": "demo-v1"
+    }
+  ],
+  "entities": [
+    {
+      "id": "leader-01:team:1",
+      "name": "Команда 01-А",
+      "type": "team",
+      "leaderId": "leader-01"
+    },
+    {
+      "id": "leader-01:team:2",
+      "name": "Команда 01-Б",
+      "type": "team",
+      "leaderId": "leader-01"
+    },
+    {
+      "id": "leader-02:team:1",
+      "name": "Команда 02-А",
+      "type": "team",
+      "leaderId": "leader-02"
+    },
+    {
+      "id": "leader-02:team:2",
+      "name": "Команда 02-Б",
+      "type": "team",
+      "leaderId": "leader-02"
+    },
+    {
+      "id": "leader-03:team:1",
+      "name": "Команда 03-А",
+      "type": "team",
+      "leaderId": "leader-03"
+    },
+    {
+      "id": "leader-03:team:2",
+      "name": "Команда 03-Б",
+      "type": "team",
+      "leaderId": "leader-03"
+    },
+    {
+      "id": "leader-04:team:1",
+      "name": "Команда 04-А",
+      "type": "team",
+      "leaderId": "leader-04"
+    },
+    {
+      "id": "leader-04:team:2",
+      "name": "Команда 04-Б",
+      "type": "team",
+      "leaderId": "leader-04"
+    },
+    {
+      "id": "leader-05:team:1",
+      "name": "Команда 05-А",
+      "type": "team",
+      "leaderId": "leader-05"
+    },
+    {
+      "id": "leader-05:team:2",
+      "name": "Команда 05-Б",
+      "type": "team",
+      "leaderId": "leader-05"
+    },
+    {
+      "id": "leader-06:team:1",
+      "name": "Команда 06-А",
+      "type": "team",
+      "leaderId": "leader-06"
+    },
+    {
+      "id": "leader-06:team:2",
+      "name": "Команда 06-Б",
+      "type": "team",
+      "leaderId": "leader-06"
+    },
+    {
+      "id": "leader-07:team:1",
+      "name": "Команда 07-А",
+      "type": "team",
+      "leaderId": "leader-07"
+    },
+    {
+      "id": "leader-07:team:2",
+      "name": "Команда 07-Б",
+      "type": "team",
+      "leaderId": "leader-07"
+    },
+    {
+      "id": "leader-08:team:1",
+      "name": "Команда 08-А",
+      "type": "team",
+      "leaderId": "leader-08"
+    },
+    {
+      "id": "leader-08:team:2",
+      "name": "Команда 08-Б",
+      "type": "team",
+      "leaderId": "leader-08"
+    }
+  ]
+}

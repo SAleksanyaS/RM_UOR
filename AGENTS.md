@@ -4,7 +4,7 @@ Read `docs/AI_PDLC_HANDOFF.md`, the current master spec and the relevant impleme
 
 The application is «Рабочее место УОР ДИТ Operations». UOR means «управление обеспечения развития».
 
-This repository starts with design documents. Do not claim `npm run dev`, integrations or tests work until the implementation exists and has actually been checked.
+The first local application stage is implemented. Read README and docs/first-stage-validation.md for actual capabilities and limits; design requirements are broader than the current UI. Claim startup, integration or test results only after checking the current revision.
 
 Initial implementation starts with prepared local knowledge/data. The real corporate browser collector stays an explicitly labelled stub until its separate phase.
 
