@@ -1,0 +1,16 @@
+node_modules/
+dist/
+coverage/
+.runtime/
+.venv/
+.env
+.env.local
+.env.*.local
+config/site.local.json
+*.log
+*.pfx
+*.p12
+*.key
+playwright/.auth/
+test-results/
+playwright-report/
