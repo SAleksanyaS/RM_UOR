@@ -69,7 +69,7 @@ export function buildPortfolioModel(input: OverviewInput, selectedGoalId?: strin
     && goalIds.has(assignment.goalId) && leaderIds.has(assignment.leaderId)), assignment => JSON.stringify([assignment.goalId, assignment.leaderId]));
   const overview = buildOverview({ ...input, catalog: { ...input.catalog, goals: definitions, leaders, assignments } });
   const assignedRows = new Map(overview.goals.map(row => [row.goal.id, row]));
-  const visibleGoals = definitions.filter(goal => assignedRows.has(goal.id) || selectedGoalId != null
+  const visibleGoals = definitions.filter(goal => goal.scopeType === 'global' || assignedRows.has(goal.id) || selectedGoalId != null
     || !input.catalog.assignments.some(assignment => assignment.goalId === goal.id));
   const goals: PortfolioGoal[] = visibleGoals.map(goal => {
     const row = assignedRows.get(goal.id) ?? { goal, cells: [] };

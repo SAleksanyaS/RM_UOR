@@ -17,6 +17,12 @@ import { registerHistoryRoutes } from '../features/history/history-routes';
 import { registerScopeRoutes } from '../features/catalog/scope-routes';
 import { registerLeaderRoutes } from '../features/leaders/leader-routes';
 import { registerPlanRoutes } from '../features/planning/plan-routes';
+import { registerGoalSetupRoutes } from '../features/goal-setup/goal-setup-routes';
+import { registerTabularImportRoutes } from '../features/tabular-import/routes';
+import { registerReportRoutes } from '../features/reporting/report-routes';
+import { registerDirectorRoutes } from '../features/director/director-routes';
+import { registerKnowledgeRoutes } from '../features/knowledge/knowledge-routes';
+import { isKnowledgeType } from '../features/knowledge/knowledge-contracts';
 
 export async function createApp(options: AppOptions) {
   const context = await createContext(options);
@@ -51,6 +57,11 @@ export async function createApp(options: AppOptions) {
   registerScopeRoutes(app, context);
   registerLeaderRoutes(app, context);
   registerPlanRoutes(app, context);
+  registerGoalSetupRoutes(app, context);
+  registerTabularImportRoutes(app, context);
+  registerReportRoutes(app, context);
+  registerDirectorRoutes(app, context);
+  registerKnowledgeRoutes(app, context);
   app.get('/api/health', async () => ({ status: 'ready', name: 'УОР ДИТ Operations', version: '0.1.0' }));
   app.get('/api/state', async (request, reply) => context.state(await sessionFor(request, reply)));
   app.post('/api/login', async (request, reply) => {
@@ -109,14 +120,19 @@ export async function createApp(options: AppOptions) {
   });
   app.post('/api/confirm', async request => {
     const session = await curator(request);
-    const input = z.object({ goalId: z.string(), leaderId: z.string().nullable().optional(), comment: z.string().nullable().optional(), evidenceIds: z.array(z.string()).default([]) }).parse(request.body);
+    const input = z.object({ goalId: z.string(), leaderId: z.string().nullable().optional(), baseFingerprint: z.string().max(500).optional(), comment: z.string().nullable().optional(), evidenceIds: z.array(z.string()).max(30).default([]) }).parse(request.body);
     const state = await context.state(session);
     const evaluation = state.evaluations.find(e => e.goalId === input.goalId && e.leaderId === (input.leaderId ?? null));
     if (!evaluation) throw new ActionError('Оценка цели не найдена', 404);
+    if (input.baseFingerprint && input.baseFingerprint !== evaluation.fingerprint) throw new ActionError('Расчёт изменился после открытия формы. Проверьте новые значения перед подтверждением.', 409);
     if (evaluation.qualityFlags.includes('stale')) throw new ActionError('Срез устарел. Для текущего подтверждения обновите данные или внесите актуальный факт.', 409);
     const goal = state.catalog.goals.find(g => g.id === input.goalId)!;
     if (goal.curatorId && goal.curatorId !== session.curatorId && goal.curatorId !== session.name) throw new ActionError('Подтверждение доступно назначенному куратору этой цели', 403);
-    for (const evidenceId of input.evidenceIds) if (!context.db.get('evidence', evidenceId)) throw new ActionError('Приложенный артефакт не найден', 400);
+    for (const evidenceId of input.evidenceIds) {
+      const evidence = context.db.get<{ curatorId?: string }>('evidence', evidenceId);
+      if (!evidence) throw new ActionError('Приложенный артефакт не найден', 400);
+      if (evidence.curatorId && evidence.curatorId !== session.curatorId) throw new ActionError('Добавьте файл из своей кураторской сессии.', 403);
+    }
     try { validateAchievement(evaluation, input.comment ?? null, input.evidenceIds); } catch (error) { throw new ActionError((error as Error).message); }
     const attestation = { id: randomUUID(), goalId: goal.id, leaderId: input.leaderId ?? null, fingerprint: evaluation.fingerprint, period: evaluation.period, curatorId: session.curatorId, curatorName: session.name, confirmedAt: new Date().toISOString(), comment: input.comment?.trim() ?? null, evidenceIds: input.evidenceIds, invalidatedAt: null };
     context.db.set('attestations', attestation.id, attestation);
@@ -161,6 +177,8 @@ export async function createApp(options: AppOptions) {
     if (input.leaderId && !catalog.leaders.some(l => l.id === input.leaderId)) throw new ActionError('ИТ-лидер не найден');
     if (input.productId && !catalog.entities.some(e => e.id === input.productId && e.type === 'product')) throw new ActionError('Продукт не найден в базе знаний');
     const id = (request.params as { id?: string } | undefined)?.id ?? randomUUID(); const original = catalog.entities.find(e => e.id === id);
+    if (original && isKnowledgeType(original.type)) throw new ActionError('Изменяйте запись в разделе «База знаний»: он проверяет версию, связи и сохраняет прежние имена.', 400);
+    if (['decision', 'report_profile', 'article'].includes(input.type) || (original && (['decision', 'report_profile', 'article'].includes(original.type) || original.revision || original.body || original.archivedAt)) || ['description', 'body', 'links', 'goalIds', 'revision', 'archivedAt'].some(field => Object.hasOwn(request.body as object, field))) throw new ActionError('Используйте соответствующий раздел базы знаний, решений или профилей отчёта. Черновик с проверкой версии защищает изменения коллег.', 400);
     const draft = await context.catalogs.saveDraft(session, { kind: 'entity', id, baseRevision: null, patch: { id, ...input } });
     context.catalogs.recordChange(session, original ? 'entity_updated' : 'entity_added', id, input.name, { ...original }, input); return { draft };
   };
@@ -172,11 +190,12 @@ export async function createApp(options: AppOptions) {
     context.catalogs.recordChange(session, 'catalog_imported', catalog.id, catalog.name, {}, { goals: catalog.goals.length, leaders: catalog.leaders.length }); return { goals: catalog.goals.length, leaders: catalog.leaders.length };
   });
   app.post('/api/evidence', async request => {
-    await curator(request);
-    const input = z.object({ name: z.string().min(1).max(200), base64: z.string().max(7_000_000) }).parse(request.body);
-    const bytes = Buffer.from(input.base64, 'base64'); if (bytes.length > 5_000_000) throw new ActionError('Артефакт превышает 5 МБ');
+    const session = await curator(request);
+    const input = z.object({ name: z.string().trim().min(1).max(200), base64: z.string().min(1).max(7_000_000).regex(/^[A-Za-z0-9+/]+={0,2}$/) }).parse(request.body);
+    const bytes = Buffer.from(input.base64, 'base64'); if (!bytes.length || input.base64.length % 4) throw new ActionError('Не удалось прочитать файл доказательства');
+    if (bytes.length > 5_000_000) throw new ActionError('Артефакт превышает 5 МБ');
     const id = randomUUID(); const destination = await safeArtifactPath(context.paths.runtimeRoot, `evidence/${id}`); await writeFile(destination, bytes);
-    const evidence = { id, name: input.name, relativePath: `evidence/${id}`, sha256: createHash('sha256').update(bytes).digest('hex'), size: bytes.length };
+    const evidence = { id, name: input.name, relativePath: `evidence/${id}`, sha256: createHash('sha256').update(bytes).digest('hex'), size: bytes.length, curatorId: session.curatorId };
     context.db.set('evidence', id, evidence); return { evidence };
   });
   app.post('/api/updates/check', async () => { const operation = await context.operations.start('check', 'Проверка обновлений'); void checkRemoteUpdates(context, operation.id); return { operationId: operation.id }; });

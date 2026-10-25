@@ -8,7 +8,7 @@ import { resolveWorkspace, type WorkspacePaths } from './paths';
 import { CatalogStore } from '../../features/catalog/catalog-store';
 import { RoleService, type CuratorRecord } from '../../features/identity/role-service';
 import { evaluateGoal } from '../../features/evaluation/evaluate';
-import { selectFacts } from '../../features/snapshots/select-facts';
+import { selectFacts, snapshotFreshness } from '../../features/snapshots/select-facts';
 import { readLocalRelease } from '../../features/catalog/local-release';
 import { validateCatalog, validateSnapshot } from '../../features/publishing/validate-version';
 import { normalizeDirections } from '../../features/catalog/directions';
@@ -70,11 +70,11 @@ export class ApplicationContext {
         const observations = rows.filter(row => leaderId === null ? row.leaderId === null || activeLeaders.has(row.leaderId) : row.leaderId === leaderId);
         const assignments = activeAssignments.filter(a => leaderId === null || a.leaderId === leaderId);
         const dimensional = observations.some(row => row.metricId !== goal.id);
-        const expectedParticipants = dimensional && assignments.length && assignments.every(a => a.participantIds !== undefined)
+        const expectedParticipants = goal.measurement && goal.scopeType === 'global' && !activeAssignments.length ? ['global-dit'] : (goal.measurement || dimensional) && assignments.length && assignments.every(a => a.participantIds !== undefined)
           ? [...new Set(assignments.flatMap(a => a.participantIds!))] : undefined;
         const scopeRevision = JSON.stringify(assignments.map(a => ({ id: a.id, teams: [...a.teams].sort(), participantIds: a.participantIds ? [...a.participantIds].sort() : null, target: a.target ?? null })).sort((a, b) => a.id.localeCompare(b.id)));
         const evaluationInput = { goal, observations, period, leaderId, expectedParticipants,
-          expectedMetricIds: dimensional ? goal.requiredMetricIds : undefined, scopeRevision };
+          expectedMetricIds: goal.measurement ? goal.measurement.metrics.map(metric => metric.id) : dimensional ? goal.requiredMetricIds : undefined, scopeRevision };
         let evaluation = evaluateGoal(evaluationInput);
         const previous = this.db.get<Evaluation>('last-evaluations', `${goal.id}:${leaderId ?? 'all'}`);
         let attestations = this.db.list<Attestation>('attestations').filter(a => a.goalId === goal.id && a.leaderId === leaderId && !a.invalidatedAt);
@@ -84,7 +84,7 @@ export class ApplicationContext {
         }
         const matching = attestations.find(a => a.fingerprint === evaluation.fingerprint);
         if (matching) evaluation = evaluateGoal({ ...evaluationInput, attestation: matching });
-        if (dimensional && (expectedParticipants === undefined || !goal.requiredMetricIds?.length)) {
+        if (!goal.measurement && dimensional && (expectedParticipants === undefined || !goal.requiredMetricIds?.length)) {
           evaluation.qualityFlags.push('unknown_coverage');
           if (evaluation.official === 'met') evaluation.official = 'unknown';
           if (evaluation.internal === 'met') evaluation.internal = 'unknown';
@@ -93,10 +93,7 @@ export class ApplicationContext {
         const sourceDates = [...bySource.values()].map(s => s.sourceUpdatedAt).filter((v): v is string => !!v);
         const stale = [...bySource.values()].some(s => {
           const source = catalog.sources.find(source => source.id === s.sourceId);
-          const periodAt = Date.parse(`${s.period}T23:59:59Z`);
-          const dates = [periodAt, s.sourceUpdatedAt ? Date.parse(s.sourceUpdatedAt) : NaN].filter(Number.isFinite);
-          const at = dates.length ? Math.min(...dates) : NaN;
-          return !Number.isFinite(at) || Date.now() - at > (source?.freshnessHours ?? 168) * 3600_000;
+          return snapshotFreshness(s, source?.freshnessHours).isStale;
         });
         if (stale && observations.length) evaluation.qualityFlags.push('stale');
         if (!sourceDates.length && observations.length) evaluation.qualityFlags.push('source_date_unknown');

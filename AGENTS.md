@@ -16,6 +16,8 @@ The director's view opens on all active goals, a separate goal-level DIT status,
 
 Keep declared execution plans separate from measured results. Official due date, work commitment and curator forecast are different fields. Plan edits never confirm achievement or alter facts. Global plans do not silently become personal leader commitments. IT leaders/clusters have an explicit curator management page and pass through the shared catalog publishing process.
 
+The self-service goal wizard supports explicit measurement metadata and a global DIT scope without leader assignments. Preview samples never become facts. New methodologies, tabular profiles and enriched knowledge records require updated client code. Use the same declared expected cohort in preview, current evaluation, import, history and reports; never derive it solely from available rows. Preserve former knowledge names used by legacy assignments when renaming or archiving. Reports are immutable snapshots; historical recalculation uses a clearly stated methodology.
+
 Curators publish shared content to `release/current`; the UOR lead releases to `main` using a merge commit. Never resolve independent curator writes by overwriting remote history. Preserve drafts on errors.
 
 Git hosting, allowed paths, source URLs and platform-specific browser/auth settings belong in configuration and adapters, not business calculations.

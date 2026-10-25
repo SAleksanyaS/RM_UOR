@@ -1,27 +1,17 @@
 import type { Evaluation, EvaluationInput, Goal, Observation } from '../../domain/contracts';
 import { evaluationFingerprint } from './fingerprint';
 import { metricKey, normalizeObservations } from './normalize';
+import { evaluateMeasurement } from './measurement';
+import { goalProgress } from './progress';
+export { goalProgress } from './progress';
 
 const finite = (value: number | null): value is number => value !== null && Number.isFinite(value);
 const passes = (actual: number, target: number, direction: Goal['direction']) => direction === 'increase' ? actual >= target : actual <= target;
 
-/** A missing baseline is not silently assumed. Percentage growth alone has a meaningful zero base. */
-export function goalProgress(actual: number | null, target: number | null, baseline: number | null,
-  direction: Goal['direction'], unit = ''): number | null {
-  if (!finite(actual) || !finite(target)) return null;
-  if (baseline === null) {
-    if (direction === 'increase' && ['%', 'percent', 'percentage'].includes(unit.toLowerCase()) && target > 0)
-      return Math.max(0, actual / target * 100);
-    return null;
-  }
-  if (!finite(baseline)) return null;
-  if (baseline === target) return passes(actual, target, direction) ? 100 : 0;
-  return Math.max(0, (actual - baseline) / (target - baseline) * 100);
-}
-
 type ParticipantResult = 'met' | 'not_met' | 'unknown' | 'excluded';
 
 export function evaluateGoal(input: EvaluationInput): Evaluation {
+  if (input.goal.measurement) return evaluateMeasurement(input);
   const { goal } = input;
   const normalized = normalizeObservations(input);
   const rows = normalized.observations;

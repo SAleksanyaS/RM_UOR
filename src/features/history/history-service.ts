@@ -5,13 +5,15 @@ import { ActionError } from '../identity/role-service';
 import { evaluateGoal } from '../evaluation/evaluate';
 import { selectFacts } from '../snapshots/select-facts';
 import type { GoalHistory, GoalHistoryPoint } from './history-contracts';
+import { measurementRules } from '../evaluation/measurement';
 
 const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const scopeOf = (assignments: Assignment[]) => assignments.map(a => ({ id: a.id, teams: [...a.teams].sort(),
   participantIds: a.participantIds ? [...a.participantIds].sort() : null, target: a.target ?? null })).sort((a, b) => a.id.localeCompare(b.id));
 const rulesOf = (goal: Goal, assignments: Assignment[]) => ({ goal: { id: goal.id, officialTarget: goal.officialTarget,
   internalTarget: goal.internalTarget, baseline: goal.baseline, direction: goal.direction, unit: goal.unit,
-  scopeType: goal.scopeType, requiredMetricIds: [...(goal.requiredMetricIds ?? [])].sort() }, scope: scopeOf(assignments) });
+  scopeType: goal.scopeType, requiredMetricIds: [...(goal.requiredMetricIds ?? [])].sort(),
+  measurement: goal.measurement ? measurementRules(goal.measurement) : null }, scope: scopeOf(assignments) });
 const rowKey = (row: Observation) => JSON.stringify([row.sourceId, row.participantId, row.metricId]);
 const rowContent = (row: Observation) => JSON.stringify([row.goalId, row.leaderId, row.value, row.target, row.state, row.unit]);
 function difference(before: Observation[], after: Observation[]) {
@@ -55,7 +57,7 @@ export async function getGoalHistory(context: ApplicationContext, session: Sessi
       && (leaderId ? row.leaderId === leaderId : row.leaderId === null || activeLeaders.has(row.leaderId)));
     const observations = scopedRows(selected);
     const dimensional = observations.some(row => row.metricId !== goalId);
-    const expectedParticipants = dimensional && assignments.length && assignments.every(a => a.participantIds !== undefined)
+    const expectedParticipants = goal.measurement && goal.scopeType === 'global' && !assignments.length && !leaderId ? ['global-dit'] : (dimensional || !!goal.measurement) && assignments.length && assignments.every(a => a.participantIds !== undefined)
       ? [...new Set(assignments.flatMap(a => a.participantIds!))] : undefined;
     const input = { goal, observations, period, leaderId, expectedParticipants,
       expectedMetricIds: dimensional ? goal.requiredMetricIds : undefined, scopeRevision: JSON.stringify(scopeOf(assignments)) };
@@ -64,7 +66,7 @@ export async function getGoalHistory(context: ApplicationContext, session: Sessi
       && item.period === period && item.fingerprint === evaluation.fingerprint).sort((a, b) => b.confirmedAt.localeCompare(a.confirmedAt));
     const active = confirmations.find(item => !item.invalidatedAt);
     if (active) evaluation = evaluateGoal({ ...input, attestation: active });
-    if (dimensional && (expectedParticipants === undefined || !goal.requiredMetricIds?.length)) {
+    if (!goal.measurement && dimensional && (expectedParticipants === undefined || !goal.requiredMetricIds?.length)) {
       evaluation.qualityFlags.push('unknown_coverage');
       if (evaluation.official === 'met') evaluation.official = 'unknown';
       evaluation.validation = 'not_required';

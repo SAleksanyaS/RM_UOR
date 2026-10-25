@@ -40,6 +40,21 @@ it('returns only real periods and never retires current attestations while readi
   expect(context.db.get('attestations', 'ok')).toEqual(attestation);
   expect(context.db.list('last-evaluations')).toEqual(before);
 });
+it('breaks a trend on explicit methodology changes while display labels remain comparable', async () => {
+  const { context, session } = await setup();
+  const one = catalog(); one.goals[0].measurement = { kind: 'scalar', aggregation: 'sum', metrics: [{ id: 'm', name: 'Значение', target: 5, unit: '%', direction: 'increase' }] };
+  const first = snapshot('one', '2026-10-01', 100, one); first.evaluationBasis!.methodVersion = 'explicit-measurement-v1';
+  await context.writeSnapshot(first);
+  const two = structuredClone(one); two.goals[0].measurement!.aggregation = 'average';
+  const second = snapshot('two', '2026-10-08', 100, two); second.evaluationBasis!.methodVersion = 'explicit-measurement-v1';
+  await context.writeSnapshot(second);
+  const three = structuredClone(two); three.goals[0].measurement!.metrics[0].name = 'Новое отображаемое название';
+  const third = snapshot('three', '2026-10-16', 100, three); third.evaluationBasis!.methodVersion = 'explicit-measurement-v1';
+  await context.writeSnapshot(third);
+  const history = await getGoalHistory(context, session, 'g', null);
+  expect(history.points.map(point => point.actual)).toEqual([100, 100, 100]);
+  expect(history.points.map(point => point.comparableToPrevious)).toEqual([false, false, true]);
+});
 it('does not claim a comparable trend for legacy facts or changed thresholds/cohort', async () => {
   const { context, session } = await setup(); const old = snapshot('old', '2026-10-01'); delete old.evaluationBasis;
   await context.writeSnapshot(old); await context.writeSnapshot(snapshot('next', '2026-10-08'));

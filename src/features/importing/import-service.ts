@@ -127,7 +127,7 @@ export async function previewMaturityImport(context: ApplicationContext, session
     const priorRows = context.db.list<LocalSnapshot>('snapshots').filter(snapshot => snapshot.classification === catalog.classification)
       .flatMap(snapshot => snapshot.observations).filter(row => row.goalId === goal.id && row.metricId !== goal.id);
     const metricIds = [...new Set(goal.requiredMetricIds?.length ? goal.requiredMetricIds : priorRows.map(row => row.metricId))].sort();
-    const teamMapping = { ...(source.importProfile?.teamMapping ?? {}), ...(input.teamMapping ?? {}) };
+    const teamMapping = { ...((source.importProfile?.parser === 'maturity-xlsx-v1' ? source.importProfile.teamMapping : {})), ...(input.teamMapping ?? {}) };
     const metricMapping = { ...(source.importProfile?.metricMapping ?? {}), ...(input.metricMapping ?? {}) };
     const teamMatches = buildTeamMatches(parsed.rows, teams, catalog, teamMapping);
     const metricMatches = buildMetricMatches(parsed.rows, metricIds, priorRows, metricMapping);

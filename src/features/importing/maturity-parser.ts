@@ -6,7 +6,7 @@ const MAX_ROWS = 25_000, MAX_FACTS = 20_000, MAX_COLUMNS = 100;
 const REQUIRED = ['команда', 'метрика', 'значение метрики', 'цель метрики'] as const;
 
 /** Bounded ZIP central-directory inspection before ExcelJS expands workbook XML. */
-function checkArchive(bytes: Buffer): void {
+export function checkArchive(bytes: Buffer): void {
   if (!bytes.length) throw new Error('Загружен пустой файл');
   if (bytes.length > MAX_BYTES) throw new Error('Файл превышает допустимый размер 10 МБ');
   if (bytes.length < 22 || bytes.readUInt32LE(0) !== 0x04034b50) throw new Error('Ожидается книга XLSX в формате ZIP');

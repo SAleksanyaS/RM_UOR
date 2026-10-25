@@ -2,6 +2,14 @@ export type Category = 'process' | 'data' | 'architecture' | 'security';
 export type Classification = 'demo' | 'corporate';
 export type Role = 'reader' | 'curator';
 export interface GoalLink { label: string; url: string; kind: string }
+export interface GoalMetric { id: string; name: string; unit: string; target: number; direction: 'increase' | 'decrease' }
+/** Explicit, executable methodology. Legacy goals omit this configuration. */
+export interface GoalMeasurement {
+  kind: 'scalar' | 'participant_share' | 'binary' | 'milestones' | 'range' | 'change';
+  aggregation: 'single' | 'sum' | 'average'; metrics: GoalMetric[];
+  range?: { min: number; max: number };
+  change?: { mode: 'absolute' | 'percent'; baseline: number };
+}
 export interface WorkDirection { id: string; name: string; description: string; color: string; order: number }
 export type WorkStage = 'planned' | 'in_progress' | 'blocked' | 'paused' | 'ready_for_review' | 'monitoring';
 /** Declared work plan, independent of measured facts and curator confirmation. */
@@ -20,6 +28,7 @@ export interface Goal {
   requiredMetricIds?: string[];
   workDirectionId?: string | null;
   plan?: ExecutionPlan;
+  measurement?: GoalMeasurement;
 }
 export interface Leader { id: string; name: string; teams: string[]; clusterName?: string | null }
 export interface Assignment {
@@ -33,9 +42,14 @@ export interface SourceDefinition {
   id: string; name: string; kind: 'dashboard' | 'attachment' | 'manual' | 'file' | 'demo';
   url: string | null; accessUrl: string | null; goalIds: string[]; freshnessHours: number;
   mode: 'stub' | 'local'; lastAttemptAt?: string | null;
-  importProfile?: { parser: 'maturity-xlsx-v1'; teamMapping: Record<string, string>; metricMapping: Record<string, string> };
+  importProfile?: { parser: 'maturity-xlsx-v1'; teamMapping: Record<string, string>; metricMapping: Record<string, string> } | {
+    parser: 'tabular-v1'; columns: { period?: string; leader?: string; participant?: string; metric?: string; value: string; target?: string; state?: string; reason?: string; sourceUpdatedAt?: string };
+    leaderMapping: Record<string, string>; participantMapping: Record<string, string>; metricMapping: Record<string, string>;
+    defaults: { period: string; leaderId?: string | null; participantId?: string; metricId?: string };
+  };
 }
-export interface KnowledgeEntity { id: string; type: string; name: string; leaderId?: string | null; productId?: string | null; aliases?: string[] }
+export interface KnowledgeEntity { id: string; type: string; name: string; leaderId?: string | null; productId?: string | null; aliases?: string[];
+  description?: string; body?: string; links?: { label: string; url: string }[]; goalIds?: string[]; revision?: string; archivedAt?: string | null }
 export interface GoalComment {
   id: string; goalId: string; leaderId: string | null; text: string; author: string;
   createdAt: string; validUntil: string | null; revision: string;
@@ -55,7 +69,7 @@ export interface Observation {
 export interface Evidence { id: string; name: string; relativePath: string; sha256: string; size: number }
 /** Rules and cohort captured when facts were accepted, never inferred for older imports. */
 export interface SnapshotEvaluationBasis {
-  methodVersion: 'participant-all-applicable-metrics-v1'; goal: Goal; assignments: Assignment[];
+  methodVersion: 'participant-all-applicable-metrics-v1' | 'explicit-measurement-v1'; goal: Goal; assignments: Assignment[];
 }
 export interface LocalSnapshot {
   id: string; classification: Classification; sourceId: string; period: string; observations: Observation[];

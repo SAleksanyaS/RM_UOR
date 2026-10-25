@@ -189,11 +189,28 @@ export async function publishChanges(context: ApplicationContext, session: Curat
       if (typeof required === 'string' && !availableLeaders.has(required))
         throw new Error(`Сначала включите в публикацию ИТ-лидера «${catalog.leaders.find(leader => leader.id === required)?.name ?? required}». Локальные черновики сохранены.`);
     }
+    // Validate the version that recipients will actually receive, including only
+    // selected drafts. A curator's unselected local goal/source is not shared yet.
+    const publicationCandidate = normalizeDirections(structuredClone(embedded?.classification === catalog.classification ? embedded : await context.catalogs.read()));
+    const publicationCollections: Record<string, { id: string }[]> = { leaders: publicationCandidate.leaders, goals: publicationCandidate.goals,
+      assignments: publicationCandidate.assignments, sources: publicationCandidate.sources, entities: publicationCandidate.entities,
+      comments: publicationCandidate.comments, directions: publicationCandidate.directions! };
+    const includeObject = (folder: string, item: { id: string }) => {
+      const list = publicationCollections[folder], index = list.findIndex(current => current.id === item.id);
+      if (index < 0) list.push(item); else list[index] = item;
+    };
+    for (const [file, content] of Object.entries(release.files)) {
+      const match = file.match(/^catalog\/(leaders|goals|assignments|sources|entities|comments|directions)\/[^/]+\.json$/);
+      if (match) includeObject(match[1], JSON.parse(content) as { id: string });
+    }
+    for (const draft of drafts) includeObject(folderFor(draft.change.kind), publishedObjects.get(draft.id)! as { id: string });
+    validateCatalog(publicationCandidate);
     const validated = context.db.list<LocalSnapshot>('snapshots').filter(s => s.status === 'validated' && s.curatorId === session.curatorId && !context.db.get('published-items', `snapshot:${s.id}`));
     const { preparePublication } = await import('../snapshots/publication-package');
-    for (const snapshot of validated) files.push(...preparePublication(session, snapshot, context.config.publicationMode).files);
+    for (const snapshot of validated) files.push(...preparePublication(session, validateSnapshot(snapshot, publicationCandidate), context.config.publicationMode).files);
     const attestations = context.db.list<Attestation>('attestations').filter(a => a.curatorId === session.curatorId && !a.invalidatedAt && !context.db.get('published-items', `attestation:${a.id}`));
     for (const attestation of attestations) {
+      validateAttestation(attestation, publicationCandidate);
       files.push({ path: `published/attestations/${safeId(attestation.goalId)}/${safeId(attestation.id)}.json`, content: JSON.stringify(attestation, null, 2), baseContent: null });
       for (const evidenceId of attestation.evidenceIds) {
         const evidence = context.db.get<{ id: string; relativePath: string; name: string }>('evidence', evidenceId);

@@ -1,9 +1,25 @@
 import { describe, expect, it } from 'vitest';
 import demo from '../../../catalog/demo.json';
 import snapshots from '../../../catalog/demo-snapshots.json';
-import { validateCatalog, validateSnapshot } from './validate-version';
+import { validateCatalog, validateSnapshot, validateEvaluationBasis } from './validate-version';
 
 describe('shared version validation', () => {
+  it('requires explicit method metadata to match the saved historical goal', () => {
+    const measurement = { kind: 'scalar', aggregation: 'single', metrics: [{ id: 'value', name: 'Значение', target: 1, unit: 'шт', direction: 'increase' }] };
+    const goal = { ...demo.goals[0], measurement };
+    expect(validateEvaluationBasis({ methodVersion: 'explicit-measurement-v1', goal, assignments: [] }).goal.measurement).toEqual(measurement);
+    expect(() => validateEvaluationBasis({ methodVersion: 'participant-all-applicable-metrics-v1', goal, assignments: [] })).toThrow();
+    expect(() => validateEvaluationBasis({ methodVersion: 'explicit-measurement-v1', goal: demo.goals[0], assignments: [] })).toThrow();
+  });
+  it('rejects explicit calculation cohorts whose participants are not available in the shared catalog', () => {
+    const value = structuredClone(demo) as unknown as Record<string, any>;
+    const assigned = value.assignments[0];
+    value.goals.find((goal: { id: string }) => goal.id === assigned.goalId).measurement = { kind: 'scalar', aggregation: 'single', metrics: [{ id: 'value', name: 'Число', target: 1, unit: 'шт', direction: 'increase' }] };
+    assigned.participantIds = ['unpublished-participant'];
+    expect(() => validateCatalog(value)).toThrow();
+    assigned.participantIds = [assigned.leaderId];
+    expect(() => validateCatalog(value)).not.toThrow();
+  });
   it('accepts the supplied standalone demo catalog and facts', () => {
     const catalog = validateCatalog(demo);
     expect(catalog.goals.length).toBeGreaterThan(0);

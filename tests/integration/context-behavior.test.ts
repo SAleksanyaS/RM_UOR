@@ -45,6 +45,17 @@ it('does not present positive dimensional results as confirmable when cohort is 
   const result = (await c.state(await c.roles.enterReader())).evaluations.find(e => e.leaderId === null)!;
   expect(result.official).toBe('unknown'); expect(result.qualityFlags).toContain('unknown_coverage');
 });
+it('keeps a configured scalar cohort incomplete when one assigned participant is missing', async () => {
+  const initial = catalog();
+  initial.goals[0].measurement = { kind: 'scalar', aggregation: 'sum', metrics: [{ id: 'g1', name: 'Показатель', target: 100, unit: '%', direction: 'increase' }] };
+  initial.goals[0].requiredMetricIds = ['g1'];
+  initial.entities = [{ id: 't1', type: 'team', name: 'Команда 1', leaderId: 'l1' }, { id: 't2', type: 'team', name: 'Команда 2', leaderId: 'l2' }];
+  const { c } = await setup(initial); const data = snapshot();
+  data.observations = [{ ...data.observations[0], metricId: 'g1', value: 110 }];
+  await c.writeSnapshot(data);
+  const result = (await c.state(await c.roles.enterReader())).evaluations.find(e => e.leaderId === null)!;
+  expect(result.official).toBe('unknown'); expect(result.missing).toBe(1); expect(result.coverage).toBe(50);
+});
 it('loads released per-object content and shared snapshots on a fresh local clone', async () => {
   const root = await mkdtemp(join(tmpdir(), 'uor-clone-')); roots.push(root); const base = catalog();
   await mkdir(join(root, 'catalog/goals'), { recursive: true }); await mkdir(join(root, 'published/snapshots/src/shared'), { recursive: true });

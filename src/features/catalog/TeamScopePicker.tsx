@@ -19,12 +19,12 @@ export function TeamScopePicker({ assignment, entities, value, onChange, disable
   const [addError, setAddError] = useState('');
   const selectedIds = value.participantIds ?? [];
   const teamIds = new Set([...selectedIds, ...(assignment.participantIds ?? [])]);
-  const teams = entities.filter(entity => entity.type === 'team' && (entity.leaderId === assignment.leaderId || teamIds.has(entity.id)));
+  const teams = entities.filter(entity => !entity.archivedAt && entity.type === 'team' && (entity.leaderId === assignment.leaderId || teamIds.has(entity.id)));
   const knownIds = new Set(teams.map(team => team.id));
   const unresolvedIds = [...teamIds].filter(id => !knownIds.has(id));
   const pendingTeams = value.newEntities.filter(entity => entity.type === 'team');
   const objectNames = [...new Set([...assignment.teams, ...value.teams,
-    ...entities.filter(entity => ['product', 'service', 'it_service', 'scope'].includes(entity.type) && (!entity.leaderId || entity.leaderId === assignment.leaderId)).map(entity => entity.name)])];
+    ...entities.filter(entity => !entity.archivedAt && ['product', 'service', 'it_service', 'scope'].includes(entity.type) && (!entity.leaderId || entity.leaderId === assignment.leaderId)).map(entity => entity.name)])];
   const pendingObjects = value.newEntities.filter(entity => entity.type !== 'team');
   const visibleTeams = teams.filter(team => matches(team.name, teamQuery));
   const visiblePendingTeams = pendingTeams.filter(team => matches(team.name, teamQuery));

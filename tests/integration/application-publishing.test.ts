@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import type { CatalogSnapshot, CuratorSession, Draft } from '../../src/domain/contracts';
 import { createContext, type ApplicationContext } from '../../src/server/workspace/context';
 import { checkRemoteUpdates, publishChanges, syncPublished } from '../../src/features/publishing/application-publishing';
+import { previewGoalSetup, commitGoalSetup } from '../../src/features/goal-setup/goal-setup-service';
 
 const execute = promisify(execFile), roots: string[] = [], contexts: ApplicationContext[] = [];
 const encode = (value: unknown) => JSON.stringify(value, null, 2) + '\n';
@@ -56,6 +57,30 @@ afterEach(async () => {
 });
 
 describe('application publishing bridge', () => {
+  it('requires a new goal dependency and releases all connected setup objects to another client', async () => {
+    const f = await fixture();
+    const preview = await previewGoalSetup(f.writer, curator, { requestId: 'connected-setup',
+      goal: { title: 'Самостоятельная цель', category: 'process', officialTarget: 5, internalTarget: null, unit: 'шт', direction: 'increase' },
+      measurement: { kind: 'scalar', aggregation: 'single', metrics: [{ id: 'value', name: 'Количество', unit: 'шт', target: 5, direction: 'increase' }] },
+      assignments: [{ leaderId: 'demo-leader', participantIds: ['demo-leader'] }], source: { kind: 'manual', name: 'Новый источник' }, sample: { period: '2026-10-25', rows: [] } });
+    const saved = await commitGoalSetup(f.writer, curator, preview.previewId);
+    const drafts = await f.writer.catalogs.listDrafts(curator);
+    const assignment = drafts.find(item => item.change.kind === 'assignment')!;
+    const partial = await f.writer.operations.start('publish');
+    await publishChanges(f.writer, curator, partial.id, [assignment.id]);
+    expect((await f.writer.operations.get(partial.id)).status).toBe('failed');
+    expect((await f.writer.catalogs.listDrafts(curator))).toHaveLength(3);
+    const operation = await f.writer.operations.start('publish'); await publishChanges(f.writer, curator, operation.id, saved.draftIds);
+    expect((await f.writer.operations.get(operation.id)).status).toBe('completed');
+    await git(f.seed, 'fetch', 'origin');
+    await git(f.seed, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@localhost', 'merge', '--no-ff', 'origin/release/current', '-m', 'Release connected goal');
+    await git(f.seed, 'push', 'origin', 'main'); await syncPublished(f.reader);
+    const received = await f.reader.catalogs.read();
+    expect(received.goals.find(goal => goal.id === saved.goalId)?.measurement?.kind).toBe('scalar');
+    expect(received.assignments.find(item => item.goalId === saved.goalId)?.participantIds).toEqual(['demo-leader']);
+    expect(received.sources.some(source => source.goalIds.includes(saved.goalId))).toBe(true);
+    expect(f.reader.db.list('snapshots')).toEqual([]);
+  }, 90000);
   it('releases a new work direction, a default direction edit and its goal link to another client and a fresh local checkout', async () => {
     const f = await fixture();
     // A previous release may already contain standalone goals without the new

@@ -28,7 +28,7 @@ async function setup() {
   const read = async () => (await app.inject({ url: '/api/state', headers })).json<WorkspaceState>();
   const post = (url: string, payload: object) => app.inject({ method: 'POST', url, headers, payload });
   const fact = (leaderId: string, value: number, period = new Date().toISOString().slice(0, 10)) => post('/api/manual', { goalId: 'g1', leaderId, value, period });
-  return { app, read, post, fact };
+  return { app, headers, read, post, fact };
 }
 it('preserves facts for other leaders and requires a new confirmation after regression', async () => {
   const { read, post, fact } = await setup();
@@ -38,6 +38,8 @@ it('preserves facts for other leaders and requires a new confirmation after regr
   expect(await evaluation('l1')).toMatchObject({ actual: 90, official: 'met', internal: 'not_met', validation: 'pending' });
   expect(await evaluation('l2')).toMatchObject({ actual: 70, official: 'not_met' });
   expect((await post('/api/confirm', { goalId: 'g1', leaderId: 'l1', comment: '  ' })).statusCode).toBe(400);
+  expect((await post('/api/confirm', { goalId: 'g1', leaderId: 'l1', baseFingerprint: 'outdated', comment: 'Проверено по исходной выгрузке' })).statusCode).toBe(409);
+  expect((await post('/api/evidence', { name: 'empty.txt', base64: '' })).statusCode).toBe(400);
   expect((await post('/api/confirm', { goalId: 'g1', leaderId: 'l1', comment: 'Проверен исходный расчёт и состав участников' })).statusCode).toBe(200);
   expect((await evaluation('l1')).validation).toBe('confirmed');
   await fact('l1', 90);
@@ -59,14 +61,18 @@ it('rejects unknown leader and prevents confirming an old period as current', as
   expect((await read()).evaluations.find(e => e.leaderId === 'l1')!.qualityFlags).toContain('stale');
   expect((await post('/api/confirm', { goalId: 'g1', leaderId: 'l1', comment: 'Проверено по старому файлу' })).statusCode).toBe(409);
 });
-it('lets a curator add a product leader with a product relationship and clear it later', async () => {
-  const { post, read } = await setup();
+it('keeps product links intact on a rejected legacy edit and archives through the versioned knowledge route', async () => {
+  const { app, headers, post, read } = await setup();
   const product = await post('/api/entities', { name: 'Synthetic product', type: 'product', leaderId: 'l1' });
   expect(product.statusCode).toBe(200);
   const productId = product.json().draft.change.id;
   const leader = await post('/api/entities', { name: 'Synthetic product owner', type: 'product_leader', productId, leaderId: 'l1' });
   expect(leader.statusCode).toBe(200); const id = leader.json().draft.change.id;
   expect((await read()).catalog.entities.find(e => e.id === id)).toMatchObject({ type: 'product_leader', productId, leaderId: 'l1' });
-  expect((await post(`/api/entities/${id}`, { name: 'Synthetic product owner', type: 'product_leader', productId: null, leaderId: null })).statusCode).toBe(200);
-  expect((await read()).catalog.entities.find(e => e.id === id)).toMatchObject({ productId: null, leaderId: null });
+  // Rich knowledge updates now require its CAS-aware route, including legacy records.
+  expect((await post(`/api/entities/${id}`, { name: 'Synthetic product owner', type: 'product_leader', productId: null, leaderId: null })).statusCode).toBe(400);
+  expect((await read()).catalog.entities.find(e => e.id === id)).toMatchObject({ productId, leaderId: 'l1' });
+  const record = (await app.inject({ url: '/api/knowledge', headers })).json().records.find((item: { id: string }) => item.id === id);
+  expect((await post(`/api/knowledge/${id}/archive`, { baseRevision: record.revision, archived: true })).statusCode).toBe(200);
+  expect((await read()).catalog.entities.find(e => e.id === id)).toMatchObject({ productId, leaderId: 'l1', archivedAt: expect.any(String) });
 });

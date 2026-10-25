@@ -2,6 +2,10 @@ import { z } from 'zod';
 import type { Attestation, CatalogSnapshot, DomainChangeEvent, LocalSnapshot, SnapshotEvaluationBasis } from '../../domain/contracts';
 import { getDirections } from '../catalog/directions';
 import { executionPlanSchema } from '../planning/plan-schema';
+import { measurementSchema } from '../evaluation/measurement-schema';
+import { knowledgeStoredFields } from '../knowledge/knowledge-schema';
+import { decisionEntitySchema } from '../director/decision-schema';
+import { reportProfileSchema } from '../reporting/report-profile-schema';
 
 const id = z.string().min(1).max(500);
 const text = z.string();
@@ -16,23 +20,29 @@ const goal = z.object({ id, category: z.enum(['process', 'data', 'architecture',
   status: text, summary: text, actions: z.array(text), scopeType: text, links: z.array(link), ownerId: nullableId, curatorId: nullableId,
   officialTarget: nullableNumber, internalTarget: nullableNumber, unit: text, direction: z.enum(['increase', 'decrease']), baseline: nullableNumber,
   weight: number.nonnegative().nullable(), priority: z.enum(['high', 'normal', 'low']).nullable(), dueDate: z.iso.date().nullable(), revision: id,
-  requiredMetricIds: ids.max(100).optional(), workDirectionId: nullableId.optional(), plan: executionPlanSchema.optional() }).passthrough();
+  requiredMetricIds: ids.max(100).optional(), workDirectionId: nullableId.optional(), plan: executionPlanSchema.optional(), measurement: measurementSchema.optional() }).passthrough();
 const assignment = z.object({ id, goalId: id, leaderId: id, teams: z.array(text), agents: z.array(text).optional(), participantIds: ids.optional(),
   participantType: text.optional(), active: z.boolean().optional(), allProducts: z.boolean().optional(), target: text.optional(),
   summary: text.optional(), actions: z.array(text).optional(), metric: text.optional(), plan: executionPlanSchema.optional() }).passthrough();
 const source = z.object({ id, name: id, kind: z.enum(['dashboard', 'attachment', 'manual', 'file', 'demo']), url: url.nullable(), accessUrl: url.nullable(),
   goalIds: ids, freshnessHours: number.positive(), mode: z.enum(['stub', 'local']), lastAttemptAt: date.nullable().optional(),
-  importProfile: z.object({ parser: z.literal('maturity-xlsx-v1'), teamMapping: z.record(id, id), metricMapping: z.record(id, id) }).optional() }).passthrough();
+  importProfile: z.union([z.object({ parser: z.literal('maturity-xlsx-v1'), teamMapping: z.record(id, id), metricMapping: z.record(id, id) }),
+    z.object({ parser: z.literal('tabular-v1'), columns: z.object({ period: id.optional(), leader: id.optional(), participant: id.optional(), metric: id.optional(), value: id,
+      target: id.optional(), state: id.optional(), reason: id.optional(), sourceUpdatedAt: id.optional() }).strict(), leaderMapping: z.record(id, id), participantMapping: z.record(id, id),
+      metricMapping: z.record(id, id), defaults: z.object({ period: z.iso.date(), leaderId: nullableId.optional(), participantId: id.optional(), metricId: id.optional() }).strict() }).strict()]).optional() }).passthrough();
 const catalogSchema = z.object({ schemaVersion: z.literal(1), id, name: id, classification: z.enum(['demo', 'corporate']), importedAt: date,
   goals: z.array(goal), leaders: z.array(z.object({ id, name: id, teams: z.array(text), clusterName: z.string().max(500).nullable().optional() }).passthrough()), assignments: z.array(assignment), sources: z.array(source),
   comments: z.array(z.object({ id, goalId: id, leaderId: nullableId, text, author: id, createdAt: date, validUntil: date.nullable(), revision: id }).passthrough()),
-  entities: z.array(z.object({ id, type: id, name: id, leaderId: id.nullable().optional(), productId: id.nullable().optional(), aliases: z.array(text).optional() }).passthrough()),
+  entities: z.array(z.object({ id, type: id, name: id, leaderId: id.nullable().optional(), productId: id.nullable().optional(), aliases: z.array(text).optional(), ...knowledgeStoredFields }).passthrough()),
   directions: z.array(z.object({ id, name: id, description: text, color: z.string().regex(/^#[0-9a-fA-F]{6}$/), order: number.nonnegative() }).passthrough()).optional() }).passthrough();
 const observation = z.object({ id, goalId: id, leaderId: nullableId, participantId: id, participantName: text, metricId: id, metricName: text,
   value: nullableNumber, target: nullableNumber, unit: text, state: z.enum(['numeric', 'exception', 'no_events', 'missing']), reason: text.nullable(),
   period: id, sourceId: id, sourceUpdatedAt: date.nullable(), downloadedAt: date }).passthrough();
-const basisSchema = z.object({ methodVersion: z.literal('participant-all-applicable-metrics-v1'),
-  goal: goal.strip().extend({ links: z.array(link.strip()) }), assignments: z.array(assignment.strip()) }).strip();
+const basisSchema = z.object({ methodVersion: z.enum(['participant-all-applicable-metrics-v1', 'explicit-measurement-v1']),
+  goal: goal.strip().extend({ links: z.array(link.strip()) }), assignments: z.array(assignment.strip()) }).strip().superRefine((basis, ctx) => {
+    if ((basis.methodVersion === 'explicit-measurement-v1') !== !!basis.goal.measurement)
+      ctx.addIssue({ code: 'custom', message: 'Версия исторической методики не соответствует настройке цели' });
+  });
 const snapshotSchema = z.object({ id, classification: z.enum(['demo', 'corporate']), sourceId: id, period: id, observations: z.array(observation),
   collectedAt: date, sourceUpdatedAt: date.nullable(), origin: z.enum(['file', 'manual', 'demo', 'dashboard']), dataHash: id,
   status: z.enum(['personal', 'validated']), curatorId: nullableId, curatorName: text.nullable(), validatedAt: date.nullable(), limitations: z.array(text), evidenceIds: ids,
@@ -55,15 +65,30 @@ export function validateCatalog(value: unknown): CatalogSnapshot {
   const goals = new Set(catalog.goals.map(item => item.id)), leaders = new Set(catalog.leaders.map(item => item.id));
   const directions = getDirections(catalog); unique(directions, 'directions');
   for (const goal of catalog.goals) requireReference(!goal.workDirectionId || directions.some(direction => direction.id === goal.workDirectionId), `цель ${goal.id} ссылается на неизвестное направление`);
+  for (const goal of catalog.goals) if (goal.measurement && goal.scopeType === 'global') {
+    requireReference(goal.measurement.kind !== 'participant_share', `общая цель ${goal.id}: доля команд требует персональных назначений`);
+    requireReference(!catalog.assignments.some(item => item.goalId === goal.id && item.active !== false), `общая цель ${goal.id} смешана с персональными назначениями`);
+  }
   for (const item of catalog.assignments) {
     requireReference(goals.has(item.goalId), `назначение ${item.id} ссылается на неизвестную цель`);
     requireReference(leaders.has(item.leaderId), `назначение ${item.id} ссылается на неизвестного лидера`);
+    if (catalog.goals.find(goal => goal.id === item.goalId)?.measurement && item.active !== false && item.participantIds) {
+      requireReference(new Set(item.participantIds).size === item.participantIds.length, `назначение ${item.id}: повторяются расчётные участники`);
+      requireReference(item.participantIds.every(participantId => participantId === item.leaderId || catalog.entities.some(entity => entity.id === participantId
+        && (!entity.leaderId || entity.leaderId === item.leaderId))), `назначение ${item.id}: сначала включите в публикацию справочные объекты выбранного состава`);
+    }
   }
   for (const item of catalog.sources) requireReference(item.goalIds.every(goalId => goals.has(goalId)), `источник ${item.id} ссылается на неизвестную цель`);
   for (const item of catalog.comments) {
     requireReference(goals.has(item.goalId), `комментарий ${item.id} ссылается на неизвестную цель`);
     requireReference(item.leaderId === null || leaders.has(item.leaderId), `комментарий ${item.id} ссылается на неизвестного лидера`);
   }
+  for (const item of catalog.entities) {
+    if (item.type === 'decision') { const decision = parse<import('../director/decision-schema').DecisionEntity>(decisionEntitySchema, item, 'Некорректное решение'); requireReference(!decision.goalId || goals.has(decision.goalId), 'Решение ссылается на неизвестную цель'); }
+    if (item.type === 'report_profile') { const profile = parse<import('../reporting/report-profile-schema').ReportProfile>(reportProfileSchema, item, 'Некорректный профиль отчёта'); requireReference(profile.goalIds.every(id => goals.has(id)) && profile.leaderIds.every(id => leaders.has(id)), 'Профиль отчёта содержит неизвестную цель или ИТ-лидера'); }
+    requireReference(!item.goalIds || item.goalIds.every(id => goals.has(id)), 'Статья или справочник ссылается на неизвестную цель');
+  }
+  for (const assignment of catalog.assignments.filter(item => item.active !== false)) requireReference(!assignment.participantIds?.some(id => catalog.entities.find(entity => entity.id === id)?.archivedAt), 'В действующем назначении выбран архивный участник');
   for (const item of catalog.entities) requireReference(!item.leaderId || leaders.has(item.leaderId), `справочник ${item.id} ссылается на неизвестного лидера`);
   for (const item of catalog.entities) if (item.type === 'product_leader' && item.productId)
     requireReference(catalog.entities.some(product => product.id === item.productId && product.type === 'product'), `связь ${item.id} ссылается на неизвестный продукт`);
