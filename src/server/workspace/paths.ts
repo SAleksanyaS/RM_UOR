@@ -1,4 +1,4 @@
-import { access, mkdir, realpath } from 'node:fs/promises';
+import { access, lstat, mkdir, realpath } from 'node:fs/promises';
 import path from 'node:path';
 
 function contained(root: string, candidate: string) {
@@ -19,6 +19,10 @@ export async function resolveWorkspace(input: { projectRoot: string; allowedRoot
   const root = await realpath(input.projectRoot);
   const allowed = await Promise.all(input.allowedRoots.map(p => realpath(p)));
   if (!allowed.some(p => contained(p, root))) throw new Error('Запуск разрешён только из настроенной рабочей папки');
+  for(const relative of ['.runtime','.runtime/local-config']){
+    try{const entry=await lstat(path.join(root,relative));if(entry.isSymbolicLink()||!entry.isDirectory())throw new Error('Приватная папка не должна быть ссылкой или обычным файлом');}
+    catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;}
+  }
   const runtimeRoot = await safeArtifactPath(root, '.runtime');
   await mkdir(runtimeRoot, { recursive: true });
   return { projectRoot: root, runtimeRoot, databasePath: path.join(runtimeRoot, 'app.db') };

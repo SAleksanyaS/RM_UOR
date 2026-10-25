@@ -35,6 +35,7 @@ import { registerReleaseRoutes } from '../features/release/release-routes';
 import { registerEvidenceLibraryRoutes } from '../features/evidence/evidence-routes';
 import { registerCodeUpdateRoutes } from '../features/system/code-update';
 import { requiresCuratorForApi } from '../features/identity/permissions';
+import {registerWeeklyReportRoutes} from '../features/weekly-report/routes';
 
 export async function createApp(options: AppOptions) {
   const context = await createContext(options);
@@ -81,6 +82,7 @@ export async function createApp(options: AppOptions) {
   registerTabularImportRoutes(app, context);
   registerReportRoutes(app, context);
   registerDirectorRoutes(app, context);
+  registerWeeklyReportRoutes(app, context);
   registerKnowledgeRoutes(app, context);
   registerConnectorRoutes(app, context);
   registerExecutionRoutes(app, context);
@@ -207,7 +209,7 @@ export async function createApp(options: AppOptions) {
     if (input.productId && !catalog.entities.some(e => e.id === input.productId && e.type === 'product')) throw new ActionError('Продукт не найден в базе знаний');
     const id = (request.params as { id?: string } | undefined)?.id ?? randomUUID(); const original = catalog.entities.find(e => e.id === id);
     if (original && isKnowledgeType(original.type)) throw new ActionError('Изменяйте запись в разделе «База знаний»: он проверяет версию, связи и сохраняет прежние имена.', 400);
-    if (['decision', 'report_profile', 'article', 'work_package', 'execution_config', 'execution_journal', 'report_template'].includes(input.type) || (original && (['decision', 'report_profile', 'article'].includes(original.type) || original.revision || original.body || original.archivedAt)) || ['description', 'body', 'links', 'goalIds', 'revision', 'archivedAt'].some(field => Object.hasOwn(request.body as object, field))) throw new ActionError('Используйте соответствующий раздел базы знаний, решений или профилей отчёта. Черновик с проверкой версии защищает изменения коллег.', 400);
+    if (['decision', 'report_profile', 'article', 'work_package', 'execution_config', 'execution_journal', 'weekly_brief', 'report_template'].includes(input.type) || (original && (['decision', 'report_profile', 'article'].includes(original.type) || original.revision || original.body || original.archivedAt)) || ['description', 'body', 'links', 'goalIds', 'revision', 'archivedAt'].some(field => Object.hasOwn(request.body as object, field))) throw new ActionError('Используйте соответствующий раздел базы знаний, решений или профилей отчёта. Черновик с проверкой версии защищает изменения коллег.', 400);
     const draft = await context.catalogs.saveDraft(session, { kind: 'entity', id, baseRevision: null, patch: { id, ...input } });
     context.catalogs.recordChange(session, original ? 'entity_updated' : 'entity_added', id, input.name, { ...original }, input); return { draft };
   };

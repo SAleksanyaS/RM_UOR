@@ -1,6 +1,6 @@
 {
   "name": "uor-dit-operations",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -15,7 +15,11 @@
     "build": "tsc --noEmit && vite build",
     "setup:curators": "node scripts/setup-curators.mjs",
     "import:map": "tsx scripts/import-local.ts",
-    "setup:curators:batch": "tsx scripts/provision-curators.ts"
+    "setup:curators:batch": "tsx scripts/provision-curators.ts",
+    "setup:curators:file": "tsx scripts/provision-curators-file.ts",
+    "setup:workspace": "node scripts/setup-workspace.mjs",
+    "export:clean": "node scripts/export-clean.mjs",
+    "history:archive": "tsx scripts/archive-local-history.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.2",

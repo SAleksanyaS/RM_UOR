@@ -8,6 +8,7 @@ import { decisionEntitySchema } from '../director/decision-schema';
 import { reportProfileSchema } from '../reporting/report-profile-schema';
 import { collectionSchema } from '../connectors/contracts';
 import { validateExecutionEntities } from '../execution/execution-schema';
+import {validateWeeklyBriefEntities} from '../weekly-report/contracts';
 
 const id = z.string().min(1).max(500);
 const text = z.string();
@@ -96,6 +97,7 @@ export function validateCatalog(value: unknown): CatalogSnapshot {
   for (const item of catalog.entities) if (item.type === 'product_leader' && item.productId)
     requireReference(catalog.entities.some(product => product.id === item.productId && product.type === 'product'), `связь ${item.id} ссылается на неизвестный продукт`);
   validateExecutionEntities(catalog);
+  validateWeeklyBriefEntities(catalog);
   return catalog;
 }
 

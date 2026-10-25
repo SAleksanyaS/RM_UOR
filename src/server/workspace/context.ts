@@ -48,6 +48,7 @@ export class ApplicationContext {
   readonly csrfToken = randomUUID();
   readonly catalogs: CatalogStore; readonly operations: OperationStore; readonly roles: RoleService;
   readonly cancelled = new Map<string, AbortController>();
+  archivedChangeIds():Set<string>{return new Set(this.db.get<{changeIds:string[]}>('settings','historyArchiveBaseline')?.changeIds??[]);}
   updates: UpdateInfo = { status: 'unavailable', checkedAt: null, currentCommit: null, remoteCommit: null, message: 'Проверка обновлений ещё не выполнена', changes: [] };
   constructor(readonly paths: WorkspacePaths, readonly db: LocalDatabase, readonly config: SiteConfig, registry: CuratorRecord[]) {
     this.installationId=db.get<string>('settings','installationId')??randomUUID();db.set('settings','installationId',this.installationId);
@@ -140,13 +141,14 @@ export class ApplicationContext {
   async initialize(options: AppOptions) {
     await recoverWorkspaceMaintenance(this.paths.runtimeRoot, this.db);
     const imported = options.initialCatalog ?? await readJson<CatalogSnapshot | null>(path.join(this.paths.runtimeRoot, 'imports/catalog.json'), null);
-    let initial = imported ?? await readJson<CatalogSnapshot | null>(path.join(this.paths.projectRoot, 'catalog/catalog.json'), null)
+    const projectCatalog = imported ? null : await readJson<CatalogSnapshot | null>(path.join(this.paths.projectRoot, 'catalog/catalog.json'), null);
+    let initial = imported ?? projectCatalog
       ?? await readJson<CatalogSnapshot | null>(path.join(this.paths.projectRoot, 'catalog/demo.json'), null);
     if (!initial) throw new Error('Нет каталога целей. Импортируйте карту или добавьте демонстрационный каталог.');
     const localRelease = !imported || this.config.publicationMode === 'internal' ? await readLocalRelease(this.paths.projectRoot, initial) : null;
     if (localRelease) initial = localRelease.catalog;
     initial = validateCatalog(initial);
-    const importedSnapshots = (imported ? await readJson<LocalSnapshot[]>(path.join(this.paths.runtimeRoot, 'imports/snapshots.json'), []) : await readJson<LocalSnapshot[]>(path.join(this.paths.projectRoot, 'catalog/demo-snapshots.json'), []))
+    const importedSnapshots = (imported ? await readJson<LocalSnapshot[]>(path.join(this.paths.runtimeRoot, 'imports/snapshots.json'), []) : projectCatalog ? [] : await readJson<LocalSnapshot[]>(path.join(this.paths.projectRoot, 'catalog/demo-snapshots.json'), []))
       .map(snapshot => validateSnapshot(snapshot, initial!));
     const importHash = createHash('sha256').update(JSON.stringify(initial)).digest('hex');
     const sharedEvidence:EvidenceRecord[]=[];
@@ -161,7 +163,8 @@ export class ApplicationContext {
       for(const checked of localRelease?.templates??[])storeValidatedTemplateBundle(this,checked);
       for(const evidence of sharedEvidence)this.db.set('evidence',evidence.id,evidence);
       for (const attestation of localRelease?.attestations ?? []) if (!this.db.get('attestations', attestation.id)) this.db.set('attestations', attestation.id, attestation);
-      for (const change of localRelease?.changes ?? []) {if (!this.db.get('changes', change.id)) this.db.set('changes', change.id, change);this.db.set('shared-changes',change.id,true);}
+      const archivedChanges=this.archivedChangeIds();
+      for (const change of localRelease?.changes ?? []) {if(archivedChanges.has(change.id))continue;if (!this.db.get('changes', change.id)) this.db.set('changes', change.id, change);this.db.set('shared-changes',change.id,true);}
     });
     await this.operations.recoverInterrupted();
   }

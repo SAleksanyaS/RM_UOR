@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { APP_VERSION, RELEASE_FORMAT_VERSION } from '../../domain/app-version';
-const features = ['measurement-v1','tabular-v1','leaders-v1','knowledge-v1','execution-v1','connectors-v1','report-templates-v1','historical-organization-v1','maturity-template-v1','execution-journal-v1'] as const;
+const features = ['measurement-v1','tabular-v1','leaders-v1','knowledge-v1','execution-v1','connectors-v1','report-templates-v1','historical-organization-v1','maturity-template-v1','execution-journal-v1','weekly-brief-v1'] as const;
 export const manifestSchema = z.object({ formatVersion: z.number().int().positive(), minimumApplicationVersion: z.string().regex(/^\d+\.\d+\.\d+$/),
   applicationVersion: z.string().regex(/^\d+\.\d+\.\d+$/), requiredFeatures: z.array(z.string().min(1).max(100)).max(100) }).strict();
 export function versionAtLeast(current: string, required: string) {

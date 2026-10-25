@@ -1,33 +1,62 @@
-# Project instructions
+# Инструкции проекта для агента
 
-Read `docs/AI_PDLC_HANDOFF.md`, the current master spec linked from README, `docs/remaining-work.md`, and the relevant implementation plan before changing product behavior. Latest direct human instructions take precedence. Keep the handoff and limits aligned with actual code and evidence.
+Приложение: «Рабочее место УОР ДИТ Operations». УОР — управление обеспечения развития. Текущая версия определяется src/domain/app-version.ts. Это локальное веб-приложение, не центральный многопользовательский сервер.
 
-The application is «Рабочее место УОР ДИТ Operations». UOR means «управление обеспечения развития».
+## Начните здесь
 
-Current product scope is operational stage v0.7 (25 October 2026). Prepared-data-only/stub-only descriptions in older plans are historical. Real HTTP/Confluence/Qlik/browser collection, declarative recording/replay, execution/retention, configurable OOXML reports, dated organization, evidence library, release conflict/composition UI, compatibility/migrations/restore and code-update launcher have implementations. Read `docs/first-stage-validation.md` for what was exercised locally and what still needs corporate acceptance. Stage numbers do not replace runtime format/version constants.
+1. README.md — маршруты пользователя, сопровождающего и разработчика.
+2. docs/agents/START_HERE.md — точные файлы, команды и порядок следующей задачи.
+3. docs/MASTER_SPEC.md — действующие требования и правила данных.
+4. docs/architecture/module-map.md — слои, контракты и точки расширения.
+5. docs/VALIDATION.md и docs/remaining-work.md — что проверено и что требует среды банка.
 
-Keep startup inside an approved workspace. Keep `.runtime`, personal imports/originals, browser profiles, cookies, credentials, private keys and plaintext curator codes out of publication. The public repository contains synthetic examples. Corporate catalogs, facts, evidence and template bytes are only eligible for explicitly selected publication in an approved internal repository; demo-only must reject them. Never infer corporate hostnames, credentials or successful authorization from configuration alone.
+Пользовательские инструкции имеют приоритет. Исторические планы и старые акты находятся отдельно, см. docs/ARCHIVE.md; они не являются текущим заданием. Не требуйте инструменты Codex у GigaCode: файловые пути и обычные npm/Git-команды достаточны.
 
-Preserve the domain rules: official/internal targets are separate; measured facts, declared work and curator confirmation are separate; zero applicable or incomplete data is unknown. Positive results await exact-fingerprint confirmation. Changed facts/rules/cohort do not inherit an old attestation, and measured regression removes prior success. Plans/milestone completion/retention comments never manufacture observations or confirm a goal.
+## Как устроено и как расширять
 
-Use the same declared expected participants/metrics in preview, current evaluation, import, history, forecasts and reports. Never derive completeness solely from received rows. Capture evaluationBasis at fact acceptance, including methodology, assignments and organization. Historical paths use the captured basis and pure evaluation, never mutating present-day state. Missing legacy names/owners/rules stay explicitly unknown. Do not retroactively capture current organization for old facts.
+- src/domain — предметные контракты; src/features/evaluation — вычисления. Чистый расчёт не получает UI/HTTP/БД/сеть.
+- Каждый src/features/<feature> содержит свои contracts/schema, service, routes, UI и focused tests. src/server/app.ts — сборка API; src/app/App.tsx — сборка страниц. Следуйте существующим feature slices, не помещайте всю логику в общие файлы.
+- Получение (connectors/adapters) отделено от разбора (importing/tabular-import), нормализации, принятия snapshots и оценки. Историческая основа фиксируется при принятии.
+- reporting строит неизменяемый снимок. report-templates предоставляет общий OOXML-движок; индивидуальные профили и специализированные пресеты отдельно. Не превращайте maturity-preset в общий обработчик любой цели.
+- publishing/release отделены от локальных черновиков. system/workspace-maintenance отвечают за обновление, копии и хранение, не за методику цели.
+- weekly-report хранит объявленный текст, не вычисленные факты. Его сущности проходят validateWeeklyBriefEntities; generic entity API не должен обходить owner/CAS.
 
-The director's default view is the active DIT portfolio with separate goal-level results, full named IT leaders and drill-down. Any goal remains selectable without facts. Never average unlike metrics or confuse goals with assignments. Global work does not silently become each leader's personal commitment. Official deadline, declared commitment, manual forecast and statistical extrapolation are distinct fields. Weighted portfolio output means the documented share of confirmed goals by supplied weights, with coverage shown separately.
+Добавляя функцию, определите владельца данных/namespace, схему, валидацию ссылки, политику роли, обработку отмены/ошибки, перенос/публикацию/хранение и проверку. Если возникает новый формат/adapter/preset, обновите явный контракт/dispatch и совместимость выпуска. Не обещайте runtime plugin registry, универсальные Excel или любые PowerPoint-объекты: см. действующие границы.
 
-Source adapters execute locally using private profiles, exact origin allowlists and verified TLS. Shared collection/scenario data contains safe declarations and environment-variable references, not secret values. Unsupported/stub/manual sources return explicit diagnostics; an old file must not count as a successful new collection. Parse and validate a complete download before atomic acceptance; cancellation/error preserves prior facts. Keep profile queue, finite limits, browser cleanup and installation/session privacy boundaries. Corporate browser/SSO/ГОСТ/smartcard/proxy/OS compatibility requires real environment acceptance.
+## Данные и достоверность
 
-Self-service previews never become facts. CSV/XLSX mappings and supported methodology are explicit; no arbitrary formula/macro execution or silent invention of identifiers. Preserve knowledge aliases used by legacy assignments when renaming/archiving.
+Официальный порог, внутренний ориентир, объявленный план и подтверждение УОР — разные вещи. Нет данных/пустая применимость не равны нулю или успеху. Ожидаемые участники и метрики задаются явно, а не выводятся только из пришедших строк. Нельзя усреднять несопоставимые показатели.
 
-Reports are immutable snapshots, including selected template bytes/profile. Uploaded PPTX is checked as an OOXML archive; supported text/table/repeat bindings are explicit and unknown binding kinds fail clearly. Preserve full selected goal/leader names and continuation. Static template text is not automatically updated. Do not claim universal PowerPoint/SmartArt/chart authoring or visual fit merely because ZIP/XML tests pass. Evidence downloads are verified attachments, with safe headers; a legacy shared relativePath is never trusted as a destination. Evidence id/hash identity must remain immutable behind old confirmations.
+Пробный расчёт не создаёт факт. Положительный результат ожидает отдельного подтверждения с комментарием/доказательством и точным fingerprint. Смена фактов/правил/состава и измеренный регресс снимают прежнее подтверждение. Текст недельной сводки и выполненная веха не подтверждают цель.
 
-Curators prepare `release/current`; the UOR lead publishes `main` using the approved merge workflow. Preview/commit must verify local draft signature and remote revision. Merge independent fields, require explicit choices for conflicts, preserve drafts on errors and reject stale CAS. Never use force-push/reset to discard another curator's work. Template/evidence bytes are included only when selected and authorized; prepare/validate/stage async assets before the shared synchronous DB transaction.
+Новые снимки сохраняют evaluationBasis: методику, назначения, организационные имена/правила. История и отчёты используют эту основу. Недостающую старую основу не восстанавливать по догадке. ApplicationContext.state() может обслуживать текущие подтверждения — не используйте его вместо чистого исторического расчёта.
 
-Maintenance must quiesce operations/requests. Validate backup hash, SQLite structure, actual storage marker and domain data before installation; keep the original database through migration and post-restore sanitation failure. Successful restore clears old sessions/session jobs and marks restored running operations interrupted. Retention counts verified recoverable copies, not manifests. Private SQLite backups are not a complete replacement for the bank's external-file/profile backup procedure.
+Снимок отчёта замораживает значения, источники, подтверждения, template bytes/profile и подробные данные пресета. Внешний OOXML проверяется как архив; произвольные OLE/код/макросы не исполняются. Файлы доказательств проверяются по hash/размеру; старый относительный путь не становится произвольным назначением записи.
 
-Application code update is separate from data publication. Use the configured origin/published branch, expected commits, clean tracked checkout, ff-only and trusted registry/TLS. Stage code and locked dependencies while the old app remains live. Quiesce before replacement; candidate bootstrap must block API writes until the parent durably commits then activates it. Never rewind accepted data after that commit. Recover interrupted own transactions; refuse human changes instead of discarding code. Read docs/guides/code-update.md and config/update-protocol.json.
+## Роли, доступ и локальные файлы
 
-The 0.3.0 local-completion scope includes the full dit-maturity-v1 template preset, workspace-maintenance logical ZIP/restore/quarantine, segmented execution journals and compact/expanded navigation. Keep personal template bytes/output private. Portable bundles exclude credentials, sessions, browser profiles and certificates; validate paths, hashes, record references and scope before installation. Cleanup must protect referenced files and active update transactions, and leave recoverable quarantine. Execution history hydrates immutable linked segments; do not reintroduce a lifetime 300-event limit or permit generic editing of execution_journal entities. Read docs/verification/local-completion-evidence.md for actual evidence and limitations.
+Общая политика src/features/identity/permissions.ts используется навигацией и сервером. Новая мутация по умолчанию требует curator. Скрытие кнопки не заменяет HTTP-авторизацию/CSRF. Читатель не получает приватные конфигурации источников, чужие черновики/операции или административные копии. Роль приложения не выдаёт права Git, Qlik или Confluence.
 
-Git hosting, approved paths, source addresses, browser/auth settings and organizational meanings belong in configuration/adapters, not business calculations. Future effective-date activation, arbitrary Excel understanding, all corporate OS/browser variants, large Git/artifact retention and banking impact formulas remain explicit limitations until implemented/accepted.
+Запуск только из настроенной разрешённой папки. .runtime, config/*.local.json, .env, исходные корпоративные HTML/Excel/PPTX, пароли, hashes/salts, cookies, профили браузера, ключи и сертификаты не публикуются. Чистый кодовый ZIP всегда без них. Опциональный архив локальных аккаунтов — отдельный приватный файл. Публичные примеры содержат только заполнители и синтетические данные.
 
-Use relevant focused verification, then the integrated checks for the actual combined revision. Report only commands and environments actually exercised; old passing counts are historical. Verify UI in a real browser when available and record unperformed visual/OS/corporate checks honestly. Do not create extra human approval steps when the existing request already authorizes the action. The product's curator release workflow does not require a PR for every documentation task in the demo repository.
+HTTP/WS/браузер работают с точными allowedOrigins, личными профилями и проверкой TLS. Не угадывайте адреса банка, сертификатные схемы или успешный вход. Отказ доступа/формата/сети сохраняет прежние факты и даёт явную диагностику. Не отключайте TLS-проверку.
+
+## Совместная работа и сохранность
+
+Обычная публикация: собственный draft → preview → release/current → выпуск руководителем main → обновление читателя. CAS проверяется перед записью; независимые поля объединяются, конфликтующие значения выбираются явно. Ошибка сохраняет черновики. Не применять reset/force-push к чужой работе. Однократная чистая исходная история0.4.0 явно запрошена владельцем; повторять её без нового прямого поручения нельзя.
+
+Изменения содержимого не исчезают из аудита: history:archive сначала делает проверенную независимую копию и архив, затем очищает только видимые журналы и запоминает старые ID. Факты/цели/учётки остаются. Для пустой установки используют setup:workspace в новой папке, а не удаление живой .runtime.
+
+Обслуживание согласует активные запросы и фоновые задачи. Восстановление проверяет hash/schema/данные и сохраняет предыдущее состояние. Durable journal восстанавливается до чтения imports JSON. Если безопасный rollback не удался, maintenanceRecoveryRequired держит запрет записи до успешного восстановления. Карантин обратим, связанные файлы защищены; окончательное удаление явно после срока.
+
+Execution journals — immutable linked execution_journal segments, а не lifetime300event cap. Отчёты и API читают всю цепочку. Сегменты и head сохраняются одной SQLite-транзакцией; выпуск без обязательных сегментов запрещён.
+
+Код программы обновляется отдельно от данных: проверенный origin/commit, подготовка зависимостей при работающей старой версии, quiesce, ff-only, закрытый bootstrap, durable commitpoint и IPC activation. После commitpoint принятые новые данные не откатываются. Человеческие изменения блокируют восстановление вместо стирания.
+
+## Проверка и завершение
+
+Используйте npm test -- <затронутые файлы> и npm run build. Для значительной объединённой версии — один общий прогон после стабилизации; после исправлений повторяйте затронутые проверки. Не выдавайте старые счётчики за новый результат.
+
+Покажите действующий UI в браузере, если меняли пользовательский путь. Новая установка должна быть действительно пустой; пользовательская существующая база сохранена. Проверяйте source/data separation, reader/curator, CAS, неполноту и аварийный путь.
+
+Локальные Windows/Node/стенды не подтверждают банковский SSO/ГОСТ/smartcard/прокси, СберОС/macOS или Office. Открытые границы перечисляются честно. После изменения поведения синхронизируйте текущие мастерспеку/гайд/карту модуля. По завершении сообщайте результат, проверку и материальные ограничения.

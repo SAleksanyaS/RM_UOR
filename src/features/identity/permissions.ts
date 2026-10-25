@@ -1,6 +1,6 @@
 import type { Session } from '../../domain/contracts';
 export type WorkspaceRole=Session['role'];
-const readerPages=new Set(['overview','director','reports','plans','execution','leaders','directions','matrix','knowledge','evidence','changes','guide','system']);
+const readerPages=new Set(['overview','director','weekly','reports','plans','execution','leaders','directions','matrix','knowledge','evidence','changes','guide','system']);
 const curatorPages=new Set([...readerPages,'setup','catalog','sources','connectors','inbox','release']);
 /** One policy for navigation and page guards. Server authorization is enforced separately for every API request. */
 export function canManageWorkspace(role:WorkspaceRole):boolean{return role==='curator';}
