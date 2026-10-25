@@ -22,8 +22,11 @@ async function repository() {
   await put(root, 'README.md', '# Synthetic current product');
   await put(root, 'GIGACODE.md', '# Current corporate agent front door');
   await put(root, '.gitignore', '.runtime/\nnode_modules/\n');
+  await put(root, '.nvmrc', '22.16.0\n');
+  await put(root, '.node-version', '22.16.0\n');
   await put(root, 'src/main.ts', 'export const synthetic = 1;');
   await put(root, 'docs/MASTER_SPEC.md', '# Current specification');
+  await put(root, 'docs/VALIDATION.md', '# Current runtime validation');
   await put(root, 'docs/ARCHIVE.md', '# Historical archive reference only');
   await put(root, 'docs/agents/START_HERE.md', '# Current agent instructions');
   await put(root, 'config/site.example.json', '{"publicationMode":"demo-only"}');
@@ -47,7 +50,9 @@ describe('clean distribution from the accepted code revision', () => {
     const result = await exportCleanDistribution({ projectRoot: root });
     const zip = await JSZip.loadAsync(await readFile(result.path));
     const names = Object.keys(zip.files).filter(name => !zip.files[name].dir);
-    expect(names).toEqual(expect.arrayContaining(['src/main.ts', 'package.json', 'catalog/catalog.json', 'GIGACODE.md', 'docs/MASTER_SPEC.md', 'docs/ARCHIVE.md', 'docs/agents/START_HERE.md', 'DISTRIBUTION_MANIFEST.json', 'TRANSFER_README.md']));
+    expect(names).toEqual(expect.arrayContaining(['src/main.ts', 'package.json', '.nvmrc', '.node-version', 'catalog/catalog.json', 'GIGACODE.md', 'docs/MASTER_SPEC.md', 'docs/VALIDATION.md', 'docs/ARCHIVE.md', 'docs/agents/START_HERE.md', 'DISTRIBUTION_MANIFEST.json', 'TRANSFER_README.md']));
+    expect((await zip.file('.nvmrc')!.async('text')).trim()).toBe('22.16.0');
+    expect((await zip.file('.node-version')!.async('text')).trim()).toBe('22.16.0');
     expect(names).not.toEqual(expect.arrayContaining(['src/untracked.ts']));
     expect(names.some(name => /(?:^|\/)(?:\.git|\.runtime|node_modules|\.env)(?:\/|$)|\.local\.|client\.key|superpowers|verification|private-input/.test(name))).toBe(false);
     expect(JSON.parse(await zip.file('catalog/catalog.json')!.async('text'))).toMatchObject({ id: 'uor-blank-v1', goals: [], leaders: [], assignments: [], sources: [], entities: [] });
