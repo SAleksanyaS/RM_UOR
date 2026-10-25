@@ -1,0 +1,36 @@
+{
+  "description": "Самостоятельный синтетический набор для расчёта, без корпоративных данных. Два участника, два измерителя; один участник выполняет все применимые требования.",
+  "classification": "demo",
+  "period": "2026-10",
+  "expectedParticipants": ["demo-team-a", "demo-team-b"],
+  "goal": {
+    "id": "demo-maturity",
+    "category": "process",
+    "title": "Зрелость демонстрационных команд",
+    "target": "100% команд",
+    "metric": "Доля команд, выполняющих применимые требования",
+    "status": "",
+    "summary": "Демонстрационные значения",
+    "actions": [],
+    "scopeType": "team",
+    "links": [],
+    "ownerId": null,
+    "curatorId": "demo-curator",
+    "officialTarget": 100,
+    "internalTarget": 100,
+    "unit": "%",
+    "direction": "increase",
+    "baseline": 0,
+    "weight": null,
+    "priority": null,
+    "dueDate": null,
+    "revision": "1"
+  },
+  "observations": [
+    {"id":"demo-a-quality","goalId":"demo-maturity","leaderId":"demo-leader","participantId":"demo-team-a","participantName":"Команда Альфа","metricId":"demo-quality","metricName":"Демонстрационное качество","value":90,"target":80,"unit":"%","state":"numeric","reason":null,"period":"2026-10","sourceId":"demo-file","sourceUpdatedAt":"2026-10-23T12:00:00Z","downloadedAt":"2026-10-24T10:00:00Z"},
+    {"id":"demo-a-automation","goalId":"demo-maturity","leaderId":"demo-leader","participantId":"demo-team-a","participantName":"Команда Альфа","metricId":"demo-automation","metricName":"Демонстрационная автоматизация","value":85,"target":80,"unit":"%","state":"numeric","reason":null,"period":"2026-10","sourceId":"demo-file","sourceUpdatedAt":"2026-10-23T12:00:00Z","downloadedAt":"2026-10-24T10:00:00Z"},
+    {"id":"demo-b-quality","goalId":"demo-maturity","leaderId":"demo-leader","participantId":"demo-team-b","participantName":"Команда Бета","metricId":"demo-quality","metricName":"Демонстрационное качество","value":60,"target":80,"unit":"%","state":"numeric","reason":null,"period":"2026-10","sourceId":"demo-file","sourceUpdatedAt":"2026-10-23T12:00:00Z","downloadedAt":"2026-10-24T10:00:00Z"},
+    {"id":"demo-b-automation","goalId":"demo-maturity","leaderId":"demo-leader","participantId":"demo-team-b","participantName":"Команда Бета","metricId":"demo-automation","metricName":"Демонстрационная автоматизация","value":null,"target":80,"unit":"%","state":"no_events","reason":"Нет исходных событий в демонстрационном периоде","period":"2026-10","sourceId":"demo-file","sourceUpdatedAt":"2026-10-23T12:00:00Z","downloadedAt":"2026-10-24T10:00:00Z"}
+  ],
+  "expected": {"actual":50,"eligibleMetrics":3,"metMetrics":2,"eligibleParticipants":2,"metParticipants":1,"excluded":1,"missing":0,"coverage":100,"official":"not_met"}
+}

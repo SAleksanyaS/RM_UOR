@@ -1,0 +1,52 @@
+{
+  "name": "uor-dit-operations",
+  "version": "0.4.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "^22.20.0 || >=24.0.0"
+  },
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:server": "tsx watch src/server/main.ts",
+    "dev:client": "vite --host 127.0.0.1",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "build": "tsc --noEmit && vite build",
+    "setup:curators": "node scripts/setup-curators.mjs",
+    "import:map": "tsx scripts/import-local.ts",
+    "setup:curators:batch": "tsx scripts/provision-curators.ts",
+    "setup:curators:file": "tsx scripts/provision-curators-file.ts",
+    "setup:workspace": "node scripts/setup-workspace.mjs",
+    "export:clean": "node scripts/export-clean.mjs",
+    "history:archive": "tsx scripts/archive-local-history.ts"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^11.0.2",
+    "@salutejs/sdds-themes": "0.85.0",
+    "@xmldom/xmldom": "0.9.12",
+    "exceljs": "4.4.0",
+    "fastify": "^5.6.1",
+    "jszip": "3.10.1",
+    "lucide-react": "^0.468.0",
+    "playwright": "1.64.1",
+    "pptxgenjs": "4.0.1",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "ws": "8.22.0",
+    "zod": "^4.1.11"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^16.3.0",
+    "@types/node": "^24.5.2",
+    "@types/react": "^19.1.16",
+    "@types/react-dom": "^19.1.9",
+    "@types/ws": "8.18.2",
+    "@vitejs/plugin-react": "^5.0.4",
+    "jsdom": "^26.1.0",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "vite": "^7.1.9",
+    "vitest": "^3.2.4"
+  }
+}
