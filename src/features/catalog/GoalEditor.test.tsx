@@ -15,16 +15,16 @@ const entities: KnowledgeEntity[] = [
   { id: 'foreign-team', name: 'Команда другого лидера', type: 'team', leaderId: 'l2' },
   { id: 'product-b', name: 'Продукт Б', type: 'product', leaderId: 'l1' }, { id: 'service', name: 'ИТ-услуга', type: 'it_service' },
 ];
-function setup(assignments: Assignment[] = [original], implementation?: (path: string, body?: unknown) => Promise<unknown>) {
+function setup(assignments: Assignment[] = [original], implementation?: (path: string, body?: unknown) => Promise<unknown>, review = false) {
   const mutate = vi.fn(implementation ?? (async (path: string, body?: unknown) => {
     if (!path.endsWith('/scope')) return {};
     const { baseAssignment, newEntities: _newEntities, ...patch } = body as AssignmentScopeInput;
     return { assignment: { ...baseAssignment, ...patch }, createdEntities: [] };
   }));
-  const onClose = vi.fn();
+  const onClose = vi.fn(), onPublish = vi.fn();
   const state = { catalog: { assignments, entities, leaders: [{ id: 'l1', name: 'ИТ-лидер' }, { id: 'l2', name: 'Другой лидер' }] } } as unknown as ClientState;
-  render(<WorkspaceContext value={{ state, mutate, notify: vi.fn(), refresh: vi.fn(async () => {}) }}><GoalEditor goal={goal} onClose={onClose}/></WorkspaceContext>);
-  return { mutate, onClose };
+  render(<WorkspaceContext value={{ state, mutate, notify: vi.fn(), refresh: vi.fn(async () => {}) }}><GoalEditor goal={goal} onClose={onClose} onPublish={review ? onPublish : undefined}/></WorkspaceContext>);
+  return { mutate, onClose, onPublish };
 }
 it('locks all goal fields while saving and restores them after an error', async () => {
   let rejectSave!: (error: Error) => void;
@@ -39,17 +39,18 @@ it('locks all goal fields while saving and restores them after an error', async 
   expect(screen.getByLabelText('Название').matches(':disabled')).toBe(false);
   expect(onClose).not.toHaveBeenCalled();
 });
-it('saves explicit team and object checkbox choices atomically before publishing', async () => {
-  const { mutate } = setup();
+it('saves explicit team and object choices before opening reviewed publication without sending directly', async () => {
+  const { mutate, onPublish } = setup([original], undefined, true);
   fireEvent.click(screen.getByLabelText('Применяется: ИТ-лидер'));
   fireEvent.click(screen.getByLabelText('Команда А'));
   fireEvent.click(screen.getByLabelText('Команда Б'));
   fireEvent.click(screen.getByLabelText('Продукт А'));
   fireEvent.click(screen.getByLabelText('Продукт Б'));
   fireEvent.change(screen.getByLabelText('Цель назначения: ИТ-лидер'), { target: { value: '90%' } });
-  fireEvent.click(screen.getByText('Сохранить и отправить'));
+  fireEvent.click(screen.getByText('Сохранить и проверить состав'));
   await waitFor(() => expect(mutate).toHaveBeenCalledWith('/api/assignments/a1/scope', expect.objectContaining({ baseAssignment: original, active: false, teams: ['Продукт Б'], participantIds: ['team-b'], target: '90%' })));
-  expect(mutate.mock.calls.map(call => call[0])).toEqual(['/api/goals/g1', '/api/assignments/a1/scope', '/api/publish']);
+  await waitFor(() => expect(onPublish).toHaveBeenCalledOnce());
+  expect(mutate.mock.calls.map(call => call[0])).toEqual(['/api/goals/g1', '/api/assignments/a1/scope']);
   expect(screen.queryByLabelText('Команда другого лидера')).toBeNull();
 });
 it('edits goal links and retains the known source kind', async () => {

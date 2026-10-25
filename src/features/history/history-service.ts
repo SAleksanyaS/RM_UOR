@@ -4,6 +4,7 @@ import type { ApplicationContext } from '../../server/workspace/context';
 import { ActionError } from '../identity/role-service';
 import { evaluateGoal } from '../evaluation/evaluate';
 import { selectFacts } from '../snapshots/select-facts';
+import { canReadSnapshot } from '../connectors/service';
 import type { GoalHistory, GoalHistoryPoint } from './history-contracts';
 import { measurementRules } from '../evaluation/measurement';
 
@@ -26,12 +27,12 @@ function difference(before: Observation[], after: Observation[]) {
 /** Read-only projection. In particular, never call context.state/evaluations on historical data. */
 export async function getGoalHistory(context: ApplicationContext, session: Session, goalId: string, leaderId: string | null): Promise<GoalHistory> {
   const catalog = await context.catalogs.readForSession(session);
-  const currentGoal = catalog.goals.find(goal => goal.id === goalId);
-  if (!currentGoal) throw new ActionError('Цель не найдена', 404);
-  if (leaderId && !catalog.leaders.some(leader => leader.id === leaderId)) throw new ActionError('ИТ-лидер не найден', 404);
-  const snapshots = context.db.list<LocalSnapshot>('snapshots').filter(snapshot => snapshot.classification === catalog.classification
-    && catalog.sources.some(source => source.id === snapshot.sourceId && source.goalIds.includes(goalId))
+  const snapshots = context.db.list<LocalSnapshot>('snapshots').filter(snapshot => canReadSnapshot(snapshot,session,context.installationId) && snapshot.classification === catalog.classification
+    && (snapshot.evaluationBasis?.goal.id === goalId || catalog.sources.some(source => source.id === snapshot.sourceId && source.goalIds.includes(goalId)))
     && snapshot.observations.some(row => row.goalId === goalId && (!leaderId || row.leaderId === leaderId)));
+  const currentGoal = catalog.goals.find(goal => goal.id === goalId) ?? snapshots.find(snapshot => snapshot.evaluationBasis?.goal.id === goalId)?.evaluationBasis?.goal;
+  if (!currentGoal) throw new ActionError('Цель не найдена', 404);
+  if (leaderId && !catalog.leaders.some(leader => leader.id === leaderId) && !snapshots.some(snapshot => snapshot.evaluationBasis?.assignments.some(a => a.leaderId === leaderId))) throw new ActionError('ИТ-лидер не найден', 404);
   const attestations = context.db.list<Attestation>('attestations');
   const points: GoalHistoryPoint[] = [];
   for (const period of [...new Set(snapshots.map(snapshot => snapshot.period))].sort()) {
@@ -52,6 +53,10 @@ export async function getGoalHistory(context: ApplicationContext, session: Sessi
     const goal = basis?.goal ?? currentGoal;
     const assignments = scopedAssignments(basis?.assignments ?? catalog.assignments);
     const compatibleRules = known && bases.every(item => hash(rulesOf(item!.goal, scopedAssignments(item!.assignments))) === hash(rulesOf(goal, assignments)));
+    const orgs = bases.map(item => item!.organization);
+    const orgKnown = known && orgs.every(org => !!org);
+    const orgCompatible = orgKnown && orgs.every(org => hash(org) === hash(orgs[0]));
+    const organization = orgCompatible ? orgs[0] : undefined;
     const activeLeaders = new Set(assignments.map(a => a.leaderId));
     const scopedRows = (items: LocalSnapshot[]) => items.flatMap(snapshot => snapshot.observations).filter(row => row.goalId === goalId
       && (leaderId ? row.leaderId === leaderId : row.leaderId === null || activeLeaders.has(row.leaderId)));
@@ -60,12 +65,13 @@ export async function getGoalHistory(context: ApplicationContext, session: Sessi
     const expectedParticipants = goal.measurement && goal.scopeType === 'global' && !assignments.length && !leaderId ? ['global-dit'] : (dimensional || !!goal.measurement) && assignments.length && assignments.every(a => a.participantIds !== undefined)
       ? [...new Set(assignments.flatMap(a => a.participantIds!))] : undefined;
     const input = { goal, observations, period, leaderId, expectedParticipants,
-      expectedMetricIds: dimensional ? goal.requiredMetricIds : undefined, scopeRevision: JSON.stringify(scopeOf(assignments)) };
+      expectedMetricIds: goal.measurement ? goal.measurement.metrics.map(metric => metric.id) : dimensional ? goal.requiredMetricIds : undefined, scopeRevision: JSON.stringify(scopeOf(assignments)) };
     let evaluation = evaluateGoal(input);
     const confirmations = attestations.filter(item => item.goalId === goalId && item.leaderId === leaderId
       && item.period === period && item.fingerprint === evaluation.fingerprint).sort((a, b) => b.confirmedAt.localeCompare(a.confirmedAt));
-    const active = confirmations.find(item => !item.invalidatedAt);
-    if (active) evaluation = evaluateGoal({ ...input, attestation: active });
+    const periodEnd = new Date(Math.min(Date.now(),Date.parse(`${period}T23:59:59.999Z`))).toISOString();
+    const active = confirmations.find(item => item.confirmedAt <= periodEnd && (!item.invalidatedAt || item.invalidatedAt > periodEnd));
+    if (active) evaluation = evaluateGoal({ ...input, attestation: { ...active, invalidatedAt:null } });
     if (!goal.measurement && dimensional && (expectedParticipants === undefined || !goal.requiredMetricIds?.length)) {
       evaluation.qualityFlags.push('unknown_coverage');
       if (evaluation.official === 'met') evaluation.official = 'unknown';
@@ -76,6 +82,8 @@ export async function getGoalHistory(context: ApplicationContext, session: Sessi
       evaluation.qualityFlags.push('historical_rules_conflict');
       evaluation.actual = null; evaluation.official = 'unknown'; evaluation.validation = 'not_required';
     }
+    if (!orgKnown) evaluation.qualityFlags.push('historical_organization_unknown');
+    else if (!orgCompatible) evaluation.qualityFlags.push('historical_organization_conflict');
     // Thresholds are part of comparability; values and acquisition timestamps are not.
     const thresholds = [...new Map(observations.map(row => [rowKey(row), [rowKey(row), row.target, row.unit]])).values()]
       .sort((a, b) => String(a[0]).localeCompare(String(b[0])));
@@ -93,6 +101,14 @@ export async function getGoalHistory(context: ApplicationContext, session: Sessi
       fingerprint: evaluation.fingerprint, cohortKey, comparableToPrevious, revisions,
       ...(revisions > selected.length ? { changes: difference(scopedRows(predecessors), observations) } : {}),
       historicalConfirmedAt: confirmations[0]?.confirmedAt ?? null });
+    points.at(-1)!.metadata = { organizationBasis: orgCompatible ? 'captured' : orgKnown ? 'conflict' : 'unknown', goalTitle: known ? goal.title : null,
+      unit: known ? goal.unit : null,
+      leaderName: leaderId ? organization?.leaders.find(leader => leader.id === leaderId)?.name ?? null : 'Общий результат ДИТ',
+      ownerId: known ? goal.ownerId : null, ownerName: goal.ownerId ? organization?.leaders.find(leader => leader.id === goal.ownerId)?.name ?? organization?.entities.find(entity => entity.id === goal.ownerId)?.name ?? null : null,
+      teams: organization ? [...new Set(assignments.flatMap(assignment => assignment.teams))] : [],
+      directionName: goal.workDirectionId ? organization?.directions?.find(direction => direction.id === goal.workDirectionId)?.name ?? null : null,
+      capturedAt: [...new Set(selected.map(snapshot => snapshot.collectedAt))].sort(),
+      sources: selected.map(snapshot => { const source = organization?.sources?.find(source => source.id === snapshot.sourceId); return {id:snapshot.sourceId,name:source?.name ?? null,url:source?.url ?? null}; }) };
   }
   return { goalId, leaderId, points };
 }

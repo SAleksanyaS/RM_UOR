@@ -1,3 +1,4 @@
+import { captureEvaluationBasis } from '../reporting/evaluation-basis';
 import { createHash, randomUUID } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
 import { z } from 'zod';
@@ -193,7 +194,7 @@ export async function previewMaturityImport(context: ApplicationContext, session
     await writeFile(await safeArtifactPath(context.paths.runtimeRoot, relativePath), bytes);
     const record: StoredPreview = { preview, curatorId: session.curatorId, catalogSignature: signature,
       baselineSignature: sourceBaselineAtPreview, source, observations, artifact: { relativePath, size: bytes.length },
-      basis: { methodVersion: 'participant-all-applicable-metrics-v1', goal: structuredClone(goal), assignments: structuredClone(assignments) } };
+      basis: captureEvaluationBasis(catalog,goal.id) };
     context.db.set('import-previews', id, record);
     await context.operations.finish(operation.id, { status: preview.canCommit ? 'completed' : 'partial', message: preview.canCommit ? 'Предпросмотр готов. Проверьте состав и сохраните срез.' : 'Предпросмотр готов. Устраните ошибки сопоставления перед сохранением.' });
     return preview;

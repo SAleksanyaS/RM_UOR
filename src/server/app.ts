@@ -23,12 +23,27 @@ import { registerReportRoutes } from '../features/reporting/report-routes';
 import { registerDirectorRoutes } from '../features/director/director-routes';
 import { registerKnowledgeRoutes } from '../features/knowledge/knowledge-routes';
 import { isKnowledgeType } from '../features/knowledge/knowledge-contracts';
+import { registerConnectorRoutes } from '../features/connectors/routes';
+import { collectConfiguredSource } from '../features/connectors/service';
+import { registerExecutionRoutes } from '../features/execution/execution-routes';
+import { registerReportTemplateRoutes } from '../features/report-templates/routes';
+import { registerSystemRoutes } from '../features/system/system-routes';
+import { APP_VERSION } from '../domain/app-version';
+import { captureEvaluationBasis } from '../features/reporting/evaluation-basis';
+import { registerReleaseRoutes } from '../features/release/release-routes';
+import { registerEvidenceLibraryRoutes } from '../features/evidence/evidence-routes';
+import { registerCodeUpdateRoutes } from '../features/system/code-update';
 
 export async function createApp(options: AppOptions) {
   const context = await createContext(options);
   const app = Fastify({ logger: false, bodyLimit: 22_000_000 });
   await app.register(cookie);
-  app.addHook('onClose', async () => { for (const controller of context.cancelled.values()) controller.abort(); context.db.close(); });
+  const countedRequests=new WeakSet<object>();
+  const releaseRequest=(request:object)=>{if(countedRequests.delete(request))context.activeRequests=Math.max(0,context.activeRequests-1);};
+  app.addHook('onResponse',async request=>releaseRequest(request));
+  app.addHook('onRequestAbort',async request=>releaseRequest(request));
+  app.addHook('preClose',async()=>{context.maintenance=true;for(const controller of context.cancelled.values())controller.abort();await context.waitBackground();});
+  app.addHook('onClose', async () => { context.db.close(); });
   app.setErrorHandler((error, _request, reply) => {
     const e = error as Error & { statusCode?: number };
     const status = error instanceof ZodError ? 400 : e.statusCode && e.statusCode >= 400 && e.statusCode < 600 ? e.statusCode : 500;
@@ -42,6 +57,8 @@ export async function createApp(options: AppOptions) {
     const allowed = new Set([`http://127.0.0.1:${context.config.clientPort}`, `http://localhost:${context.config.clientPort}`, `http://127.0.0.1:${context.config.port}`, `http://localhost:${context.config.port}`]);
     if (origin && !allowed.has(origin)) throw new ActionError('Запрос с посторонней страницы отклонён', 403);
     if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method) && request.headers['x-uor-token'] !== context.csrfToken) throw new ActionError('Обновите страницу перед выполнением действия', 403);
+    if(context.maintenance)throw new ActionError('Выполняется обслуживание локальной базы. Повторите действие через несколько секунд.',503);
+    countedRequests.add(request);context.activeRequests++;
   });
   const sessionFor = async (request: { cookies: Record<string, string | undefined> }, reply?: { setCookie: (name: string, value: string, options: object) => unknown }): Promise<Session> => {
     let session = context.roles.get(request.cookies.uor_session);
@@ -62,7 +79,14 @@ export async function createApp(options: AppOptions) {
   registerReportRoutes(app, context);
   registerDirectorRoutes(app, context);
   registerKnowledgeRoutes(app, context);
-  app.get('/api/health', async () => ({ status: 'ready', name: 'УОР ДИТ Operations', version: '0.1.0' }));
+  registerConnectorRoutes(app, context);
+  registerExecutionRoutes(app, context);
+  registerReportTemplateRoutes(app, context);
+  registerSystemRoutes(app, context);
+  registerReleaseRoutes(app, context);
+  registerEvidenceLibraryRoutes(app, context);
+  registerCodeUpdateRoutes(app, context);
+  app.get('/api/health', async () => ({ status: 'ready', name: 'УОР ДИТ Operations', version: APP_VERSION }));
   app.get('/api/state', async (request, reply) => context.state(await sessionFor(request, reply)));
   app.post('/api/login', async (request, reply) => {
     const input = z.object({ role: z.enum(['reader', 'curator']), code: z.string().max(256).optional() }).parse(request.body);
@@ -159,7 +183,7 @@ export async function createApp(options: AppOptions) {
       await context.catalogs.saveDraft(session, { kind: 'source', id: sourceId, baseRevision: null, patch: { ...source } });
     }
     const observation: Observation = { id: randomUUID(), goalId: goal.id, leaderId: input.leaderId ?? null, participantId: input.leaderId ?? 'manual-global', participantName: input.participantName ?? (input.leaderId ? catalog.leaders.find(l => l.id === input.leaderId)?.name ?? session.name : 'ДИТ'), metricId: goal.id, metricName: goal.title, value: input.value, target: input.target ?? goal.officialTarget, unit: goal.unit, state: 'numeric', reason: null, period: input.period, sourceId, sourceUpdatedAt: now, downloadedAt: now };
-    const snapshot: LocalSnapshot = { id: randomUUID(), classification: catalog.classification, sourceId, period: input.period, observations: [observation], collectedAt: now, sourceUpdatedAt: now, origin: 'manual', dataHash: createHash('sha256').update(JSON.stringify(observation)).digest('hex'), status: 'personal', curatorId: session.curatorId, curatorName: session.name, validatedAt: null, limitations: ['Факт внесён куратором вручную' + (input.comment ? `: ${input.comment}` : '')], evidenceIds: [] };
+    const snapshot: LocalSnapshot = { id: randomUUID(), classification: catalog.classification, sourceId, period: input.period, observations: [observation], collectedAt: now, sourceUpdatedAt: now, origin: 'manual', dataHash: createHash('sha256').update(JSON.stringify(observation)).digest('hex'), status: 'personal', curatorId: session.curatorId, curatorName: session.name, validatedAt: null, limitations: ['Факт внесён куратором вручную' + (input.comment ? `: ${input.comment}` : '')], evidenceIds: [], evaluationBasis:captureEvaluationBasis(catalog,goal.id) };
     const accepted = await context.writeSnapshot(snapshot, { mergeManual: true });
     context.catalogs.recordChange(session, 'manual_fact_added', goal.id, goal.title, {}, { value: input.value, period: input.period, author: session.name });
     await context.state(session); return { snapshot: accepted };
@@ -178,7 +202,7 @@ export async function createApp(options: AppOptions) {
     if (input.productId && !catalog.entities.some(e => e.id === input.productId && e.type === 'product')) throw new ActionError('Продукт не найден в базе знаний');
     const id = (request.params as { id?: string } | undefined)?.id ?? randomUUID(); const original = catalog.entities.find(e => e.id === id);
     if (original && isKnowledgeType(original.type)) throw new ActionError('Изменяйте запись в разделе «База знаний»: он проверяет версию, связи и сохраняет прежние имена.', 400);
-    if (['decision', 'report_profile', 'article'].includes(input.type) || (original && (['decision', 'report_profile', 'article'].includes(original.type) || original.revision || original.body || original.archivedAt)) || ['description', 'body', 'links', 'goalIds', 'revision', 'archivedAt'].some(field => Object.hasOwn(request.body as object, field))) throw new ActionError('Используйте соответствующий раздел базы знаний, решений или профилей отчёта. Черновик с проверкой версии защищает изменения коллег.', 400);
+    if (['decision', 'report_profile', 'article', 'work_package', 'execution_config', 'report_template'].includes(input.type) || (original && (['decision', 'report_profile', 'article'].includes(original.type) || original.revision || original.body || original.archivedAt)) || ['description', 'body', 'links', 'goalIds', 'revision', 'archivedAt'].some(field => Object.hasOwn(request.body as object, field))) throw new ActionError('Используйте соответствующий раздел базы знаний, решений или профилей отчёта. Черновик с проверкой версии защищает изменения коллег.', 400);
     const draft = await context.catalogs.saveDraft(session, { kind: 'entity', id, baseRevision: null, patch: { id, ...input } });
     context.catalogs.recordChange(session, original ? 'entity_updated' : 'entity_added', id, input.name, { ...original }, input); return { draft };
   };
@@ -191,37 +215,34 @@ export async function createApp(options: AppOptions) {
   });
   app.post('/api/evidence', async request => {
     const session = await curator(request);
-    const input = z.object({ name: z.string().trim().min(1).max(200), base64: z.string().min(1).max(7_000_000).regex(/^[A-Za-z0-9+/]+={0,2}$/) }).parse(request.body);
+    const input = z.object({ name: z.string().trim().min(1).max(200).refine(value=>!/[\x00-\x1f\x7f/\\]/.test(value),'Недопустимое имя файла'), base64: z.string().min(1).max(7_000_000).regex(/^[A-Za-z0-9+/]+={0,2}$/) }).parse(request.body);
     const bytes = Buffer.from(input.base64, 'base64'); if (!bytes.length || input.base64.length % 4) throw new ActionError('Не удалось прочитать файл доказательства');
     if (bytes.length > 5_000_000) throw new ActionError('Артефакт превышает 5 МБ');
     const id = randomUUID(); const destination = await safeArtifactPath(context.paths.runtimeRoot, `evidence/${id}`); await writeFile(destination, bytes);
-    const evidence = { id, name: input.name, relativePath: `evidence/${id}`, sha256: createHash('sha256').update(bytes).digest('hex'), size: bytes.length, curatorId: session.curatorId };
+    const evidence = { id, name: input.name, relativePath: `evidence/${id}`, sha256: createHash('sha256').update(bytes).digest('hex'), size: bytes.length, curatorId: session.curatorId, ownerInstallationId:context.installationId,classification:(await context.catalogs.readForSession(session)).classification,uploadedBy:session.name,uploadedAt:new Date().toISOString() };
     context.db.set('evidence', id, evidence); return { evidence };
   });
-  app.post('/api/updates/check', async () => { const operation = await context.operations.start('check', 'Проверка обновлений'); void checkRemoteUpdates(context, operation.id); return { operationId: operation.id }; });
+  app.post('/api/updates/check', async () => { const operation = await context.operations.start('check', 'Проверка обновлений'); void context.trackBackground(checkRemoteUpdates(context, operation.id)); return { operationId: operation.id }; });
   app.post('/api/publish', async request => {
-    const session = await curator(request); const input = z.object({ draftIds: z.array(z.string()).optional() }).parse(request.body ?? {});
-    const operation = await context.operations.start('publish', 'Отправка в готовящийся выпуск'); void publishChanges(context, session, operation.id, input.draftIds); return { operationId: operation.id };
+    const session = await curator(request); const ids=z.array(z.string().min(1).max(300)).max(20000).optional();const input = z.object({ draftIds:ids.default([]),snapshotIds:ids.default([]),attestationIds:ids.default([]),evidenceIds:ids.default([]),templateIds:ids.default([]),previewId:z.string().uuid() }).strict().parse(request.body ?? {});
+    const operation = await context.operations.start('publish', 'Отправка в готовящийся выпуск');const {draftIds,...selection}=input;void context.trackBackground(publishChanges(context, session, operation.id, draftIds,Object.keys(selection).length?selection:undefined)); return { operationId: operation.id };
   });
   app.post('/api/update', async (request, reply) => {
     const selection = z.object({ syncPublished: z.boolean(), sourceIds: z.array(z.string()).default([]), recalculate: z.boolean().default(true) }).parse(request.body);
     const session = await sessionFor(request, reply);
     const { planUpdate } = await import('../features/sources/update-planner'); const { runUpdate } = await import('../features/sources/update-runner');
     const plan = planUpdate(selection, await context.catalogs.readForSession(session));
-    const operation = await context.operations.start('update', 'Обновление выбранных данных'); const controller = new AbortController(); context.cancelled.set(operation.id, controller);
-    void runUpdate(plan, { operations: context.operations, startOperation: operation, signal: controller.signal,
+    const operation = await context.operations.start('update', 'Обновление выбранных данных'); context.db.set('operation-owners',operation.id,session.id); const controller = new AbortController(); context.cancelled.set(operation.id, controller);
+    void context.trackBackground(runUpdate(plan, { operations: context.operations, startOperation: operation, signal: controller.signal,
       syncPublished: () => syncPublished(context), collectSource: async (id: string, signal: AbortSignal) => {
-        if (signal.aborted) throw new Error('Операция отменена');
-        const catalog = await context.catalogs.readForSession(session); const source = catalog.sources.find(s => s.id === id);
-        if (!source) throw new Error('Источник не найден');
-        if (source.mode === 'stub') throw new Error(`${source.name}: сбор с дашборда пока заглушка. Реальный запрос не выполнялся.`);
-        // Local/manual files already loaded. Do not fabricate new source timestamps or business values.
-        if (!context.db.list<LocalSnapshot>('snapshots').some(s => s.sourceId === id)) throw new Error(`${source.name}: локальные данные ещё не загружены`);
+        await collectConfiguredSource(context,session,id,signal,stage=>{void context.operations.stage(operation.id,stage);});
       }, recalculate: async () => { await context.state(session); }
-    }).catch(async error => { await context.operations.finish(operation.id, { status: 'failed', message: (error as Error).message }); }).finally(() => context.cancelled.delete(operation.id));
+    }).catch(async error => { await context.operations.finish(operation.id, { status: 'failed', message: (error as Error).message }); }).finally(() => context.cancelled.delete(operation.id)));
     return { operationId: operation.id };
   });
   app.post<{ Params: { id: string } }>('/api/operations/:id/cancel', async request => {
+    const actor=context.roles.get(request.cookies.uor_session),owner=context.db.get<string>('operation-owners',request.params.id);
+    if(!actor||(owner?owner!==actor.id:actor.role!=='curator'))throw new ActionError('Можно отменить только свою операцию',403);
     context.cancelled.get(request.params.id)?.abort(); return { cancelled: true };
   });
   app.get<{ Params: { id: string } }>('/api/operations/:id/events', async (request, reply) => {
@@ -230,6 +251,6 @@ export async function createApp(options: AppOptions) {
     reply.header('content-type', 'text/event-stream').header('cache-control', 'no-cache');
     return operation.events.filter(e => e.id > last).map(e => `id: ${e.id}\nevent: stage\ndata: ${JSON.stringify(e)}\n\n`).join('');
   });
-  if (options.startupCheck !== false && context.config.repositoryUrl) setTimeout(() => { void checkRemoteUpdates(context); }, 1000).unref();
+  if (options.startupCheck !== false && context.config.repositoryUrl){const timer=setTimeout(()=>{if(!context.maintenance)void context.trackBackground(checkRemoteUpdates(context));},1000);timer.unref();app.addHook('preClose',async()=>clearTimeout(timer));}
   return app;
 }

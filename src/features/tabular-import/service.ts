@@ -1,3 +1,4 @@
+import { captureEvaluationBasis } from '../reporting/evaluation-basis';
 import { createHash, randomUUID } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
 import { z } from 'zod';
@@ -160,7 +161,7 @@ export async function previewTabularImport(context: ApplicationContext, session:
   p.source.importProfile = structuredClone(profile);
   const artifact = { relativePath: `source-artifacts/tabular-${previewId}${/\.csv$/i.test(input.name) ? '.csv' : '.xlsx'}`, fileHash: createHash('sha256').update(p.bytes).digest('hex'), size: p.bytes.length, name: input.name.split(/[\\/]/).pop()! };
   await writeFile(await safeArtifactPath(context.paths.runtimeRoot, artifact.relativePath), p.bytes, { flag: 'wx' });
-  const record: StoredPreview = { preview, curatorId: session.curatorId, catalogSignature: p.signature, baselineSignature: baselineAtPreview, catalog: p.catalog, source: p.source, observations, basis: { methodVersion: p.goal.measurement ? 'explicit-measurement-v1' : 'participant-all-applicable-metrics-v1', goal: p.goal, assignments: p.assignments }, artifact };
+  const record: StoredPreview = { preview, curatorId: session.curatorId, catalogSignature: p.signature, baselineSignature: baselineAtPreview, catalog: p.catalog, source: p.source, observations, basis: captureEvaluationBasis(p.catalog,p.goal.id), artifact };
   context.db.set('tabular-previews', preview.id, record); return preview;
 }
 

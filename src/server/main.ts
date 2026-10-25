@@ -9,3 +9,4 @@ console.log(`УОР ДИТ Operations: локальная служба http://12
 let closing = false;
 async function close() { if (closing) return; closing = true; await app.close(); process.exit(0); }
 process.on('SIGINT', () => void close()); process.on('SIGTERM', () => void close());
+process.on('message',message=>{if(message&&typeof message==='object'&&'type' in message&&message.type==='uor.shutdown')void close();});

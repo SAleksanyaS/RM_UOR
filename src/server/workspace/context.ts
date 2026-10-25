@@ -12,6 +12,11 @@ import { selectFacts, snapshotFreshness } from '../../features/snapshots/select-
 import { readLocalRelease } from '../../features/catalog/local-release';
 import { validateCatalog, validateSnapshot } from '../../features/publishing/validate-version';
 import { normalizeDirections } from '../../features/catalog/directions';
+import { APP_VERSION } from '../../domain/app-version';
+import { migrateStorage } from '../../features/system/backup-service';
+import { canReadSnapshot } from '../../features/connectors/service';
+import { storeValidatedTemplateBundle } from '../../features/report-templates/service';
+import { stageEvidenceBundle,type EvidenceRecord } from '../../features/evidence/evidence-service';
 
 export interface AppOptions {
   projectRoot: string; allowedRoots?: string[]; initialCatalog?: CatalogSnapshot; registry?: CuratorRecord[];
@@ -31,21 +36,28 @@ export async function loadSite(projectRoot: string): Promise<SiteConfig> {
   return { ...defaultConfig, ...await readJson<Partial<SiteConfig>>(path.join(projectRoot, 'config/site.local.json'), {}) };
 }
 export class ApplicationContext {
+  maintenance = false;
+  activeRequests = 0;
+  private readonly background=new Set<Promise<unknown>>();
+  trackBackground<T>(promise:Promise<T>):Promise<T>{this.background.add(promise);void promise.finally(()=>this.background.delete(promise)).catch(()=>{});return promise;}
+  async waitBackground(){while(this.background.size)await Promise.allSettled([...this.background]);}
+  installationId:string;
   readonly csrfToken = randomUUID();
   readonly catalogs: CatalogStore; readonly operations: OperationStore; readonly roles: RoleService;
   readonly cancelled = new Map<string, AbortController>();
   updates: UpdateInfo = { status: 'unavailable', checkedAt: null, currentCommit: null, remoteCommit: null, message: 'Проверка обновлений ещё не выполнена', changes: [] };
   constructor(readonly paths: WorkspacePaths, readonly db: LocalDatabase, readonly config: SiteConfig, registry: CuratorRecord[]) {
+    this.installationId=db.get<string>('settings','installationId')??randomUUID();db.set('settings','installationId',this.installationId);
     this.catalogs = new CatalogStore(db); this.operations = new OperationStore(db); this.roles = new RoleService(db, registry);
     this.updates = db.get<UpdateInfo>('settings', 'updates') ?? this.updates;
   }
   async state(session: Session): Promise<WorkspaceState> {
     const catalog = await this.catalogs.readForSession(session);
-    const snapshots = this.db.list<LocalSnapshot>('snapshots').filter(s => catalog.sources.some(source => source.id === s.sourceId));
+    const snapshots = this.db.list<LocalSnapshot>('snapshots').filter(s => catalog.sources.some(source => source.id === s.sourceId) && canReadSnapshot(s,session,this.installationId));
     const evaluations = this.evaluations(catalog, snapshots);
     return { catalog, snapshots, evaluations, attestations: this.db.list<Attestation>('attestations'), session,
       csrfToken: this.csrfToken, operations: this.operations.list(), changes: this.db.list<DomainChangeEvent>('changes').sort((a, b) => b.at.localeCompare(a.at)).slice(0, 150),
-      drafts: await this.catalogs.listDrafts(session), updates: this.updates, version: '0.1.0',
+      drafts: await this.catalogs.listDrafts(session), updates: this.updates, version: APP_VERSION,
       repository: { url: this.config.repositoryUrl, publishedBranch: this.config.publishedBranch, releaseBranch: this.config.releaseBranch, publicationMode: this.config.publicationMode } };
   }
   evaluations(catalog: CatalogSnapshot, snapshots: LocalSnapshot[]): Evaluation[] {
@@ -130,12 +142,17 @@ export class ApplicationContext {
     const importedSnapshots = (imported ? await readJson<LocalSnapshot[]>(path.join(this.paths.runtimeRoot, 'imports/snapshots.json'), []) : await readJson<LocalSnapshot[]>(path.join(this.paths.projectRoot, 'catalog/demo-snapshots.json'), []))
       .map(snapshot => validateSnapshot(snapshot, initial!));
     const importHash = createHash('sha256').update(JSON.stringify(initial)).digest('hex');
+    const sharedEvidence:EvidenceRecord[]=[];
+    for(const checked of localRelease?.evidence??[])sharedEvidence.push(await stageEvidenceBundle(this.paths.runtimeRoot,checked));
     this.db.transaction(() => {
+      for(const evidence of sharedEvidence){const previous=this.db.get<EvidenceRecord>('evidence',evidence.id);if(previous&&(previous.sha256!==evidence.sha256||previous.size!==evidence.size))throw new Error('Идентификатор доказательства ссылается на другое содержимое');}
       if (!this.db.get('catalog', 'active') || this.db.get('settings', 'importHash') !== importHash) {
         this.db.set('catalog', 'active', normalizeDirections(initial!)); this.db.set('settings', 'importHash', importHash);
       }
       else this.db.set('catalog', 'active', normalizeDirections(this.db.get<CatalogSnapshot>('catalog', 'active')!));
       for (const snapshot of [...importedSnapshots, ...(localRelease?.snapshots ?? [])]) if (!this.db.get('snapshots', snapshot.id)) this.db.set('snapshots', snapshot.id, snapshot);
+      for(const checked of localRelease?.templates??[])storeValidatedTemplateBundle(this,checked);
+      for(const evidence of sharedEvidence)this.db.set('evidence',evidence.id,evidence);
       for (const attestation of localRelease?.attestations ?? []) if (!this.db.get('attestations', attestation.id)) this.db.set('attestations', attestation.id, attestation);
       for (const change of localRelease?.changes ?? []) if (!this.db.get('changes', change.id)) this.db.set('changes', change.id, change);
     });
@@ -150,6 +167,6 @@ export async function createContext(options: AppOptions): Promise<ApplicationCon
   const paths = await resolveWorkspace({ projectRoot: options.projectRoot, allowedRoots: options.allowedRoots ?? config.allowedWorkspaceRoots });
   for (const folder of ['imports', 'local-config', 'source-artifacts', 'exports', 'backups', 'evidence']) await mkdir(path.join(paths.runtimeRoot, folder), { recursive: true });
   const registry = options.registry ?? await readJson<CuratorRecord[]>(path.join(paths.runtimeRoot, 'local-config/curators.json'), []);
-  const db = new LocalDatabase(paths.databasePath); const context = new ApplicationContext(paths, db, config, registry);
-  try { await context.initialize(options); return context; } catch (error) { db.close(); throw error; }
+  const db = new LocalDatabase(paths.databasePath);
+  try { await migrateStorage(db,paths.runtimeRoot); const context = new ApplicationContext(paths, db, config, registry); await context.initialize(options); return context; } catch (error) { db.close(); throw error; }
 }

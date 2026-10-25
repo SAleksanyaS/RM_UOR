@@ -1,48 +1,38 @@
 import { spawn } from 'node:child_process';
-import { readFile, realpath } from 'node:fs/promises';
+import { readFile, realpath, mkdir, rename, unlink } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import path from 'node:path';
+import { inspectCodeUpdate, applyCodeUpdate, atomicJson, readJsonFile, runCommand } from './code-update-runtime.mjs';
 
-const root = await realpath(process.cwd());
-let config = { port: 4174, clientPort: 5173, autoOpen: true, allowedWorkspaceRoots: [root] };
-try { config = { ...config, ...JSON.parse(await readFile(path.join(root, 'config/site.local.json'), 'utf8')) }; }
-catch (error) { if (error.code !== 'ENOENT') throw error; }
-if (!Array.isArray(config.allowedWorkspaceRoots) || !config.allowedWorkspaceRoots.length) throw new Error('Укажите разрешённую папку в config/site.local.json');
-const allowed = await Promise.all(config.allowedWorkspaceRoots.map(p => realpath(p)));
-if (!allowed.some(p => { const relative = path.relative(p, root); return relative === '' || relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative); })) throw new Error('Приложение запущено вне разрешённой папки');
+const root=await realpath(process.cwd());
+let config={port:4174,clientPort:5173,autoOpen:true,allowedWorkspaceRoots:[root],repositoryUrl:'',publishedBranch:'main'};
+try{config={...config,...JSON.parse(await readFile(path.join(root,'config/site.local.json'),'utf8'))};}catch(error){if(error.code!=='ENOENT')throw error;}
+if(!Array.isArray(config.allowedWorkspaceRoots)||!config.allowedWorkspaceRoots.length)throw new Error('Укажите разрешённую папку в config/site.local.json');
+const allowed=await Promise.all(config.allowedWorkspaceRoots.map(p=>realpath(p)));
+if(!allowed.some(p=>{const relative=path.relative(p,root);return relative===''||relative!=='..'&&!relative.startsWith(`..${path.sep}`)&&!path.isAbsolute(relative);}))throw new Error('Приложение запущено вне разрешённой папки');
+await mkdir(path.join(root,'.runtime'),{recursive:true});const runtimeRoot=await realpath(path.join(root,'.runtime'));const runtimeRelative=path.relative(root,runtimeRoot);if(runtimeRelative==='..'||runtimeRelative.startsWith('..'+path.sep)||path.isAbsolute(runtimeRelative))throw new Error('Приватная папка ведёт за пределы рабочей папки');await mkdir(path.join(runtimeRoot,'code-update'),{recursive:true});const directory=await realpath(path.join(runtimeRoot,'code-update'));const updateRelative=path.relative(runtimeRoot,directory);if(updateRelative==='..'||updateRelative.startsWith('..'+path.sep)||path.isAbsolute(updateRelative))throw new Error('Папка обновления ведёт за пределы приватной папки');
+const markerPath=path.join(directory,'launcher.json'),previous=await readJsonFile(markerPath);
+if(previous&&previous.root===root&&Date.now()-previous.heartbeat<15000){try{process.kill(previous.pid,0);throw new Error('Рабочее место уже запущено в этой папке');}catch(error){if(error.code!=='ESRCH')throw error;}}
+const token=randomUUID();let stopping=false,restarting=false,children=[],monitorBusy=false;
+const marker=()=>atomicJson(markerPath,{pid:process.pid,root,token,heartbeat:Date.now()});await marker();
+const status=(phase,message,extra={})=>atomicJson(path.join(directory,'status.json'),{phase,message,at:new Date().toISOString(),...extra});
 console.log('\nУОР / DIT Operations\nПоднимаем локальное рабочее место…\n');
-const children = [];
-let stopping = false;
-function stop(code = 0) {
-  if (stopping) return; stopping = true;
-  for (const child of children) {
-    if (process.platform === 'win32') spawn('taskkill', ['/pid', String(child.pid), '/t', '/f'], { stdio: 'ignore', windowsHide: true });
-    else child.kill('SIGTERM');
-  }
-  setTimeout(() => process.exit(code), 350).unref();
-}
-function launch(args) {
-  const child = spawn(process.execPath, args, { cwd: root, stdio: 'inherit', windowsHide: true }); children.push(child);
-  child.once('error', error => { console.error(error.message); stop(1); });
-  child.once('exit', code => { if (!stopping) stop(code ?? 1); }); return child;
-}
-process.on('SIGINT', () => stop()); process.on('SIGTERM', () => stop());
-launch(['--import', 'tsx', 'src/server/main.ts']);
-launch(['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', String(config.clientPort)]);
-const url = `http://127.0.0.1:${config.clientPort}`;
-for (let i = 0; i < 100; i++) {
-  if (stopping) break;
-  try {
-    const [api, client] = await Promise.all([fetch(`http://127.0.0.1:${config.port}/api/health`, { signal: AbortSignal.timeout(800) }), fetch(url, { signal: AbortSignal.timeout(800) })]);
-    if (api.ok && client.ok) {
-      console.log(`\nРабочее место готово: ${url}\nОстановка: Ctrl+C\n`);
-      if (config.autoOpen && process.env.UOR_NO_OPEN !== '1') {
-        const command = process.platform === 'win32' ? 'cmd' : process.platform === 'darwin' ? 'open' : 'xdg-open';
-        const args = process.platform === 'win32' ? ['/c', 'start', '', url] : [url];
-        const opener = spawn(command, args, { stdio: 'ignore', windowsHide: true }); opener.on('error', () => console.log(`Откройте ${url} в браузере`));
-      }
-      break;
-    }
-  } catch {}
-  if (i === 99) { console.error('Не удалось запустить рабочее место. Проверьте сообщения выше и свободные порты.'); stop(1); }
-  await new Promise(resolve => setTimeout(resolve, 250));
-}
+const oldStatus=await readJsonFile(path.join(directory,'status.json'));if(oldStatus?.phase==='failed')console.error(`Предыдущее обновление: ${oldStatus.message}`);
+function launch(args,server=false){const child=spawn(process.execPath,args,{cwd:root,stdio:server?['inherit','inherit','inherit','ipc']:'inherit',windowsHide:true});children.push({child,server});child.once('error',error=>{console.error(error.message);if(!restarting)void stop(1);});child.once('exit',code=>{if(!stopping&&!restarting)void stop(code??1);});return child;}
+function launchChildren(){children=[];launch(['--import','tsx','src/server/main.ts'],true);launch(['node_modules/vite/bin/vite.js','--host','127.0.0.1','--port',String(config.clientPort)]);}
+async function stopChildren(){const current=children.splice(0);await Promise.all(current.map(({child,server})=>new Promise((resolve,reject)=>{if(child.exitCode!==null||child.signalCode!==null){resolve();return;}const timer=setTimeout(()=>{reject(new Error('Служба не завершилась штатно. Обновление кода остановлено; завершите приложение вручную.'));},20000);child.once('exit',()=>{clearTimeout(timer);resolve();});if(server&&child.connected)child.send({type:'uor.shutdown'},()=>{});else child.kill('SIGTERM');})));}
+async function stop(code=0){if(stopping)return;stopping=true;clearInterval(monitor);try{await stopChildren();}catch(error){console.error(error.message);}await unlink(markerPath).catch(()=>{});process.exit(code);}
+process.on('SIGINT',()=>{void stop();});process.on('SIGTERM',()=>{void stop();});
+const url=`http://127.0.0.1:${config.clientPort}`;
+async function ready(open=false){for(let i=0;i<100;i++){if(stopping)return false;try{const[api,client]=await Promise.all([fetch(`http://127.0.0.1:${config.port}/api/health`,{signal:AbortSignal.timeout(800)}),fetch(url,{signal:AbortSignal.timeout(800)})]);if(api.ok&&client.ok){console.log(`\nРабочее место готово: ${url}\nОстановка: Ctrl+C\n`);if(open&&config.autoOpen&&process.env.UOR_NO_OPEN!=='1'){const command=process.platform==='win32'?'rundll32.exe':process.platform==='darwin'?'open':'xdg-open',args=process.platform==='win32'?['url.dll,FileProtocolHandler',url]:[url];spawn(command,args,{stdio:'ignore',windowsHide:true}).on('error',()=>console.log(`Откройте ${url} в браузере`));}return true;}}catch{}await new Promise(resolve=>setTimeout(resolve,250));}return false;}
+async function npmInstall(){const npmCli=process.env.npm_execpath??config.npmCliPath;if(!npmCli||!path.isAbsolute(npmCli)||!npmCli.endsWith('.js'))throw new Error('Не найден npm CLI. Запускайте приложение командой npm run dev либо настройте npmCliPath');const registry=(await runCommand(process.execPath,[npmCli,'config','get','registry'],root)).stdout.trim(),strict=(await runCommand(process.execPath,[npmCli,'config','get','strict-ssl'],root)).stdout.trim();let registryUrl;try{registryUrl=new URL(registry);}catch{throw new Error('Неверный npm registry');}if(strict!=='true'||registryUrl.protocol!=='https:'&&!['localhost','127.0.0.1','[::1]'].includes(registryUrl.hostname))throw new Error('npm registry требует TLS и strict-ssl=true. Настройте корпоративный CA');await runCommand(process.execPath,[npmCli,'ci','--no-audit','--no-fund'],root,{timeout:600000});}
+async function consumeUpdate(){if(stopping||restarting||monitorBusy)return;monitorBusy=true;let ticket,claimed;try{
+  await marker();const file=path.join(directory,'request.json');try{ticket=JSON.parse(await readFile(file,'utf8'));}catch(error){if(error.code==='ENOENT')return;throw error;}
+  claimed=path.join(directory,`request-${randomUUID()}.json`);await rename(file,claimed);
+  if(ticket?.schemaVersion!==1||ticket.token!==token||!/^[-a-f0-9]{36}$/.test(ticket.id??'')||!/^[a-f0-9]{40,64}$/.test(ticket.expectedCommit??'')||!/^[a-f0-9]{40,64}$/.test(ticket.targetCommit??'')||ticket.repositoryUrl!==config.repositoryUrl||ticket.branch!==config.publishedBranch)throw new Error('Заявка обновления устарела или не принадлежит текущему запуску');
+  restarting=true;await status('stopping','Штатно завершаем локальные службы',{requestId:ticket.id});await stopChildren();
+  let result;try{result=await applyCodeUpdate(root,config,ticket,{install:npmInstall,stage:(phase,message)=>status(phase,message,{requestId:ticket.id})});}catch(error){await status('failed',error.message,{requestId:ticket.id,code:error.code??'update_failed'});console.error(`Обновление не выполнено: ${error.message}`);launchChildren();if(!await ready())throw new Error('Не удалось запустить приложение после отказа обновления. Проверьте npm ci и запустите npm run dev');restarting=false;return;}
+  await status('restarting','Запускаем новую версию',{requestId:ticket.id});launchChildren();if(!await ready())throw new Error('Код обновлён, но новая версия не запустилась. Проверьте консоль и зависимости');await status('completed','Код и закреплённые зависимости обновлены; приложение перезапущено',{requestId:ticket.id,commit:result.targetCommit});restarting=false;
+}catch(error){await status('failed',error.message,{requestId:ticket?.id,code:error.code??'update_failed'});console.error(error.message);if(restarting){restarting=false;await stop(1);}}finally{if(claimed)await unlink(claimed).catch(()=>{});monitorBusy=false;}}
+const monitor=setInterval(()=>{void consumeUpdate();},1000);monitor.unref();
+launchChildren();if(!await ready(true)){console.error('Не удалось запустить рабочее место. Проверьте сообщения выше и свободные порты.');await stop(1);}

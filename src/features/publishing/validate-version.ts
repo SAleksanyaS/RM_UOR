@@ -6,6 +6,8 @@ import { measurementSchema } from '../evaluation/measurement-schema';
 import { knowledgeStoredFields } from '../knowledge/knowledge-schema';
 import { decisionEntitySchema } from '../director/decision-schema';
 import { reportProfileSchema } from '../reporting/report-profile-schema';
+import { collectionSchema } from '../connectors/contracts';
+import { validateExecutionEntities } from '../execution/execution-schema';
 
 const id = z.string().min(1).max(500);
 const text = z.string();
@@ -25,7 +27,7 @@ const assignment = z.object({ id, goalId: id, leaderId: id, teams: z.array(text)
   participantType: text.optional(), active: z.boolean().optional(), allProducts: z.boolean().optional(), target: text.optional(),
   summary: text.optional(), actions: z.array(text).optional(), metric: text.optional(), plan: executionPlanSchema.optional() }).passthrough();
 const source = z.object({ id, name: id, kind: z.enum(['dashboard', 'attachment', 'manual', 'file', 'demo']), url: url.nullable(), accessUrl: url.nullable(),
-  goalIds: ids, freshnessHours: number.positive(), mode: z.enum(['stub', 'local']), lastAttemptAt: date.nullable().optional(),
+  goalIds: ids, freshnessHours: number.positive(), mode: z.enum(['stub', 'local']), collection:collectionSchema.optional(), lastAttemptAt: date.nullable().optional(),
   importProfile: z.union([z.object({ parser: z.literal('maturity-xlsx-v1'), teamMapping: z.record(id, id), metricMapping: z.record(id, id) }),
     z.object({ parser: z.literal('tabular-v1'), columns: z.object({ period: id.optional(), leader: id.optional(), participant: id.optional(), metric: id.optional(), value: id,
       target: id.optional(), state: id.optional(), reason: id.optional(), sourceUpdatedAt: id.optional() }).strict(), leaderMapping: z.record(id, id), participantMapping: z.record(id, id),
@@ -38,8 +40,9 @@ const catalogSchema = z.object({ schemaVersion: z.literal(1), id, name: id, clas
 const observation = z.object({ id, goalId: id, leaderId: nullableId, participantId: id, participantName: text, metricId: id, metricName: text,
   value: nullableNumber, target: nullableNumber, unit: text, state: z.enum(['numeric', 'exception', 'no_events', 'missing']), reason: text.nullable(),
   period: id, sourceId: id, sourceUpdatedAt: date.nullable(), downloadedAt: date }).passthrough();
+const historicalEntity=catalogSchema.shape.entities.element.strip().extend({goalId:nullableId.optional(),owner:text.optional(),dueDate:z.iso.date().nullable().optional(),state:z.enum(['open','closed']).optional(),closureComment:text.optional(),updatedAt:date.optional(),updatedBy:text.optional(),leaderIds:ids.optional(),period:z.iso.date().optional(),baselinePeriod:z.iso.date().optional(),templateId:nullableId.optional()});
 const basisSchema = z.object({ methodVersion: z.enum(['participant-all-applicable-metrics-v1', 'explicit-measurement-v1']),
-  goal: goal.strip().extend({ links: z.array(link.strip()) }), assignments: z.array(assignment.strip()) }).strip().superRefine((basis, ctx) => {
+  goal: goal.strip().extend({ links: z.array(link.strip()) }), assignments: z.array(assignment.strip()), organization:z.object({leaders:z.array(catalogSchema.shape.leaders.element.strip()),entities:z.array(historicalEntity),directions:z.array(catalogSchema.shape.directions.unwrap().element.strip()).optional(),comments:z.array(catalogSchema.shape.comments.element.strip()).optional(),sources:z.array(source.strip()).optional()}).strip().optional() }).strip().superRefine((basis, ctx) => {
     if ((basis.methodVersion === 'explicit-measurement-v1') !== !!basis.goal.measurement)
       ctx.addIssue({ code: 'custom', message: 'Версия исторической методики не соответствует настройке цели' });
   });
@@ -92,6 +95,7 @@ export function validateCatalog(value: unknown): CatalogSnapshot {
   for (const item of catalog.entities) requireReference(!item.leaderId || leaders.has(item.leaderId), `справочник ${item.id} ссылается на неизвестного лидера`);
   for (const item of catalog.entities) if (item.type === 'product_leader' && item.productId)
     requireReference(catalog.entities.some(product => product.id === item.productId && product.type === 'product'), `связь ${item.id} ссылается на неизвестный продукт`);
+  validateExecutionEntities(catalog);
   return catalog;
 }
 

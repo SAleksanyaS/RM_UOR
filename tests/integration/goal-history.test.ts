@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import type { Attestation, CatalogSnapshot, LocalSnapshot } from '../../src/domain/contracts';
 import { createContext, type ApplicationContext } from '../../src/server/workspace/context';
 import { getGoalHistory } from '../../src/features/history/history-service';
+import { captureEvaluationBasis } from '../../src/features/reporting/evaluation-basis';
 
 const roots: string[] = []; const contexts: ApplicationContext[] = [];
 afterEach(async () => { for (const context of contexts.splice(0)) context.db.close(); for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }); });
@@ -95,4 +96,27 @@ it('does not combine conflicting source methodologies into a historical success'
   const history = await getGoalHistory(context, session, 'g', null);
   expect(history.points[0].actual).toBeNull(); expect(history.points[0].official).toBe('unknown');
   expect(history.points[0].qualityFlags).toContain('historical_rules_conflict');
+});
+it('keeps dated leader, owner, scope and source names after live organization changes or removal', async () => {
+  const {context,session}=await setup(), before=catalog();
+  before.goals[0].ownerId='l'; before.goals[0].workDirectionId='direction';
+  before.directions=[{id:'direction',name:'Историческое направление',description:'',color:'#123456',order:0}];
+  before.assignments[0].teams=['Историческая команда'];
+  const accepted=snapshot('frozen','2026-10-08',100,before); accepted.evaluationBasis=captureEvaluationBasis(before,'g');
+  await context.writeSnapshot(accepted);
+  const changed=structuredClone(before); changed.leaders[0].name='Нынешнее имя'; changed.goals[0].title='Текущее название'; changed.goals[0].ownerId=null; changed.assignments[0].teams=['Нынешняя команда']; changed.sources[0].name='Нынешний источник'; changed.directions![0].name='Нынешнее направление';
+  context.db.set('catalog','active',changed);
+  let history=await getGoalHistory(context,session,'g','l');
+  expect(history.points[0].metadata).toMatchObject({organizationBasis:'captured',goalTitle:before.goals[0].title,leaderName:'Тестовый лидер',ownerId:'l',ownerName:'Тестовый лидер',teams:['Историческая команда'],directionName:'Историческое направление',sources:[{id:'s',name:'Вымышленный источник',url:null}]});
+  changed.leaders=[]; changed.sources=[]; changed.assignments=[]; context.db.set('catalog','active',changed);
+  history=await getGoalHistory(context,session,'g','l'); expect(history.points[0].metadata?.leaderName).toBe('Тестовый лидер');
+});
+it('marks missing historical organization without filling it from present-day labels',async()=>{
+  const {context,session}=await setup(); const legacy=snapshot('legacy','2026-10-01'); delete legacy.evaluationBasis;
+  const partial=snapshot('partial','2026-10-08');
+  await context.writeSnapshot(legacy); await context.writeSnapshot(partial);
+  const history=await getGoalHistory(context,session,'g','l');
+  expect(history.points[0].metadata).toMatchObject({organizationBasis:'unknown',goalTitle:null,leaderName:null,ownerName:null,teams:[]});
+  expect(history.points[1].metadata).toMatchObject({organizationBasis:'unknown',goalTitle:catalog().goals[0].title,leaderName:null,ownerName:null});
+  expect(history.points[0].qualityFlags).toContain('historical_organization_unknown');
 });

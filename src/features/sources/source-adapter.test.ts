@@ -3,7 +3,7 @@ import demoCatalog from '../../../catalog/demo.json';
 import demoSnapshots from '../../../catalog/demo-snapshots.json';
 import type { LocalSnapshot, SourceDefinition } from '../../domain/contracts';
 import { DemoAdapter } from './demo-adapter';
-import { StubSourceAdapter } from './source-adapter';
+import { UnconfiguredSourceAdapter } from './source-adapter';
 
 const source = demoCatalog.sources[0] as SourceDefinition;
 const snapshot = demoSnapshots[0] as LocalSnapshot;
@@ -31,10 +31,10 @@ describe('honest first-stage source adapters', () => {
 
   it('explicitly reports an unconnected dashboard and demo denial without a snapshot', async () => {
     const dashboard = { ...source, id: 'real-source', kind: 'dashboard' as const, mode: 'stub' as const, accessUrl: 'https://example.invalid/access' };
-    const stub = new StubSourceAdapter(dashboard);
-    expect(await stub.check()).toMatchObject({ status: 'stub' });
+    const stub = new UnconfiguredSourceAdapter(dashboard);
+    expect(await stub.check()).toMatchObject({ status: 'configuration_required' });
     const events = await collect(stub.collect({ ...request, source: dashboard, classification: 'corporate' }, signal()));
-    expect(events).toEqual([expect.objectContaining({ type: 'error', code: 'stub_not_connected' })]);
+    expect(events).toEqual([expect.objectContaining({ type: 'error', code: 'configuration_required' })]);
     const denied = new DemoAdapter(source, snapshot, 'access_denied');
     expect((await denied.check()).message).toMatch(/демонстрац/i);
     expect(await collect(denied.collect(request, signal()))).toEqual([expect.objectContaining({ type: 'error', code: 'access_denied' })]);

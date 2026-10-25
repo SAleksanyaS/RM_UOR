@@ -42,12 +42,24 @@ export interface SourceDefinition {
   id: string; name: string; kind: 'dashboard' | 'attachment' | 'manual' | 'file' | 'demo';
   url: string | null; accessUrl: string | null; goalIds: string[]; freshnessHours: number;
   mode: 'stub' | 'local'; lastAttemptAt?: string | null;
+  collection?: SourceCollection;
   importProfile?: { parser: 'maturity-xlsx-v1'; teamMapping: Record<string, string>; metricMapping: Record<string, string> } | {
     parser: 'tabular-v1'; columns: { period?: string; leader?: string; participant?: string; metric?: string; value: string; target?: string; state?: string; reason?: string; sourceUpdatedAt?: string };
     leaderMapping: Record<string, string>; participantMapping: Record<string, string>; metricMapping: Record<string, string>;
     defaults: { period: string; leaderId?: string | null; participantId?: string; metricId?: string };
   };
 }
+/** Shared configuration contains references, never credentials or browser profile paths. */
+export interface SourceCollection {
+  adapter: 'http' | 'confluence' | 'qlik' | 'browser';
+  format: 'observations-json' | 'csv' | 'xlsx'; authProfileId: string;
+  endpoint?: string; goalId?: string; scenarioId?: string; parameters?: Record<string, string>;
+  authenticatedSelector?: string;
+  scenario?: { id: string; startUrl: string; steps: SourceBrowserStep[] };
+  confluence?: { deployment: 'cloud' | 'datacenter'; downloadUrl: string };
+  qlik?: { appId: string; objectId: string; exportFormat: 'CSV_C' | 'CSV_T' | 'OOXML' };
+}
+export type SourceBrowserStep = { action: 'goto'; url: string } | { action: 'click' | 'wait' | 'download'; selector: string } | { action: 'fill' | 'select'; selector: string; parameter: string } | { action: 'check'; selector: string; checked: boolean };
 export interface KnowledgeEntity { id: string; type: string; name: string; leaderId?: string | null; productId?: string | null; aliases?: string[];
   description?: string; body?: string; links?: { label: string; url: string }[]; goalIds?: string[]; revision?: string; archivedAt?: string | null }
 export interface GoalComment {
@@ -70,8 +82,11 @@ export interface Evidence { id: string; name: string; relativePath: string; sha2
 /** Rules and cohort captured when facts were accepted, never inferred for older imports. */
 export interface SnapshotEvaluationBasis {
   methodVersion: 'participant-all-applicable-metrics-v1' | 'explicit-measurement-v1'; goal: Goal; assignments: Assignment[];
+  organization?: { leaders: Leader[]; entities: KnowledgeEntity[]; directions?: WorkDirection[]; comments?: GoalComment[]; sources?: SourceDefinition[] };
 }
 export interface LocalSnapshot {
+  /** Private ownership metadata. Publication packages deliberately omit these fields. */
+  ownerSessionId?:string;ownerInstallationId?:string;
   id: string; classification: Classification; sourceId: string; period: string; observations: Observation[];
   collectedAt: string; sourceUpdatedAt: string | null; origin: 'file' | 'manual' | 'demo' | 'dashboard';
   dataHash: string; status: 'personal' | 'validated'; curatorId: string | null; curatorName: string | null;

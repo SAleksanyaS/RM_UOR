@@ -1,3 +1,7 @@
+import { createHash,randomUUID } from 'node:crypto';
+import PptxGenJS from 'pptxgenjs';
+import { saveReportTemplate,listReportTemplates } from '../../src/features/report-templates/service';
+import { listEvidence,readEvidenceBytes } from '../../src/features/evidence/evidence-service';
 import { afterEach, describe, expect, it } from 'vitest';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -222,3 +226,24 @@ describe('application publishing bridge', () => {
     expect((await f.writer.catalogs.readForSession(curator)).goals[0].weight).toBe(4);
   }, 90000);
 });
+
+it('publishes only selected evidence/template bytes and loads them in an offline fresh clone',async()=>{
+ const f=await fixture(),bytes=Buffer.from('Синтетическое доказательство'),id=randomUUID();
+ await writeFile(join(f.writer.paths.runtimeRoot,'evidence',id),bytes);
+ f.writer.db.set('evidence',id,{id,name:'Подтверждение.txt',relativePath:'evidence/'+id,sha256:createHash('sha256').update(bytes).digest('hex'),size:bytes.length,curatorId:curator.curatorId,classification:'demo',ownerInstallationId:f.writer.installationId,uploadedBy:curator.name,uploadedAt:new Date().toISOString()});
+ const deck=new PptxGenJS();deck.addSlide().addText('{{report.period}}',{x:1,y:1,w:6,h:1});
+ const template=await saveReportTemplate(f.writer,curator,{baseRevision:null,base64:Buffer.from(await deck.write({outputType:'nodebuffer'}) as Buffer).toString('base64'),profile:{name:'Общий шаблон',bindings:[],repeats:[]}});
+ await draft(f.writer,{weight:9});
+ const operation=await f.writer.operations.start('publish');
+ await publishChanges(f.writer,curator,operation.id,[],{snapshotIds:[],attestationIds:[],evidenceIds:[id],templateIds:[template.id]});
+ const result=await f.writer.operations.get(operation.id);expect(result.status,result.result?.message).toBe('completed');
+ expect((await f.writer.catalogs.listDrafts(curator))[0].status).toBe('local');
+ await git(f.seed,'fetch','origin');await git(f.seed,'-c','user.name=Fixture','-c','user.email=fixture@localhost','merge','--no-ff','origin/release/current','-m','Release verified assets');await git(f.seed,'push','origin','main');
+ await syncPublished(f.reader);const reader={...curator,role:'reader' as const,curatorId:null};
+ expect((await listEvidence(f.reader,reader)).map(e=>e.id)).toContain(id);expect((await readEvidenceBytes(f.reader,reader,id)).bytes.equals(bytes)).toBe(true);expect(listReportTemplates(f.reader,reader)[0].id).toBe(template.id);
+ const clone=join(f.root,'fresh-assets');await execute('git',['clone','--branch','main',f.remote,clone]);const fresh=await createContext({projectRoot:clone,allowedRoots:[f.root],startupCheck:false});contexts.push(fresh);
+ expect((await listEvidence(fresh,reader)).map(e=>e.id)).toContain(id);expect((await readEvidenceBytes(fresh,reader,id)).bytes.equals(bytes)).toBe(true);expect(listReportTemplates(fresh,reader)[0].profile.name).toBe('Общий шаблон');expect((await fresh.catalogs.read()).goals[0].weight).toBe(1);
+ // Untrusted replacement is validated before any catalog mutation.
+ await mkdir(join(f.seed,'published/evidence'),{recursive:true});const bundleFile=join(f.seed,'published/evidence',id+'.json');const bundle=JSON.parse(await readFile(bundleFile,'utf8'));bundle.base64=Buffer.from('tampered').toString('base64');await writeFile(bundleFile,JSON.stringify(bundle));await git(f.seed,'add','published');await git(f.seed,'-c','user.name=Fixture','-c','user.email=fixture@localhost','commit','-m','Invalid fixture hash');await git(f.seed,'push','origin','main');
+ await expect(syncPublished(f.reader)).rejects.toThrow(/Размер|Хеш/);expect((await readEvidenceBytes(f.reader,reader,id)).bytes.equals(bytes)).toBe(true);
+},90000);

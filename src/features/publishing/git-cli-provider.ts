@@ -4,7 +4,7 @@ import { mkdir, lstat, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve, sep } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { DomainChangeEvent, UpdateInfo } from '../../domain/contracts';
-import { canonicalJson, mergeObject, MergeConflictError } from './merge-object';
+import { canonicalJson, mergeObject, MergeConflictError, refreshObjectRevision } from './merge-object';
 import { semanticDiff } from './semantic-diff';
 
 const execute = promisify(execFile);
@@ -12,6 +12,7 @@ export interface RepositoryVersion { commit: string; files: Record<string, strin
 export interface PublishChanges {
   files: { path: string; content: string; baseContent?: string | null }[];
   actor: { name: string; email?: string }; classification: 'demo' | 'corporate'; publicationMode: 'demo-only' | 'internal';
+  expectedCommit?: string;
 }
 export interface PublishResult { remoteCommit: string; branch: string; appliedObjectIds: string[] }
 export interface GitCliProviderOptions {
@@ -30,6 +31,10 @@ export class PublicationPermissionError extends Error {
     super(`Репозиторий отклонил запись. Проверьте персональные права Git и правила ветки. ${detail}`);
     this.name = 'PublicationPermissionError';
   }
+}
+export class PublicationPreviewStaleError extends Error {
+  readonly statusCode = 409;
+  constructor() { super('Готовящийся выпуск изменился после предпросмотра. Обновите состав и повторите отправку; локальные черновики сохранены.'); this.name = 'PublicationPreviewStaleError'; }
 }
 class GitCommandError extends Error {
   constructor(public readonly output: string, public readonly exitCode: number | string | undefined) { super(output); }
@@ -57,7 +62,7 @@ function rejectSensitivePayload(value: unknown, mode: PublishChanges['publicatio
     rejectSensitivePayload(child, mode);
   }
 }
-function mergeContent(path: string, base: string | null | undefined, local: string, remote: string | null): string {
+export function mergeContent(path: string, base: string | null | undefined, local: string, remote: string | null): string {
   const equivalent = (left: string | null | undefined, right: string | null | undefined) => {
     if (left === right) return true;
     if (left == null || right == null || !path.endsWith('.json')) return false;
@@ -76,7 +81,7 @@ function mergeContent(path: string, base: string | null | undefined, local: stri
       // An optimistic concurrency token is metadata. Independent business fields
       // still merge; the resulting combined object receives a fresh revision.
       delete previous.revision; delete proposed.revision; delete latest.revision;
-      return JSON.stringify({ ...mergeObject(previous, proposed, latest), revision: randomUUID() }, null, 2) + '\n';
+      return JSON.stringify(refreshObjectRevision(mergeObject(previous, proposed, latest), randomUUID()), null, 2) + '\n';
     }
     return JSON.stringify(mergeObject(previous, proposed, latest), null, 2) + '\n';
   } catch (error) {
@@ -88,10 +93,10 @@ function mergeContent(path: string, base: string | null | undefined, local: stri
 
 /** A private checkout isolates data publication from the running application. */
 export class GitCliProvider {
+  private queue: Promise<unknown> = Promise.resolve();
   private readonly workspace: string;
   private readonly options: GitCliProviderOptions;
   private initialized = false;
-  private queue: Promise<unknown> = Promise.resolve();
   constructor(options: GitCliProviderOptions) {
     if (!validBranch(options.publishedBranch) || !validBranch(options.releaseBranch)) throw new Error('Недопустимое имя ветки Git.');
     if (options.publishedBranch === options.releaseBranch) throw new Error('Ветка выпуска должна отличаться от опубликованной ветки.');
@@ -187,6 +192,7 @@ export class GitCliProvider {
       if (input.classification === 'corporate' && input.publicationMode === 'demo-only')
         throw new Error('Корпоративные данные нельзя публиковать в публичный демонстрационный репозиторий.');
       if (!input.files.length) throw new Error('Не выбраны изменения для публикации.');
+      if (input.expectedCommit !== undefined && !/^[a-f0-9]{40,64}$/i.test(input.expectedCommit)) throw new Error('Некорректная проверенная версия выпуска');
       if (!input.actor.name.trim() || /[\x00-\x1f]/.test(input.actor.name + (input.actor.email ?? ''))) throw new Error('Некорректный автор публикации.');
       const paths = new Set<string>();
       for (const file of input.files) {
@@ -205,6 +211,7 @@ export class GitCliProvider {
       for (let attempt = 0; attempt < 3; attempt++) {
         const baseCommit = await this.fetchBranch(this.options.releaseBranch) ?? await this.fetchBranch(this.options.publishedBranch);
         if (!baseCommit) throw new Error('Не найдена опубликованная основа для релизной ветки.');
+        if (input.expectedCommit !== undefined && baseCommit !== input.expectedCommit) throw new PublicationPreviewStaleError();
         const version = await this.versionAt(baseCommit);
         await this.git(['checkout', '--detach', '--force', baseCommit]);
         await this.git(['clean', '-fd']);
@@ -231,6 +238,7 @@ export class GitCliProvider {
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           if (/non-fast-forward|fetch first|cannot lock ref|failed to update ref/i.test(message)) {
+            if (input.expectedCommit !== undefined) throw new PublicationPreviewStaleError();
             if (attempt < 2) continue;
             throw new Error('Другие кураторы продолжают отправлять изменения. Три автоматические попытки исчерпаны; черновик сохранён, повторите публикацию.');
           }

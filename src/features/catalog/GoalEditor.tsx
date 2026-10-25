@@ -13,7 +13,7 @@ const scopeForm = (assignment: Assignment): AssignmentForm => ({ id: assignment.
   ...(assignment.participantIds !== undefined ? { participantIds: [...assignment.participantIds] } : {}),
   target: assignment.target || '', summary: assignment.summary || '', newEntities: [] });
 
-export function GoalEditor({ goal, onClose }: { goal: Goal; onClose: () => void }) {
+export function GoalEditor({ goal, onClose, onPublish }: { goal: Goal; onClose: () => void; onPublish?: () => void }) {
   const { state, mutate, notify } = useWorkspace();
   const directions = getDirections(state.catalog);
   const [assignmentForms, setAssignments] = useState<AssignmentForm[]>(() => state.catalog.assignments.filter(assignment => assignment.goalId === goal.id).map(scopeForm));
@@ -51,9 +51,9 @@ export function GoalEditor({ goal, onClose }: { goal: Goal; onClose: () => void 
         setCreatedEntities(current => [...new Map([...current, ...accepted.createdEntities.map(item => item.entity)].map(entity => [entity.id, entity])).values()]);
         setAssignments(current => current.map(item => item.id === assignment.id ? scopeForm(accepted.assignment) : item));
       }
-      if (publish) await mutate('/api/publish', {});
-      notify(publish ? 'Публикация запущена. Результат — в панели операций.' : 'Цель и изменённые назначения сохранены на этом компьютере');
+      notify(publish && onPublish ? 'Правки сохранены локально. Проверьте состав и варианты перед общей отправкой.' : 'Цель и изменённые назначения сохранены на этом компьютере');
       onClose();
+      if (publish) onPublish?.();
     } catch (failure) { setError((failure as Error).message); }
     finally { setBusy(false); }
   }
@@ -82,8 +82,8 @@ export function GoalEditor({ goal, onClose }: { goal: Goal; onClose: () => void 
       })}
     </section>
     {error && <div className="error-inline" role="alert">{error}</div>}
-    <p className="form-note">Изменения сохраняются локально. «Сохранить и отправить» публикует их в общую релизную ветку; руководитель УОР выпускает версию.</p>
+    <p className="form-note">Изменения сохраняются локально. {onPublish ? 'Перед общей отправкой откроется проверка состава, версий и конфликтов.' : 'Для общей отправки откройте раздел подготовки выпуска после сохранения.'}</p>
     </fieldset>
-    <div className="button-row"><button className="button secondary" onClick={onClose}>Отмена</button><button className="button secondary" disabled={busy || !form.title.trim()} onClick={() => void save(false)}>Сохранить черновик</button><button className="button primary" disabled={busy || !form.title.trim()} onClick={() => void save(true)}>{busy ? 'Сохранение…' : 'Сохранить и отправить'}</button></div>
+    <div className="button-row"><button className="button secondary" disabled={busy} onClick={onClose}>Отмена</button><button className="button secondary" disabled={busy || !form.title.trim()} onClick={() => void save(false)}>Сохранить черновик</button>{onPublish && <button className="button primary" disabled={busy || !form.title.trim()} onClick={() => void save(true)}>{busy ? 'Сохранение…' : 'Сохранить и проверить состав'}</button>}</div>
   </div>;
 }

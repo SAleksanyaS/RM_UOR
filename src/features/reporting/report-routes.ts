@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { ApplicationContext } from '../../server/workspace/context';
-import { generateReport, readReport } from './report-service';
+import { generateReport, readReport, readFrozenTemplatePptx } from './report-service';
 import { reportHtml, reportPptx } from './report-export';
 import type { ReportSelection } from './report-contracts';
 import { saveReportProfile } from './report-profile-service';
@@ -18,8 +18,8 @@ export function registerReportRoutes(app: FastifyInstance, context: ApplicationC
     return reportHtml(report);
   });
   app.get<{ Params: { id: string } }>('/api/reports/:id/pptx', async (request, reply) => {
-    const report = readReport(context, await sessionFor(request, reply), request.params.id);
+    const session = await sessionFor(request, reply), report = readReport(context, session, request.params.id);
     reply.header('content-type', 'application/vnd.openxmlformats-officedocument.presentationml.presentation').header('cache-control', 'no-store').header('content-disposition', `attachment; filename="uor-report-${report.selection.period}.pptx"`);
-    return reportPptx(report);
+    return await readFrozenTemplatePptx(context, session, report.id) ?? reportPptx(report);
   });
 }

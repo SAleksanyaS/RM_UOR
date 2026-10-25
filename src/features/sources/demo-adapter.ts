@@ -4,7 +4,7 @@ import type { CollectRequest, SourceAdapter, SourceEvent, SourceReadiness } from
 export class DemoAdapter implements SourceAdapter {
   constructor(private readonly source: SourceDefinition, private readonly snapshot?: LocalSnapshot, private readonly outcome: 'success' | 'access_denied' | 'unavailable' = 'success') {}
   async check(): Promise<SourceReadiness> {
-    if (this.source.kind !== 'demo') return { status: 'stub', message: 'Демонстрационный адаптер не подключается к рабочим источникам.', accessUrl: this.source.accessUrl };
+    if (this.source.kind !== 'demo') return { status: 'configuration_required', message: 'Демонстрационный адаптер не подключается к рабочим источникам.', accessUrl: this.source.accessUrl };
     if (this.outcome === 'access_denied') return { status: 'access_denied', message: 'Демонстрация ошибки: нет доступа к источнику. Проверьте доступ по ссылке.', accessUrl: this.source.accessUrl };
     if (this.outcome === 'unavailable' || !this.snapshot) return { status: 'unavailable', message: 'Демонстрационный набор недоступен или не настроен.', accessUrl: this.source.accessUrl };
     return { status: 'ready', message: 'Демонстрационный набор готов. Все значения в нем вымышлены.', accessUrl: null };
