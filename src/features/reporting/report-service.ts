@@ -1,3 +1,4 @@
+import {buildMaturityReport} from './maturity-data';
 import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { Attestation, CatalogSnapshot, LocalSnapshot, Session } from '../../domain/contracts';
@@ -69,7 +70,7 @@ export function buildReport(catalog: CatalogSnapshot, snapshots: LocalSnapshot[]
       const entities = organization?.entities ?? [];
       const decisions = entities.flatMap(e => { const parsed = decisionEntitySchema.safeParse(e); return parsed.success && (!parsed.data.goalId || parsed.data.goalId === goalId) ? [parsed.data] : []; });
       const workPackages = entities.filter(e => e.type === 'work_package').flatMap(e => {
-        const work = readWorkPackage(e);
+        const work = readWorkPackage(e,{entities});
         if (work.goalId !== goalId || work.leaderId !== leaderId) return [];
         const last = work.events.filter(event => event.at <= `${input.period}T23:59:59.999Z`).sort((a,b) => b.at.localeCompare(a.at))[0];
         return [{ id:work.id, title:work.title, owner:work.owner, dueDate:work.dueDate, baselineDueDate:work.baseline?.dueDate ?? null, completed:last?.completed ?? false, lastEventAt:last?.at ?? null }];
@@ -110,6 +111,7 @@ export async function generateReport(context: ApplicationContext, session: Sessi
   const catalog = await context.catalogs.readForSession(session);
   const report = buildReport(catalog, context.db.list<LocalSnapshot>('snapshots').filter(s => canReadSnapshot(s,session,context.installationId)), context.db.list<Attestation>('attestations'), selection, session.name);
   const template = selection.templateId ? getReportTemplate(context, session, selection.templateId) : null;
+  if(template?.profile.preset)report.maturity=buildMaturityReport(catalog,context.db.list<LocalSnapshot>('snapshots').filter(s=>canReadSnapshot(s,session,context.installationId)),report,template.profile.preset);
   if (template && template.classification !== report.classification) throw new ActionError('Классификация шаблона и отчёта различается',400);
   if (template) assertTemplateCoverage(template.inspection,template.profile,report);
   if (template) report.template = { id: template.id, version: template.revision, name: template.profile.name };

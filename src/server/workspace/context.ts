@@ -5,6 +5,7 @@ import type { Attestation, CatalogSnapshot, Evaluation, LocalSnapshot, Session, 
 import { LocalDatabase } from '../storage/database';
 import { OperationStore } from '../operations/operation-store';
 import { resolveWorkspace, type WorkspacePaths } from './paths';
+import { recoverWorkspaceMaintenance } from '../../features/workspace-maintenance/recovery';
 import { CatalogStore } from '../../features/catalog/catalog-store';
 import { RoleService, type CuratorRecord } from '../../features/identity/role-service';
 import { evaluateGoal } from '../../features/evaluation/evaluate';
@@ -37,7 +38,8 @@ export async function loadSite(projectRoot: string): Promise<SiteConfig> {
   return { ...defaultConfig, ...await readJson<Partial<SiteConfig>>(path.join(projectRoot, 'config/site.local.json'), {}) };
 }
 export class ApplicationContext {
-  maintenance = false;
+  maintenance = process.env.UOR_UPDATE_BOOTSTRAP==='1';
+  maintenanceRecoveryRequired = false;
   activeRequests = 0;
   private readonly background=new Set<Promise<unknown>>();
   trackBackground<T>(promise:Promise<T>):Promise<T>{this.background.add(promise);void promise.finally(()=>this.background.delete(promise)).catch(()=>{});return promise;}
@@ -136,6 +138,7 @@ export class ApplicationContext {
     });
   }
   async initialize(options: AppOptions) {
+    await recoverWorkspaceMaintenance(this.paths.runtimeRoot, this.db);
     const imported = options.initialCatalog ?? await readJson<CatalogSnapshot | null>(path.join(this.paths.runtimeRoot, 'imports/catalog.json'), null);
     let initial = imported ?? await readJson<CatalogSnapshot | null>(path.join(this.paths.projectRoot, 'catalog/catalog.json'), null)
       ?? await readJson<CatalogSnapshot | null>(path.join(this.paths.projectRoot, 'catalog/demo.json'), null);

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import {afterEach,expect,it,vi} from 'vitest';import {cleanup,render,screen,waitFor} from '@testing-library/react';
 import {WorkspaceContext,type ClientState} from '../../app/AppContext';import {SystemPage} from './SystemPage';
+vi.mock('../workspace-maintenance/WorkspaceMaintenancePanel',()=>({WorkspaceMaintenancePanel:()=> <section>Перенос рабочего места</section>}));
 vi.mock('./CodeUpdatePanel',()=>({CodeUpdatePanel:()=> <section>Обновление программы</section>}));
 afterEach(()=>{cleanup();vi.unstubAllGlobals();});
 function show(role:'reader'|'curator'){const fetchMock=vi.fn(async()=>({ok:true,json:async()=>({applicationVersion:'0.2.1',storageVersion:2,platform:'test',architecture:'x64',node:'24',git:{ok:true,message:'Git готов'},writable:true,allowedFolder:'private-workspace',databaseBytes:10,availableDiskBytes:100,counts:{},backups:[],backupPolicy:{keepCopies:10,intervalHours:24,automatic:false},instructions:'private-instructions'})}));vi.stubGlobal('fetch',fetchMock);render(<WorkspaceContext value={{state:{session:{role,curatorId:role==='curator'?'c':null},version:'0.2.1',csrfToken:'fixture'} as ClientState,mutate:vi.fn(),refresh:vi.fn(),notify:vi.fn()}}><SystemPage/></WorkspaceContext>);return fetchMock;}

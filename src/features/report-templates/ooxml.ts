@@ -1,3 +1,4 @@
+import {recognizeMaturityTemplate} from './maturity-preset';
 import JSZip from 'jszip';
 import { DOMParser, XMLSerializer, type Document, type Element } from '@xmldom/xmldom';
 import { inflateRawSync } from 'node:zlib';
@@ -113,6 +114,7 @@ export async function inspectTemplate(bytes: Buffer): Promise<TemplateInspection
 }
 export function checkTemplate(inspection: TemplateInspection, raw: unknown) {
   const profile = templateProfileSchema.parse(raw), used = new Set<string>();
+  if(profile.preset){if(!recognizeMaturityTemplate(inspection))fail('Этот PPTX не соответствует поддержанному шаблону модели зрелости');if(profile.bindings.length||profile.repeats.length)fail('Пресет зрелости и произвольные привязки задаются отдельно');return{valid:true as const,warnings:inspection.warnings,profile};}
   for (const binding of profile.bindings) {
     const shape = inspection.slides.find(s => s.number === binding.slide)?.shapes.find(o => o.id === binding.shapeId);
     if (!shape || shape.kind !== binding.kind) fail(`Слайд ${binding.slide}, объект ${binding.shapeId}: требуется поддержанный ${binding.kind}`);
@@ -136,6 +138,7 @@ export function checkTemplate(inspection: TemplateInspection, raw: unknown) {
 }
 /** An export may not quietly omit a selected goal or leader name. */
 export function assertTemplateCoverage(inspection: TemplateInspection, profile: TemplateProfile, report: ReportSnapshot) {
+  if(profile.preset){if(!report.maturity)fail('Сформируйте снимок с данными модели зрелости для этого шаблона');const allowed=new Set([profile.preset.goalId,profile.preset.separateGoalId]);if(report.rows.some(r=>!allowed.has(r.goalId)))fail('Шаблон модели зрелости не включает другие выбранные цели');return;}
   const coverage = new Map(report.rows.map(row => [row,new Set<string>()]));
   const add = (kind: 'rows'|'goals'|'leaders', fields: string[]) => {
     for (const row of collection(report,kind)) for (const field of fields) coverage.get(row)!.add(field);
@@ -177,7 +180,9 @@ function chunks(input: string, size: number): string[] {
 const collection = (report: ReportSnapshot, kind: 'rows'|'goals'|'leaders') => report.rows.filter(r => kind === 'rows' || (kind === 'goals' ? r.leaderId === null : r.leaderId !== null));
 /** Copy slide XML, master/theme/media and relationships; only bound text and table rows change. */
 export async function renderTemplate(bytes: Buffer, raw: TemplateProfile, report: ReportSnapshot): Promise<Buffer> {
-  const inspection = await inspectTemplate(bytes), { profile } = checkTemplate(inspection,raw), zip = await load(bytes), { presentation, rels, paths } = await orderedSlides(zip);
+  const inspection = await inspectTemplate(bytes), { profile } = checkTemplate(inspection,raw);
+  if(profile.preset)return(await import('./maturity-render')).renderMaturityTemplate(bytes,profile,report);
+  const zip = await load(bytes), { presentation, rels, paths } = await orderedSlides(zip);
   assertTemplateCoverage(inspection,profile,report);
   const contentTypes = xml(await zip.file('[Content_Types].xml')!.async('text'));
   const list = all(presentation,P,'sldIdLst')[0]; if (!list) fail('Нет списка слайдов');
@@ -256,6 +261,11 @@ export async function renderTemplate(bytes: Buffer, raw: TemplateProfile, report
     zip.remove(originalPath); zip.remove(originalPath.replace(/\/([^/]+)$/, '/_rels/$1.rels'));
     for (const entry of Array.from(contentTypes.getElementsByTagName('Override')).filter(e => e.getAttribute('PartName') === `/${originalPath}`)) entry.parentNode!.removeChild(entry);
   }
+  cleanRemovedSlideParts(zip,contentTypes);
   zip.file('ppt/presentation.xml',serialize(presentation)); zip.file('ppt/_rels/presentation.xml.rels',serialize(rels)); zip.file('[Content_Types].xml',serialize(contentTypes));
   return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
 }
+
+/** Old speaker notes reference deleted source slides and may contain stale report values. */
+function cleanRemovedSlideParts(zip:JSZip,contentTypes:Document){zip.remove('ppt/notesSlides');for(const entry of Array.from(contentTypes.getElementsByTagName('Override'))){const part=entry.getAttribute('PartName')?.replace(/^\//,'');if(part&&!zip.file(part))entry.parentNode!.removeChild(entry);}}
+export const templatePackage={load,orderedSlides,xml,serialize,all,text,shapeNodes,shapeId,setText,cleanRemovedSlideParts};

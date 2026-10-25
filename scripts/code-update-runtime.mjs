@@ -1,6 +1,8 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { readFile, writeFile, mkdir, rename } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, rename, realpath, lstat, copyFile, access, unlink } from 'node:fs/promises';
+import {randomUUID,createHash} from 'node:crypto';
+import {DatabaseSync} from 'node:sqlite';
 import path from 'node:path';
 const execute=promisify(execFile);
 export class CodeUpdateError extends Error{constructor(code,message){super(message);this.code=code;}}
@@ -19,15 +21,80 @@ export async function inspectCodeUpdate(root,config,{fetchRemote=false,expectedC
   let remoteCommit;try{remoteCommit=(await git(['rev-parse','--verify',fetchRemote?'FETCH_HEAD^{commit}':`refs/remotes/origin/${config.publishedBranch}^{commit}`])).stdout.trim();}catch{throw new CodeUpdateError('remote_unavailable','Не получена выбранная опубликованная ветка');}
   if(targetCommit&&remoteCommit!==targetCommit)throw new CodeUpdateError('stale_remote','Опубликованная версия изменилась после проверки. Повторите подготовку');
   const paths=(await git(['ls-tree','-r','--name-only','-z',remoteCommit])).stdout.split('\0');
-  if(paths.some(file=>/^(?:\.runtime(?:\/|$)|config\/site\.local\.json$|\.env(?:\.local|\..*\.local)?$)/i.test(file)))throw new CodeUpdateError('private_paths','Опубликованный код содержит приватные пути .runtime/локальных настроек. Обновление остановлено для сохранения личных данных');
+  if(paths.some(file=>/^(?:\.runtime(?:\/|$)|config\/site\.local\.json$|node_modules(?:\/|$)|\.env(?:\.local|\..*\.local)?$)/i.test(file)))throw new CodeUpdateError('private_paths','Опубликованный код содержит приватные пути .runtime/локальных настроек. Обновление остановлено для сохранения личных данных');
   try{await git(['merge-base','--is-ancestor',currentCommit,remoteCommit]);}catch{throw new CodeUpdateError('not_fast_forward','Ветка разошлась с опубликованной. Требуется согласовать изменения; автоматический reset запрещён');}
   return{currentCommit,targetCommit:remoteCommit,branch:config.publishedBranch,available:currentCommit!==remoteCommit};
 }
-export async function applyCodeUpdate(root,config,ticket,{install=async()=>{},stage=async()=>{}}={}){
-  const preview=await inspectCodeUpdate(root,config,{fetchRemote:true,expectedCommit:ticket.expectedCommit,targetCommit:ticket.targetCommit});
-  await stage('merging','Получаем проверенную опубликованную версию');
-  await runCommand('git',[...(config.credentialHelper?['-c',`credential.helper=${config.credentialHelper}`]:[]),'merge','--ff-only',preview.targetCommit],root);
-  await stage('installing','Устанавливаем закреплённые зависимости');await install();return preview;
-}
-export async function atomicJson(file,value){await mkdir(path.dirname(file),{recursive:true});const temporary=`${file}.${process.pid}.tmp`;await writeFile(temporary,JSON.stringify(value,null,2),{mode:0o600});await rename(temporary,file);}
+export async function atomicJson(file,value){await mkdir(path.dirname(file),{recursive:true});const temporary=`${file}.${process.pid}.${randomUUID()}.tmp`;try{await writeFile(temporary,JSON.stringify(value,null,2),{mode:0o600,flag:'wx'});await rename(temporary,file);}finally{await unlink(temporary).catch(()=>{});}}
 export async function readJsonFile(file,fallback=null){try{return JSON.parse(await readFile(file,'utf8'));}catch(error){if(error.code==='ENOENT')return fallback;throw error;}}
+
+const terminalPhases=new Set(['completed','failed','rolled_back','committed','committed_unavailable']);
+const hashBytes=value=>createHash('sha256').update(value).digest('hex');
+const within=(root,candidate)=>{const relative=path.relative(root,candidate);return relative===''||relative!=='..'&&!relative.startsWith(`..${path.sep}`)&&!path.isAbsolute(relative);};
+async function exists(file){try{await access(file);return true;}catch(error){if(error.code==='ENOENT')return false;throw error;}}
+/** Check every existing ancestor, including Windows junctions, before any rename/copy. */
+async function safePath(root,relative){if(!relative||path.isAbsolute(relative)||relative.includes('\0'))throw new CodeUpdateError('unsafe_path','Недопустимый путь обновления');const canonical=await realpath(root),target=path.resolve(canonical,relative);if(!within(canonical,target))throw new CodeUpdateError('unsafe_path','Путь обновления вышел за рабочую папку');let parent=target,suffix=[];while(!await exists(parent)){suffix.unshift(path.basename(parent));const next=path.dirname(parent);if(next===parent)throw new CodeUpdateError('unsafe_path','Не удалось проверить путь обновления');parent=next;}const checked=path.join(await realpath(parent),...suffix);if(!within(canonical,checked))throw new CodeUpdateError('unsafe_path','Ссылка в папке обновления ведёт за рабочую папку');return checked;}
+async function transactionPaths(root,id){if(!/^[a-f0-9-]{36}$/.test(id))throw new CodeUpdateError('invalid_transaction','Некорректная запись обновления');const directory=await safePath(root,'.runtime/code-update');await mkdir(directory,{recursive:true});const folder=await safePath(root,`.runtime/code-update/transactions/${id}`);await mkdir(folder,{recursive:true});return{directory,folder,journalFile:path.join(folder,'journal.json'),activeFile:path.join(directory,'active.json'),stageRoot:path.join(folder,'candidate'),previousModules:path.join(folder,'previous-node_modules'),rejectedModules:path.join(folder,'rejected-node_modules')};}
+async function currentHead(root){return(await runCommand('git',['rev-parse','--verify','HEAD^{commit}'],root)).stdout.trim();}
+async function cleanTracked(root){return!(await runCommand('git',['status','--porcelain','--untracked-files=no'],root)).stdout.trim();}
+async function saveJournal(paths,journal,phase,extra={}){Object.assign(journal,extra,{phase,updatedAt:new Date().toISOString()});await atomicJson(paths.journalFile,journal);await atomicJson(paths.activeFile,{schemaVersion:2,id:journal.id,requestId:journal.requestId,phase,expectedCommit:journal.expectedCommit,targetCommit:journal.targetCommit});}
+async function validateJournal(root,raw){if(!raw||raw.schemaVersion!==2||raw.root!==root||!/^[a-f0-9]{40,64}$/.test(raw.expectedCommit??'')||!/^[a-f0-9]{40,64}$/.test(raw.targetCommit??'')||typeof raw.hadDependencies!=='boolean')throw new CodeUpdateError('invalid_transaction','Запись восстановления обновления повреждена');return raw;}
+async function restoreDatabase(root,paths,backup){if(!backup)return;const id=backup.id;if(!/^[a-f0-9-]{36}$/.test(id)||!/^[a-f0-9]{64}$/.test(backup.sha256??'')||!Number.isSafeInteger(backup.bytes)||backup.bytes<1)throw new CodeUpdateError('backup_invalid','Не удалось проверить копию базы перед обновлением');const source=await safePath(root,`.runtime/backups/${id}/database.sqlite`),bytes=await readFile(source);if(bytes.length!==backup.bytes||hashBytes(bytes)!==backup.sha256)throw new CodeUpdateError('backup_invalid','Копия базы перед обновлением повреждена');let database;try{database=new DatabaseSync(source,{readOnly:true});if(database.prepare('PRAGMA integrity_check').get().integrity_check!=='ok')throw new Error('integrity');}catch{throw new CodeUpdateError('backup_invalid','Копия базы перед обновлением не прошла проверку');}finally{database?.close();}
+ const target=await safePath(root,'.runtime/app.db'),replacement=await safePath(root,`.runtime/code-update/transactions/${paths.folder.split(path.sep).at(-1)}/return-database-${randomUUID()}.sqlite`);await copyFile(source,replacement);const rejected=path.join(paths.folder,`rejected-database-${randomUUID()}`);await mkdir(rejected);const moved=[];try{for(const suffix of ['','-wal','-shm']){const from=await safePath(root,`.runtime/app.db${suffix}`);if(await exists(from)){const to=path.join(rejected,`app.db${suffix}`);await rename(from,to);moved.push({from,to});}}await rename(replacement,target);}catch(error){for(const item of moved.reverse())if(await exists(item.to)&&!await exists(item.from))await rename(item.to,item.from);throw error;}
+}
+async function rollbackOwned(root,paths,journal){
+ if(!await cleanTracked(root))throw new CodeUpdateError('recovery_dirty','После обновления появились локальные правки. Они сохранены; автоматическое восстановление остановлено');
+ const head=await currentHead(root);if(head!==journal.expectedCommit&&head!==journal.targetCommit)throw new CodeUpdateError('recovery_moved','После обновления код изменился другим действием. Автоматическое восстановление остановлено');
+ await saveJournal(paths,journal,'rolling_back');
+ if(head!==journal.expectedCommit)await runCommand('git',['switch','--detach',journal.expectedCommit],root);
+ const modules=await safePath(root,'node_modules');
+ if(await exists(paths.previousModules)){
+  if(await exists(modules)){if(await exists(paths.rejectedModules))throw new CodeUpdateError('recovery_collision','Сохранены разные версии зависимостей. Требуется проверить журнал обновления');await rename(modules,paths.rejectedModules);}
+  await rename(paths.previousModules,modules);
+ }else if(!journal.hadDependencies){if(await exists(modules)&&!await exists(paths.rejectedModules))await rename(modules,paths.rejectedModules);}
+ else if(journal.dependenciesApplied&&!await exists(paths.rejectedModules)&&!journal.dependenciesRestored)throw new CodeUpdateError('recovery_missing','Прежняя папка зависимостей отсутствует. Она не будет заменена наугад');
+ await saveJournal(paths,journal,'rolling_back',{dependenciesRestored:true});
+ if(journal.newStarted)await restoreDatabase(root,paths,journal.databaseBackup);
+ return{currentCommit:journal.expectedCommit,targetCommit:journal.targetCommit,branch:journal.branch,available:true,rolledBack:true,error:journal.error};
+}
+/** On launcher restart, restore only a recorded update that this launcher owns. Never reset human work. */
+export async function recoverCodeUpdate(inputRoot){const root=await realpath(inputRoot),directory=await safePath(root,'.runtime/code-update');await mkdir(directory,{recursive:true});const pointer=await readJsonFile(path.join(directory,'active.json'));if(!pointer||['completed','failed','rolled_back'].includes(pointer.phase))return null;const paths=await transactionPaths(root,pointer.id),journal=await validateJournal(root,await readJsonFile(paths.journalFile));if(journal.committed){await saveJournal(paths,journal,'completed',{recoveredAfterCommit:true});return{rolledBack:false,committed:true,currentCommit:await currentHead(root),targetCommit:journal.targetCommit,branch:journal.branch,available:false};}if(terminalPhases.has(journal.phase))return null;
+ if(['preparing','prepared','quiesced'].includes(journal.phase)){await saveJournal(paths,journal,'failed',{error:'Предыдущее обновление прервалось до замены программы; рабочий код сохранён'});return{rolledBack:false,untouched:true,currentCommit:await currentHead(root),targetCommit:journal.targetCommit};}
+ const result=await rollbackOwned(root,paths,journal);await saveJournal(paths,journal,'rolled_back',{error:'Прерванное обновление восстановлено; запускается прежняя версия'});return result;}
+/** Stage a trusted exact commit and dependencies first; only then quiesce and replace live files. */
+export async function executeCodeUpdate(inputRoot,config,ticket,{install=async()=>{},quiesce=async()=>{},resume=async()=>{},stop=async()=>{},start=async()=>{},ready=async()=>true,activate=async()=>{},stage=async()=>{}}={}){
+ const root=await realpath(inputRoot),preview=await inspectCodeUpdate(root,config,{fetchRemote:true,expectedCommit:ticket.expectedCommit,targetCommit:ticket.targetCommit});
+ const id=randomUUID(),paths=await transactionPaths(root,id),active=await readJsonFile(paths.activeFile);if(active&&!terminalPhases.has(active.phase))throw new CodeUpdateError('update_busy','Предыдущее обновление ещё не завершено');
+ const journal={schemaVersion:2,id,requestId:ticket.id??id,root,expectedCommit:preview.currentCommit,targetCommit:preview.targetCommit,branch:preview.branch,hadDependencies:await exists(await safePath(root,'node_modules')),phase:'preparing',createdAt:new Date().toISOString()};let stopped=false,quiesced=false,committed=false;
+ const phase=async(key,message,extra={})=>{await saveJournal(paths,journal,key,extra);await stage(key,message);};
+ try{
+  await phase('preparing','Готовим новую версию и зависимости. Текущая программа продолжает работать');
+  await runCommand('git',['clone','--no-checkout','--shared',root,paths.stageRoot],root);
+  await runCommand('git',['checkout','--detach',preview.targetCommit],paths.stageRoot);
+  if(!await exists(path.join(paths.stageRoot,'package.json'))||!await exists(path.join(paths.stageRoot,'package-lock.json')))throw new CodeUpdateError('lockfile_missing','В опубликованной версии нет package.json/package-lock.json');
+  const protocol=await readJsonFile(path.join(paths.stageRoot,'config/update-protocol.json'));if(protocol?.schemaVersion!==1||protocol.bootstrap!==1)throw new CodeUpdateError('bootstrap_unsupported','Новая версия не поддерживает безопасный запуск перед обновлением. Текущая программа сохранена');
+  await install(paths.stageRoot);
+  if(!await cleanTracked(paths.stageRoot))throw new CodeUpdateError('staged_dirty','Установка изменила исходники новой версии. Рабочая программа сохранена');
+  const preparedModules=await safePath(paths.stageRoot,'node_modules');await mkdir(preparedModules,{recursive:true});
+  await phase('prepared','Новая версия подготовлена. Проверяем возможность перезапуска');
+  await inspectCodeUpdate(root,config,{fetchRemote:true,expectedCommit:preview.currentCommit,targetCommit:preview.targetCommit});
+  const databaseBackup=await quiesce();quiesced=true;await phase('quiesced','Рабочие операции завершены; сохраняем возврат к прежней версии',{...(databaseBackup?{databaseBackup}:{})});
+  stopped=true;await stop();
+  await inspectCodeUpdate(root,config,{fetchRemote:true,expectedCommit:preview.currentCommit,targetCommit:preview.targetCommit});
+  await phase('applying','Подключаем проверенную опубликованную версию');
+  await runCommand('git',[...(config.credentialHelper?['-c',`credential.helper=${config.credentialHelper}`]:[]),'merge','--ff-only',preview.targetCommit],root);
+  await phase('code_applied','Подключаем подготовленные зависимости');
+  const modules=await safePath(root,'node_modules');if(journal.hadDependencies)await rename(modules,paths.previousModules);
+  await rename(preparedModules,modules);await phase('dependencies_applied','Зависимости подключены',{dependenciesApplied:true});
+  await phase('starting','Проверяем запуск новой версии',{newStarted:true});await start('candidate');if(!await ready())throw new CodeUpdateError('startup_failed','Новая версия не запустилась; возвращаем прежнюю');
+  await phase('committed','Запуск новой версии проверен; открываем рабочее место',{committed:true});committed=true;await activate();
+  await phase('completed','Программа обновлена и работает',{completedAt:new Date().toISOString()});return{...preview,currentCommit:preview.targetCommit,available:false,rolledBack:false};
+ }catch(error){journal.error=error.message;
+  if(committed){try{await phase('restarting_committed','Повторно запускаем сохранённую новую версию без возврата принятых данных');await stop();await start('committed');if(!await ready())throw new CodeUpdateError('committed_start_failed','Не подтверждён повторный запуск новой версии');await phase('completed','Новая версия восстановила запуск; принятые данные сохранены',{recoveredActivation:true});return{...preview,currentCommit:preview.targetCommit,available:false,rolledBack:false,recoveredActivation:true};}catch(restartError){await phase('committed_unavailable',`Новая версия и принятые данные сохранены; повторный запуск не подтверждён. Перезапустите рабочее место. ${restartError.message}`);throw restartError;}}
+  if(!stopped){await resume().catch(()=>{});await phase('failed',`Обновление не установлено; прежняя программа сохранена. ${error.message}`);throw error;}
+  try{await stage('rolling_back','Возвращаем прежнюю программу, зависимости и базу');await stop();const result=await rollbackOwned(root,paths,journal);await start('rollback');if(!await ready())throw new CodeUpdateError('rollback_start_failed','Прежняя версия восстановлена, но её запуск не подтверждён');await phase('rolled_back',`Обновление не запустилось. Прежняя версия восстановлена и работает. ${error.message}`,{rolledBackAt:new Date().toISOString()});return result;}
+  catch(rollbackError){await phase('recovery_required',`Автоматическое восстановление остановлено: ${rollbackError.message}. Сохранены прежние файлы и журнал обновления.`);throw rollbackError;}
+ }
+}
+/** Compatibility helper for callers without running services; the launcher passes the real lifecycle callbacks. */
+export async function applyCodeUpdate(root,config,ticket,options={}){return executeCodeUpdate(root,config,ticket,options);}

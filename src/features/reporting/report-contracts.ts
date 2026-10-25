@@ -1,3 +1,4 @@
+import type {MaturityReportData} from './maturity-contracts';
 import type { Attestation, Evaluation, ExecutionPlan, GoalComment, LocalSnapshot } from '../../domain/contracts';
 
 export interface ReportSelection { goalIds: string[]; leaderIds: string[]; period: string; baselinePeriod?: string; templateId?: string }
@@ -25,6 +26,7 @@ export interface ReportSnapshot {
   summary: { goals: number; confirmed: number; pending: number; notMet: number; unknown: number };
   limitations: string[];
   comparison?: ReportComparison;
+  maturity?:MaturityReportData;
 }
 export function reportStatus(row: ReportRow): string {
   if (row.evaluation.official === 'unknown') return 'Нет данных для вывода';

@@ -1,3 +1,4 @@
+import {rotateExecutionJournal} from './execution-journal';
 import { randomUUID } from 'node:crypto';
 import type { CatalogSnapshot, Draft, KnowledgeEntity, LocalSnapshot, Session } from '../../domain/contracts';
 import type { ApplicationContext } from '../../server/workspace/context';
@@ -18,13 +19,14 @@ function scope(catalog: CatalogSnapshot, goalId: string, leaderId: string | null
   if (leaderId && !catalog.assignments.some(a => a.goalId === goalId && a.leaderId === leaderId && a.active !== false)) throw new ActionError('Нет активного назначения в выбранном контуре', 404);
 }
 async function persist(context: ApplicationContext, session: Session, catalog: CatalogSnapshot, initial: string, value: WorkPackage | ExecutionConfig, type: 'work_package' | 'execution_config', before?: KnowledgeEntity) {
-  const entity: KnowledgeEntity = { id: value.id, type, name: 'title' in value ? value.title : 'Исполнение и удержание', goalIds: [value.goalId], leaderId: value.leaderId, revision: value.revision, body: JSON.stringify(value) };
+  const rotated=rotateExecutionJournal(value,catalog),stored=rotated.record;
+  const entity: KnowledgeEntity = { id: value.id, type, name: 'title' in value ? value.title : 'Исполнение и удержание', goalIds: [value.goalId], leaderId: value.leaderId, revision: value.revision, body: JSON.stringify(stored) };
   if (entity.body!.length > 100000) throw new ActionError('Журнал исполнения превышает размер одной записи. Сократите текст нового комментария или создайте следующую веху с новой базой.');
-  const candidate = structuredClone(catalog), index = candidate.entities.findIndex(e => e.id === entity.id);
+  const candidate = structuredClone(catalog);candidate.entities.push(...rotated.segments);const index = candidate.entities.findIndex(e => e.id === entity.id);
   if (index < 0) candidate.entities.push(entity); else candidate.entities[index] = entity;
   try { validateExecutionEntities(candidate); } catch (error) { throw new ActionError((error as Error).message, 400); }
   const draft = await context.catalogs.saveDraft(session, { kind: 'entity', id: entity.id, baseRevision: before?.revision ?? null, patch: { ...entity } }, {
-    beforeSave: () => { if (signature(context, session) !== initial) throw new ActionError('Исполнение уже изменилось. Обновите версию; введённые данные сохранены в форме.', 409); },
+    beforeSave: () => { if (signature(context, session) !== initial) throw new ActionError('Исполнение уже изменилось. Обновите версию; введённые данные сохранены в форме.', 409);for(const segment of rotated.segments){const draft:Draft={id:randomUUID(),curatorId:session.curatorId!,base:null,status:'local',error:null,createdAt:new Date().toISOString(),change:{kind:'entity',id:segment.id,baseRevision:null,patch:{...segment}}};context.db.set('drafts',draft.id,draft);} },
     afterSave: () => { context.catalogs.recordChange(session, 'execution_updated', entity.id, entity.name, before ? { ...before } : {}, { ...entity }); },
   });
   return { record: value, draftId: draft.id };
@@ -35,10 +37,10 @@ export async function saveWorkPackage(context: ApplicationContext, session: Sess
   const before = input.id ? catalog.entities.find(e => e.id === input.id) : undefined;
   if (input.id && (!before || before.type !== 'work_package')) throw new ActionError('Веха не найдена', 404);
   if ((before?.revision ?? null) !== input.baseRevision) throw new ActionError('Веха уже изменена. Обновите версию; введённые данные остаются в форме.', 409);
-  const previous = before ? readWorkPackage(before) : undefined;
+  const previous = before ? readWorkPackage(before,catalog) : undefined;
   if (previous && (previous.goalId !== input.goalId || previous.leaderId !== input.leaderId)) throw new ActionError('Контур существующей вехи изменить нельзя');
   const { baseRevision: _, ...fields } = input;
-  return persist(context, session, catalog, initial, { ...fields, id: before?.id ?? randomUUID(), revision: randomUUID(), baseline: previous?.baseline ?? null, events: previous?.events ?? [] }, 'work_package', before);
+  return persist(context, session, catalog, initial, { ...fields, id: before?.id ?? randomUUID(), revision: randomUUID(), baseline: previous?.baseline ?? null, ...(previous?.eventArchiveId?{eventArchiveId:previous.eventArchiveId}:{}), events: previous?.events ?? [] }, 'work_package', before);
 }
 export async function saveExecutionConfig(context: ApplicationContext, session: Session, raw: ConfigInput) {
   curator(session); const input = configInputSchema.parse(raw), initial = signature(context, session), catalog = await context.catalogs.readForSession(session);
@@ -46,16 +48,16 @@ export async function saveExecutionConfig(context: ApplicationContext, session: 
   const before = input.id ? catalog.entities.find(e => e.id === input.id) : undefined;
   if (input.id && (!before || before.type !== 'execution_config')) throw new ActionError('Настройка не найдена', 404);
   if ((before?.revision ?? null) !== input.baseRevision) throw new ActionError('Настройки уже изменены. Обновите версию; введённые данные остаются в форме.', 409);
-  const previous = before ? readExecutionConfig(before) : undefined;
+  const previous = before ? readExecutionConfig(before,catalog) : undefined;
   if (previous && (previous.goalId !== input.goalId || previous.leaderId !== input.leaderId)) throw new ActionError('Контур настройки изменить нельзя');
   const { baseRevision: _, ...fields } = input;
-  return persist(context, session, catalog, initial, { ...fields, id: before?.id ?? randomUUID(), revision: randomUUID(), checks: previous?.checks ?? [] }, 'execution_config', before);
+  return persist(context, session, catalog, initial, { ...fields, id: before?.id ?? randomUUID(), revision: randomUUID(), ...(previous?.checkArchiveId?{checkArchiveId:previous.checkArchiveId}:{}), checks: previous?.checks ?? [] }, 'execution_config', before);
 }
 async function editRecord(context: ApplicationContext, session: Session, id: string, baseRevision: string, type: 'work_package' | 'execution_config', change: (value: WorkPackage | ExecutionConfig, catalog: CatalogSnapshot) => WorkPackage | ExecutionConfig) {
   curator(session); const initial = signature(context, session), catalog = await context.catalogs.readForSession(session), before = catalog.entities.find(e => e.id === id && e.type === type);
   if (!before) throw new ActionError('Запись исполнения не найдена', 404);
   if (before.revision !== baseRevision) throw new ActionError('Запись уже изменилась. Обновите версию; введённые данные остаются в форме.', 409);
-  const previous = type === 'work_package' ? readWorkPackage(before) : readExecutionConfig(before); scope(catalog, previous.goalId, previous.leaderId);
+  const previous = type === 'work_package' ? readWorkPackage(before,catalog) : readExecutionConfig(before,catalog); scope(catalog, previous.goalId, previous.leaderId);
   return persist(context, session, catalog, initial, { ...change(previous, catalog), revision: randomUUID() }, type, before);
 }
 export async function baselinePackage(context: ApplicationContext, session: Session, id: string, baseRevision: string) {
@@ -68,8 +70,7 @@ export async function completePackage(context: ApplicationContext, session: Sess
   const input = completionInputSchema.parse(raw);
   return editRecord(context, session, id, input.baseRevision, 'work_package', (value, catalog) => {
     const p = value as WorkPackage;
-    if (input.completed && p.dependencies.some(dep => !isCompleted(readWorkPackage(catalog.entities.find(e => e.id === dep)!)))) throw new ActionError('Сначала завершите все зависимости вехи', 409);
-    if (p.events.length >= 300) throw new ActionError('Достигнут лимит событий; создайте следующую веху с новой базой');
+    if (input.completed && p.dependencies.some(dep => !isCompleted(readWorkPackage(catalog.entities.find(e => e.id === dep)!,catalog)))) throw new ActionError('Сначала завершите все зависимости вехи', 409);
     return { ...p, events: [...p.events, { id: randomUUID(), at: new Date().toISOString(), completed: input.completed, comment: input.comment, evidence: input.evidence, actor: session.name }] };
   });
 }
@@ -78,7 +79,6 @@ export async function checkRetention(context: ApplicationContext, session: Sessi
   return editRecord(context, session, id, input.baseRevision, 'execution_config', value => {
     const config = value as ExecutionConfig;
     if (!config.cadenceDays) throw new ActionError('Сначала настройте периодичность удержания');
-    if (config.checks.length >= 300) throw new ActionError('Достигнут лимит журнала удержания');
     const at = new Date().toISOString(); const next = new Date(`${moscowToday()}T00:00:00Z`); next.setUTCDate(next.getUTCDate() + config.cadenceDays);
     return { ...config, nextCheckDate: next.toISOString().slice(0, 10), checks: [...config.checks, { id: randomUUID(), at, actor: session.name, comment: input.comment, evidence: input.evidence, result: input.result }] };
   });
@@ -86,8 +86,8 @@ export async function checkRetention(context: ApplicationContext, session: Sessi
 export async function getExecutionView(context: ApplicationContext, session: Session): Promise<ExecutionView> {
   const state = await context.state(session), portfolio = buildPortfolioModel(state), activeIds = new Set(portfolio.goals.map(g => g.goal.id));
   const activeScope = (p: { goalId: string; leaderId: string | null }) => activeIds.has(p.goalId) && (p.leaderId === null || state.catalog.assignments.some(a => a.goalId === p.goalId && a.leaderId === p.leaderId && a.active !== false));
-  const packages = state.catalog.entities.filter(e => e.type === 'work_package').map(readWorkPackage).filter(activeScope);
-  const configs = state.catalog.entities.filter(e => e.type === 'execution_config').map(readExecutionConfig).filter(activeScope);
+  const packages = state.catalog.entities.filter(e => e.type === 'work_package').map(entity=>readWorkPackage(entity,state.catalog)).filter(activeScope);
+  const configs = state.catalog.entities.filter(e => e.type === 'execution_config').map(entity=>readExecutionConfig(entity,state.catalog)).filter(activeScope);
   const rows = [...buildPlanningModel(state).rows, ...state.catalog.leaders.flatMap(l => buildPlanningModel(state, { leaderId: l.id }).rows)];
   const forecasts = await Promise.all(rows.map(async row => {
     const leaderId = row.leader?.id ?? null, history = await getGoalHistory(context, session, row.goal.id, leaderId);

@@ -6,3 +6,10 @@
 .report-template-manager select, .report-template-manager input { padding: .5rem; max-width: 100%; }
 .template-object { padding: .8rem 0; border-top: 1px solid #dce3e3; }
 .template-object p { white-space: pre-wrap; overflow-wrap: anywhere; font-size: .9rem; }
+.report-template-manager{border-radius:14px;background:var(--surface,#fff)}
+.report-template-manager>summary{cursor:pointer;font-weight:600;line-height:1.5}
+.maturity-preset-editor,.report-maturity-summary{padding:18px;border:1px solid var(--border,#dce6e7);border-radius:12px;margin:16px 0;background:var(--surface-soft,#f6faf9)}
+.maturity-preset-editor h3,.report-maturity-summary h3{margin:0 0 10px;font-size:17px}
+.maturity-metric-mapping{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(min(100%,290px),1fr))}
+.maturity-metric-mapping>div{padding:12px;border:1px solid var(--border,#dce6e7);border-radius:10px;background:var(--surface,#fff)}
+.maturity-preset-editor label{font-size:13px}.report-template-hint{font-size:13px;padding:12px 14px;border-radius:10px;background:#f1f7f6}

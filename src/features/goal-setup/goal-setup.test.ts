@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { scryptSync } from 'node:crypto';
 import type { CatalogSnapshot, CuratorSession } from '../../domain/contracts';
 import { createContext, type ApplicationContext } from '../../server/workspace/context';
 import type { GoalSetupInput } from './goal-setup-contracts';
@@ -17,7 +18,7 @@ const session: CuratorSession = { id: 'session', role: 'curator', curatorId: 'cu
 async function setup() {
   const root = await mkdtemp(join(tmpdir(), 'goal-setup-')); roots.push(root);
   const catalog = structuredClone(demo) as CatalogSnapshot;
-  const context = await createContext({ projectRoot: root, allowedRoots: [root], initialCatalog: catalog }); contexts.push(context);
+  const context = await createContext({ projectRoot: root, allowedRoots: [root], initialCatalog: catalog, registry: [{id:session.curatorId,name:session.name,salt:'fixture',hash:scryptSync('fixture-only','fixture',64).toString('hex')}] }); contexts.push(context);
   const leaderId = catalog.leaders[0].id;
   const input: GoalSetupInput = { requestId: 'request-one', goal: { title: 'Новая цель', category: 'process', officialTarget: 5, internalTarget: null, unit: 'шт', direction: 'increase' },
     measurement: { kind: 'scalar', aggregation: 'single', metrics: [{ id: 'value', name: 'Значение', unit: 'шт', target: 5, direction: 'increase' }] },

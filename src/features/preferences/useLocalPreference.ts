@@ -3,6 +3,7 @@ import type { Category, Session } from '../../domain/contracts';
 import type { GoalStatus } from '../overview/overview-model';
 
 interface PreferenceValues {
+  'shell.navigation': 'compact' | 'expanded';
   'matrix.search': string;
   'matrix.category': Category | 'all';
   'matrix.status': GoalStatus | 'all';
@@ -13,6 +14,7 @@ interface PreferenceValues {
 export type PreferenceKey = keyof PreferenceValues;
 const oneOf = (items: string[]) => (value: unknown) => typeof value === 'string' && items.includes(value);
 const validators: Record<PreferenceKey, (value: unknown) => boolean> = {
+  'shell.navigation': oneOf(['compact','expanded']),
   'matrix.search': value => typeof value === 'string' && value.length <= 300,
   'matrix.category': oneOf(['all', 'process', 'data', 'architecture', 'security']),
   'matrix.status': oneOf(['all', 'unknown', 'not_met', 'pending', 'confirmed']),

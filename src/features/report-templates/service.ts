@@ -1,3 +1,4 @@
+import {suggestedMaturityProfile} from './maturity-preset';
 import { createHash, randomUUID } from 'node:crypto';
 import type { ApplicationContext } from '../../server/workspace/context';
 import type { Session } from '../../domain/contracts';
@@ -40,7 +41,7 @@ export async function saveReportTemplate(context: ApplicationContext, session: S
 }
 export async function inspectUploadedTemplate(session: Session, base64: string) {
   if (session.role !== 'curator') throw new ActionError('Загрузку проверяет куратор УОР',403);
-  return inspectTemplate(decodeTemplateBase64(base64));
+  const inspection=await inspectTemplate(decodeTemplateBase64(base64));const suggestedProfile=suggestedMaturityProfile(inspection);return{...inspection,...(suggestedProfile?{suggestedProfile}:{})};
 }
 export async function renderSavedTemplate(context: ApplicationContext, session: Session, id: string, report: ReportSnapshot) {
   const template = getReportTemplate(context,session,id);

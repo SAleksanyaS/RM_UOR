@@ -1,3 +1,4 @@
+import {readExecutionJournal,readJournalEntries,assertEntryOrder} from './execution-journal';
 import { z } from 'zod';
 import type { CatalogSnapshot, KnowledgeEntity } from '../../domain/contracts';
 import { assertDependencyGraph } from './execution-model';
@@ -17,17 +18,18 @@ export const baselineInputSchema = z.object({ baseRevision: id }).strict();
 export const checkInputSchema = z.object({ baseRevision: id, result: z.enum(['stable', 'regression', 'unknown']), ...proof }).strict().refine(proofRequired, 'Опишите проверку или приложите доказательство (минимум 5 символов)');
 const completion = z.object({ id, at: z.iso.datetime({ offset: true }), actor: id, completed: z.boolean(), ...proof }).strict().refine(proofRequired);
 const check = z.object({ id, at: z.iso.datetime({ offset: true }), actor: id, result: z.enum(['stable', 'regression', 'unknown']), ...proof }).strict().refine(proofRequired);
-export const workPackageSchema = z.object({ id, revision: id, ...packageFields, baseline: z.object({ at: z.iso.datetime({ offset: true }), dueDate: z.iso.date(), weight: z.number().finite().positive(), effortHours: hours }).strict().nullable(), events: z.array(completion).max(300) }).strict();
-export const executionConfigSchema = z.object({ id, revision: id, ...configFields, checks: z.array(check).max(300) }).strict()
+export const workPackageSchema = z.object({ id, revision: id, ...packageFields, baseline: z.object({ at: z.iso.datetime({ offset: true }), dueDate: z.iso.date(), weight: z.number().finite().positive(), effortHours: hours }).strict().nullable(), eventArchiveId:id.optional(), events: z.array(completion).max(300) }).strict();
+export const executionConfigSchema = z.object({ id, revision: id, ...configFields, checkArchiveId:id.optional(), checks: z.array(check).max(300) }).strict()
   .refine(v => !!v.cadenceDays === !!v.nextCheckDate, 'Периодичность и дата проверки должны быть заданы вместе')
   .refine(v => v.capacityHours === null || v.capacityPeriod.length > 0, 'Для ёмкости требуется период и контур оценки');
-export function readWorkPackage(entity: KnowledgeEntity): WorkPackage { return workPackageSchema.parse(JSON.parse(entity.body ?? '')); }
-export function readExecutionConfig(entity: KnowledgeEntity): ExecutionConfig { return executionConfigSchema.parse(JSON.parse(entity.body ?? '')); }
+export function readWorkPackage(entity: KnowledgeEntity,scope?:Pick<CatalogSnapshot,'entities'>): WorkPackage {const value=workPackageSchema.parse(JSON.parse(entity.body??'')),events=[...readJournalEntries(scope,value.eventArchiveId,{...value,kind:'events'}),...value.events] as WorkPackage['events'];assertEntryOrder(events);return{...value,events};}
+export function readExecutionConfig(entity: KnowledgeEntity,scope?:Pick<CatalogSnapshot,'entities'>): ExecutionConfig {const value=executionConfigSchema.parse(JSON.parse(entity.body??'')),checks=[...readJournalEntries(scope,value.checkArchiveId,{...value,kind:'checks'}),...value.checks] as ExecutionConfig['checks'];assertEntryOrder(checks);return{...value,checks};}
 /** Called before any shared version is accepted; body and outer reference cannot disagree. */
 export function validateExecutionEntities(catalog: CatalogSnapshot) {
   const packages: WorkPackage[] = [], configs: ExecutionConfig[] = [];
+  for(const entity of catalog.entities.filter(e=>e.type==='execution_journal')){const segment=readExecutionJournal(entity);if(!catalog.goals.some(goal=>goal.id===segment.goalId))throw new Error('Архив относится к неизвестной цели');if(segment.previousId&&!catalog.entities.some(previous=>previous.id===segment.previousId&&previous.type==='execution_journal'))throw new Error('Не найден предыдущий архивный сегмент');}
   for (const entity of catalog.entities.filter(e => e.type === 'work_package' || e.type === 'execution_config')) {
-    const value = entity.type === 'work_package' ? readWorkPackage(entity) : readExecutionConfig(entity);
+    const value = entity.type === 'work_package' ? readWorkPackage(entity,catalog) : readExecutionConfig(entity,catalog);
     if (entity.id !== value.id || entity.revision !== value.revision || entity.leaderId !== value.leaderId || entity.goalIds?.length !== 1 || entity.goalIds[0] !== value.goalId) throw new Error('Внешняя запись исполнения не соответствует содержимому');
     if (!catalog.goals.some(g => g.id === value.goalId)) throw new Error('Не найдена цель исполнения');
     if (value.leaderId && !catalog.assignments.some(a => a.goalId === value.goalId && a.leaderId === value.leaderId)) throw new Error('Не найдено назначение для контура исполнения');

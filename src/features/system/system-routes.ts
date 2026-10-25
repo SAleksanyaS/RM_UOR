@@ -13,7 +13,7 @@ const policySchema=z.object({keepCopies:z.number().int().min(2).max(1000),interv
 export const defaultBackupPolicy={keepCopies:10,intervalHours:24,automatic:false};
 export async function withMaintenance<T>(context:ApplicationContext,action:()=>Promise<T>):Promise<T>{
   if(context.maintenance||context.activeRequests>1||context.operations.list().some(op=>op.status==='running'))throw new ActionError('Дождитесь завершения других операций и повторите обслуживание.',409);
-  context.maintenance=true;try{return await action();}finally{context.maintenance=false;}
+  context.maintenance=true;try{return await action();}finally{context.maintenance=context.maintenanceRecoveryRequired;}
 }
 export function registerSystemRoutes(app:FastifyInstance,context:ApplicationContext){
   const curator=(request:{cookies:Record<string,string|undefined>})=>context.roles.requireCurator(request.cookies.uor_session??'');
@@ -26,7 +26,7 @@ export function registerSystemRoutes(app:FastifyInstance,context:ApplicationCont
     return{applicationVersion:APP_VERSION,storageVersion:context.db.get('settings','storageSchemaVersion')??1,platform:process.platform,architecture:process.arch,node:process.version,
       git,writable,allowedFolder:context.paths.projectRoot,databaseBytes:dbInfo.size,availableDiskBytes:disk.bavail*disk.bsize,
       counts:isCurator?context.db.counts():{},backups:isCurator?await listBackups(context.paths.runtimeRoot):[],backupPolicy:context.db.get('settings','backupPolicy')??defaultBackupPolicy,
-      instructions:'Запускайте npm run dev из разрешённой папки. После обновления кода выполните npm ci и перезапустите приложение. Настройки корпоративного браузера и сертификатов находятся в разделе источников.'};
+      instructions:'Запускайте npm run dev из разрешённой папки. Штатное обновление программы само подготовит зависимости и перезапустит приложение. При ручном обновлении выполните npm ci и перезапуск. Настройки корпоративного браузера и сертификатов находятся в разделе источников.'};
   });
   app.post('/api/system/backups',async request=>{await curator(request);return withMaintenance(context,async()=>({backup:await createBackup(context.db,context.paths.runtimeRoot)}));});
   app.post('/api/system/backups/restore',async request=>{

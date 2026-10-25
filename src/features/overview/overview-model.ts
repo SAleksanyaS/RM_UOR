@@ -49,7 +49,7 @@ export function buildOverview(input: OverviewInput, filter: OverviewFilter = {})
 }
 export type OverviewModel = ReturnType<typeof buildOverview>;
 export const statusOrder: GoalStatus[] = ['confirmed', 'not_met', 'pending', 'unknown'];
-export const statusColors: Record<GoalStatus, string> = { confirmed: '#13a174', not_met: '#e57867', pending: '#dfb254', unknown: '#dce5e9' };
+export const statusColors: Record<GoalStatus, string> = { confirmed: '#147d57', not_met: '#bd3e3e', pending: '#946200', unknown: '#d5e0e5' };
 export function buildExecutiveModel(input: OverviewInput, filter: OverviewFilter = {}) {
   const overview = buildOverview(input, filter);
   const total = overview.totals.assignments;

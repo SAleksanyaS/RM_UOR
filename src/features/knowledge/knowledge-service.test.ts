@@ -2,6 +2,7 @@ import { afterEach, expect, it } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { scryptSync } from 'node:crypto';
 import type { CatalogSnapshot, CuratorSession } from '../../domain/contracts';
 import { createContext, type ApplicationContext } from '../../server/workspace/context';
 import { listKnowledge, saveKnowledge, archiveKnowledge } from './knowledge-service';
@@ -12,7 +13,7 @@ import cookie from '@fastify/cookie';
 import { registerKnowledgeRoutes } from './knowledge-routes';
 const roots: string[] = [], contexts: ApplicationContext[] = [];
 const curator: CuratorSession = { id: 'curator', role: 'curator', curatorId: 'curator', name: 'Куратор', createdAt: new Date().toISOString() };
-async function setup() { const root = await mkdtemp(join(tmpdir(), 'knowledge-')); roots.push(root); const context = await createContext({ projectRoot: root, initialCatalog: structuredClone(demo) as CatalogSnapshot }); contexts.push(context); return context; }
+async function setup() { const root = await mkdtemp(join(tmpdir(), 'knowledge-')); roots.push(root); const context = await createContext({ projectRoot: root, initialCatalog: structuredClone(demo) as CatalogSnapshot, registry:[{id:curator.curatorId,name:curator.name,salt:'fixture',hash:scryptSync('fixture-only','fixture',64).toString('hex')}] }); contexts.push(context); return context; }
 const input = (extra: Partial<KnowledgeInput> = {}): KnowledgeInput => ({ type: 'article', name: 'Методика расчёта', description: 'Правила', body: 'Первый шаг\n<script>alert(1)</script>',
   leaderId: null, productId: null, aliases: [], links: [{ label: 'Источник', url: 'https://example.com/method' }], goalIds: [], ...extra });
 afterEach(async () => { for (const context of contexts.splice(0)) context.db.close(); for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }); });
