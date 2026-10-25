@@ -33,6 +33,7 @@ import { captureEvaluationBasis } from '../features/reporting/evaluation-basis';
 import { registerReleaseRoutes } from '../features/release/release-routes';
 import { registerEvidenceLibraryRoutes } from '../features/evidence/evidence-routes';
 import { registerCodeUpdateRoutes } from '../features/system/code-update';
+import { requiresCuratorForApi } from '../features/identity/permissions';
 
 export async function createApp(options: AppOptions) {
   const context = await createContext(options);
@@ -58,6 +59,7 @@ export async function createApp(options: AppOptions) {
     if (origin && !allowed.has(origin)) throw new ActionError('Запрос с посторонней страницы отклонён', 403);
     if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method) && request.headers['x-uor-token'] !== context.csrfToken) throw new ActionError('Обновите страницу перед выполнением действия', 403);
     if(context.maintenance)throw new ActionError('Выполняется обслуживание локальной базы. Повторите действие через несколько секунд.',503);
+    if(requiresCuratorForApi(request.method,request.routeOptions.url??request.url))await context.roles.requireCurator(request.cookies.uor_session??'');
     countedRequests.add(request);context.activeRequests++;
   });
   const sessionFor = async (request: { cookies: Record<string, string | undefined> }, reply?: { setCookie: (name: string, value: string, options: object) => unknown }): Promise<Session> => {
@@ -88,9 +90,10 @@ export async function createApp(options: AppOptions) {
   registerCodeUpdateRoutes(app, context);
   app.get('/api/health', async () => ({ status: 'ready', name: 'УОР ДИТ Operations', version: APP_VERSION }));
   app.get('/api/state', async (request, reply) => context.state(await sessionFor(request, reply)));
+  app.get('/api/identity/accounts',async(_request,reply)=>{reply.header('cache-control','no-store');return{accounts:context.roles.listAccounts()};});
   app.post('/api/login', async (request, reply) => {
-    const input = z.object({ role: z.enum(['reader', 'curator']), code: z.string().max(256).optional() }).parse(request.body);
-    const session = input.role === 'curator' ? await context.roles.enterCurator(input.code ?? '') : await context.roles.enterReader();
+    const input = z.object({ role: z.enum(['reader', 'curator']), code: z.string().max(256).optional(),accountId:z.string().min(1).max(300).optional() }).strict().parse(request.body);
+    const session = input.role === 'curator' ? await context.roles.enterCurator(input.code ?? '',input.accountId) : await context.roles.enterReader();
     const previous = request.cookies.uor_session; if (previous) context.db.remove('sessions', previous);
     reply.setCookie('uor_session', session.id, { httpOnly: true, sameSite: 'strict', path: '/', maxAge: 86400 }); return { session };
   });
@@ -222,7 +225,7 @@ export async function createApp(options: AppOptions) {
     const evidence = { id, name: input.name, relativePath: `evidence/${id}`, sha256: createHash('sha256').update(bytes).digest('hex'), size: bytes.length, curatorId: session.curatorId, ownerInstallationId:context.installationId,classification:(await context.catalogs.readForSession(session)).classification,uploadedBy:session.name,uploadedAt:new Date().toISOString() };
     context.db.set('evidence', id, evidence); return { evidence };
   });
-  app.post('/api/updates/check', async () => { const operation = await context.operations.start('check', 'Проверка обновлений'); void context.trackBackground(checkRemoteUpdates(context, operation.id)); return { operationId: operation.id }; });
+  app.post('/api/updates/check', async (request,reply) => { const session=await sessionFor(request,reply);const operation = await context.operations.start('check', 'Проверка обновлений');context.db.set('operation-owners',operation.id,session.id);void context.trackBackground(checkRemoteUpdates(context, operation.id)); return { operationId: operation.id }; });
   app.post('/api/publish', async request => {
     const session = await curator(request); const ids=z.array(z.string().min(1).max(300)).max(20000).optional();const input = z.object({ draftIds:ids.default([]),snapshotIds:ids.default([]),attestationIds:ids.default([]),evidenceIds:ids.default([]),templateIds:ids.default([]),previewId:z.string().uuid() }).strict().parse(request.body ?? {});
     const operation = await context.operations.start('publish', 'Отправка в готовящийся выпуск');const {draftIds,...selection}=input;void context.trackBackground(publishChanges(context, session, operation.id, draftIds,Object.keys(selection).length?selection:undefined)); return { operationId: operation.id };
@@ -246,6 +249,8 @@ export async function createApp(options: AppOptions) {
     context.cancelled.get(request.params.id)?.abort(); return { cancelled: true };
   });
   app.get<{ Params: { id: string } }>('/api/operations/:id/events', async (request, reply) => {
+    const session=await sessionFor(request,reply),owner=context.db.get<string>('operation-owners',request.params.id);
+    if(session.role!=='curator'&&owner!==session.id)throw new ActionError('Можно просматривать только свои операции',403);
     const operation = await context.operations.get(request.params.id);
     const last = Number(request.headers['last-event-id'] ?? 0);
     reply.header('content-type', 'text/event-stream').header('cache-control', 'no-cache');

@@ -39,6 +39,9 @@ export interface Assignment {
   plan?: ExecutionPlan;
 }
 export interface SourceDefinition {
+  /** Read-only UI projection; configuration itself is curator-only. */
+  collectionConfigured?:boolean;
+  interactiveLogin?:boolean;
   id: string; name: string; kind: 'dashboard' | 'attachment' | 'manual' | 'file' | 'demo';
   url: string | null; accessUrl: string | null; goalIds: string[]; freshnessHours: number;
   mode: 'stub' | 'local'; lastAttemptAt?: string | null;

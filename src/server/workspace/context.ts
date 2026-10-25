@@ -17,6 +17,7 @@ import { migrateStorage } from '../../features/system/backup-service';
 import { canReadSnapshot } from '../../features/connectors/service';
 import { storeValidatedTemplateBundle } from '../../features/report-templates/service';
 import { stageEvidenceBundle,type EvidenceRecord } from '../../features/evidence/evidence-service';
+import {readerCatalog,readerChange,readerSnapshot} from '../../features/identity/reader-projection';
 
 export interface AppOptions {
   projectRoot: string; allowedRoots?: string[]; initialCatalog?: CatalogSnapshot; registry?: CuratorRecord[];
@@ -51,13 +52,16 @@ export class ApplicationContext {
     this.catalogs = new CatalogStore(db); this.operations = new OperationStore(db); this.roles = new RoleService(db, registry);
     this.updates = db.get<UpdateInfo>('settings', 'updates') ?? this.updates;
   }
+  visibleChanges(session:Session):DomainChangeEvent[]{const changes=this.db.list<DomainChangeEvent>('changes');return session.role==='curator'?changes:changes.filter(event=>this.db.get('shared-changes',event.id)).map(readerChange);}
   async state(session: Session): Promise<WorkspaceState> {
     const catalog = await this.catalogs.readForSession(session);
     const snapshots = this.db.list<LocalSnapshot>('snapshots').filter(s => catalog.sources.some(source => source.id === s.sourceId) && canReadSnapshot(s,session,this.installationId));
     const evaluations = this.evaluations(catalog, snapshots);
-    return { catalog, snapshots, evaluations, attestations: this.db.list<Attestation>('attestations'), session,
-      csrfToken: this.csrfToken, operations: this.operations.list(), changes: this.db.list<DomainChangeEvent>('changes').sort((a, b) => b.at.localeCompare(a.at)).slice(0, 150),
-      drafts: await this.catalogs.listDrafts(session), updates: this.updates, version: APP_VERSION,
+    const managing=session.role==='curator';
+    const changes=this.visibleChanges(session).sort((a,b)=>b.at.localeCompare(a.at)).slice(0,150);
+    return { catalog:managing?catalog:readerCatalog(catalog), snapshots:managing?snapshots:snapshots.map(readerSnapshot), evaluations, attestations: this.db.list<Attestation>('attestations'), session,
+      csrfToken: this.csrfToken, operations: this.operations.list().filter(operation=>managing||this.db.get<string>('operation-owners',operation.id)===session.id), changes,
+      drafts: await this.catalogs.listDrafts(session), updates:managing?this.updates:{...this.updates,changes:this.updates.changes.map(readerChange)}, version: APP_VERSION,
       repository: { url: this.config.repositoryUrl, publishedBranch: this.config.publishedBranch, releaseBranch: this.config.releaseBranch, publicationMode: this.config.publicationMode } };
   }
   evaluations(catalog: CatalogSnapshot, snapshots: LocalSnapshot[]): Evaluation[] {
@@ -154,7 +158,7 @@ export class ApplicationContext {
       for(const checked of localRelease?.templates??[])storeValidatedTemplateBundle(this,checked);
       for(const evidence of sharedEvidence)this.db.set('evidence',evidence.id,evidence);
       for (const attestation of localRelease?.attestations ?? []) if (!this.db.get('attestations', attestation.id)) this.db.set('attestations', attestation.id, attestation);
-      for (const change of localRelease?.changes ?? []) if (!this.db.get('changes', change.id)) this.db.set('changes', change.id, change);
+      for (const change of localRelease?.changes ?? []) {if (!this.db.get('changes', change.id)) this.db.set('changes', change.id, change);this.db.set('shared-changes',change.id,true);}
     });
     await this.operations.recoverInterrupted();
   }

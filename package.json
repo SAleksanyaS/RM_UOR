@@ -1,6 +1,6 @@
 {
   "name": "uor-dit-operations",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "type": "module",
   "engines": {
@@ -14,7 +14,8 @@
     "test:watch": "vitest",
     "build": "tsc --noEmit && vite build",
     "setup:curators": "node scripts/setup-curators.mjs",
-    "import:map": "tsx scripts/import-local.ts"
+    "import:map": "tsx scripts/import-local.ts",
+    "setup:curators:batch": "tsx scripts/provision-curators.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.2",

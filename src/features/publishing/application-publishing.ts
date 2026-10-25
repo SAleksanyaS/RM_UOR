@@ -113,7 +113,7 @@ export async function syncPublished(context: ApplicationContext) {
     const evidenceIds=new Set<string>();for(const evidence of incomingEvidence){if(evidenceIds.has(evidence.id))throw new Error('В выпуске повторяется идентификатор доказательства');evidenceIds.add(evidence.id);const existing=context.db.get<EvidenceRecord>('evidence',evidence.id);if(existing&&(existing.sha256!==evidence.sha256||existing.size!==evidence.size))throw new Error('Идентификатор доказательства ссылается на другое содержимое');}
     for(const attestation of incomingAttestations)if(attestation.evidenceIds.some(id=>!evidenceIds.has(id)&&!context.db.get('evidence',id)))throw new Error('В подтверждении отсутствует опубликованное доказательство');
     context.db.set('catalog', 'active', validatedCatalog);
-    for (const event of incomingChanges) context.db.set('changes', event.id, event);
+    for (const event of incomingChanges) {context.db.set('changes', event.id, event);context.db.set('shared-changes',event.id,true);}
     for (const item of incomingAttestations) {
       const previous = context.db.get<Attestation>('attestations', item.id);
       context.db.set('attestations', item.id, previous?.invalidatedAt

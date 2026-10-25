@@ -7,15 +7,16 @@ export class ActionError extends Error { constructor(message: string, public sta
 export class RoleService {
   private attempts: number[] = [];
   constructor(private db: LocalDatabase, private registry: CuratorRecord[]) {}
+  listAccounts():{id:string;name:string}[]{return this.registry.map(({id,name})=>({id,name})).sort((left,right)=>left.name.localeCompare(right.name,'ru'));}
   async enterReader(): Promise<Session> { return this.create('reader', null, 'Просмотр'); }
-  async enterCurator(code: string): Promise<Session> {
+  async enterCurator(code: string,accountId?:string): Promise<Session> {
     this.attempts = this.attempts.filter(t => Date.now() - t < 60_000);
     if (this.attempts.length >= 5) throw new ActionError('Слишком много попыток. Повторите через минуту.', 429);
     this.attempts.push(Date.now());
     if (typeof code !== 'string' || code.length > 256) throw new ActionError('Неверный код куратора', 401);
     const found = this.registry.find(record => {
       const actual = scryptSync(code, record.salt, 64); const wanted = Buffer.from(record.hash, 'hex');
-      return wanted.length === actual.length && timingSafeEqual(actual, wanted);
+      return (!accountId||record.id===accountId)&&wanted.length === actual.length && timingSafeEqual(actual, wanted);
     });
     if (!found) throw new ActionError('Неверный код куратора', 401);
     this.attempts = []; return this.create('curator', found.id, found.name);
@@ -26,6 +27,7 @@ export class RoleService {
   }
   get(id?: string): Session | null {
     if (!id) return null; const session = this.db.get<Session>('sessions', id);
+    if(session?.role==='curator'&&!this.registry.some(record=>record.id===session.curatorId)){this.db.remove('sessions',id);return null;}
     return session && Date.now() - Date.parse(session.createdAt) < 24 * 3600_000 ? session : null;
   }
   async requireCurator(id: string): Promise<CuratorSession> {
