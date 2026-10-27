@@ -15,7 +15,7 @@ DONE requires actual checks, commit and evidence. Default execution order is in 
 | T02 | [01-core-and-calculation.md](01-core-and-calculation.md) | All domain-16 contracts, strict schemas, version references and fixture factories | DONE | Commit titled `feat(workbench): define versioned domain schemas and fixtures`; T01–T02 10 tests + build GREEN |
 | T03 | [01-core-and-calculation.md](01-core-and-calculation.md) | Append-only SQLite repository, CAS, synchronous transaction and index foundation | DONE | Commit titled `feat(workbench): add append-only CAS repository`; 29 focused/regression checks + build GREEN |
 | T04 | [01-core-and-calculation.md](01-core-and-calculation.md) | Exact conditions, normalization contracts and whitelist reducers | DONE | Commit titled `feat(workbench): implement exact conditions and reducers`; 3 tests with numeric vectors + build GREEN |
-| T05 | [01-core-and-calculation.md](01-core-and-calculation.md) | Fact selection, explicit time, freshness and expected population | PLANNED | Not executed |
+| T05 | [01-core-and-calculation.md](01-core-and-calculation.md) | Fact selection, explicit time, freshness and expected population | DONE | Commit titled `feat(workbench): select complete facts with explicit time`; T04–T05 9 tests + build GREEN |
 | T06 | [01-core-and-calculation.md](01-core-and-calculation.md) | Numeric evaluator: weighted N/A, preliminary score and independent mandatory gate | PLANNED | Not executed |
 | T07 | [01-core-and-calculation.md](01-core-and-calculation.md) | Basis materialization, exact method resolution, manual/correction/attestation/snapshot rules | PLANNED | Not executed |
 | T08 | [01-core-and-calculation.md](01-core-and-calculation.md) | Friday projection with original provenance and no invented measurement | PLANNED | Not executed |
@@ -116,6 +116,15 @@ DONE requires actual checks, commit and evidence. Default execution order is in 
 - Reducers deduplicate canonical rows, preserve sorted source keys, reject conflicting duplicates/missing components/units and compute ratio of sums. Unknown reducer throws UNSUPPORTED_REDUCER with assignment/method/metric refs; inputs remain unchanged.
 - GREEN same focused command → exit0, 2 files /3 tests covering all documented vectors and rejection cases (`t04-green.log`); `npm.cmd run build` → exit0 (`t04-build.log`).
 - Next exact action: T05 selection/freshness tests, then `npm.cmd test -- src/features/evaluation/workbench/select-facts.test.ts` RED. Implement explicit time windows, full population checks, applicability, correction provenance and lineage without importing the old selector.
+
+## Run 2026-10-28 — T05
+
+- Base `a9520ab` (T04). RED `npm.cmd test -- src/features/evaluation/workbench/select-facts.test.ts` → exit1, selector absent (`t05-red.log`). Additional provenance RED caught a materialized value masking a missing original cell (`t05-provenance-red.log`).
+- Added as-of Moscow cutoff/exact-period selection, explicit full population checks, N/A interval coverage, recursive lineage/cycle diagnostics and deterministic reference sets. Equal semantic repeats share a value while retaining refs; conflicting ties never use ID ordering. Historical reads do not select facts recorded after evaluatedAt.
+- Freshness uses sourceUpdatedAt or explicit business-date/period boundary, compared exactly in milliseconds against Decimal hours. Capture, import and correction timestamps never refresh old data. Published corrections retain their original fact refs/freshness and signal subsequent-source discrepancies.
+- Ruling: an already aggregated, single observation can be corrected as a scalar. Rewriting multiple ratio/count components from a scalar correction is not defined by the spec; the selector returns `unsupported_correction_reduction` rather than inventing numerator weights or averaging ratios. A future explicit reducer contract can support that case; simple one-row source/sum corrections are implemented now. Original raw/canonical rows are never changed.
+- GREEN `npm.cmd test -- src/features/evaluation/workbench/select-facts.test.ts src/features/evaluation/workbench/conditions.test.ts src/features/evaluation/workbench/reducers.test.ts` → exit0, 3 files /9 tests. `npm.cmd run build` → exit0 (`t05-green.log`, `t05-build.log`).
+- Next exact action: T06 weighted evaluator tests, then `npm.cmd test -- src/features/evaluation/workbench/evaluate.test.ts` RED. Preserve separate preliminary score, mandatory gate and freshness/confirmation.
 
 ## Run entry template
 
