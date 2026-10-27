@@ -1,0 +1,87 @@
+# Общие соглашения реализации целевой версии
+
+Это карта имён и границ для частей плана, не новый код. Пути ниже относительны корню RM_UOR. Согласованные предметные схемы берутся из [спецификации 16](../../specs/2026-10-28-uor-workbench/16-data-calculation-contract.md), транспорт — из [17](../../specs/2026-10-28-uor-workbench/17-interface-api-contract.md), публикация и восстановление — из [18](../../specs/2026-10-28-uor-workbench/18-integration-operations-contract.md).
+
+## Базовое состояние
+
+- Репозиторий разработки: https://github.com/SAleksanyaS/RM_UOR.
+- Отдельная ветка: `codex/uor-workbench-rebuild`, создана от `3d8704e4a6ff2195af4f2c0602ed11bff5d38f4b`.
+- Среда продукта: Node.js **22.16.0**, npm **10.9.2**, Python **3.13.5** для соответствующего адаптера.
+- Корпоративный Bitbucket в продукте и GitHub-репозиторий разработки — разные контуры. Банковские данные/учётные сведения не публикуются в GitHub.
+- Промышленный код пока не меняется: текущая поставка — документация и план.
+
+## Имена и владение файлами
+
+| Владелец | Целевые файлы / папка | Публичные имена для соседних задач |
+| --- | --- | --- |
+| T01–T02 | `src/domain/workbench/primitives.ts`, `entities.ts`, `schemas.ts`, `index.ts` | Типы 16: UUIDv4, Decimal, Rational, EntityRef, VersionRef, Header, GoalAssignment, CoreGoalDefinition, EvaluationContext, NumericEvaluation, EvaluationBasis, CalculationResult и остальные перечисленные сущности. `index.ts` переэкспортирует уже реализованные контракты; никаких заглушек будущих функций. |
+| T03 | `src/server/storage/workbench-repository.ts` | `WorkbenchRepository`, `createWorkbenchRepository(options)`; append-only редакции, синхронные транзакции, индексированные чтения и stateRevision. Существующая `LocalDatabase` не переосмысляется молча как новая модель. |
+| T04–T08 | `src/features/evaluation/workbench/` | Чистые `evaluateAssignment(input)`, `selectEvaluationFacts(input)`, `projectFridaySeries(input)`; сохранение производных refs — отдельное `prepareEvaluation(input,repository)`. |
+| T09 | `src/features/history/workbench-history.ts` | `queryHistorySeries(input,repository)`; сохранённые основания и доступ к бессрочной истории. |
+| T10 | `src/server/workbench/protocol.ts`, `session.ts`, `routes.ts` | Типы/схемы 17: CommandRequest, CommandResult, QueryRequest, ApiSuccess, Problem, GlobalContext, JobSnapshot; `registerWorkbenchRoutes(app,application)`. |
+| T11 | `src/features/identity/workbench-access-policy.ts` | `AccessPolicyService`, `resolveOwnAccess()`, `assertCommandAllowed(commandName)`, `assertFreshPublishAllowed(operationId)`. Hostname получает сервер; аккаунт Bitbucket не сопоставляется. |
+| T12–T13 | `src/server/workbench/command-registry.ts`, `jobs.ts`, `modules.ts`, `application.ts` | `CommandRegistry`, `QueryRegistry`, `CommandContext`, `Clock`, `createWorkbenchApplication(deps)`. Регистрация команд отдельна от их исполнения. |
+| T14–T21 | Существующие feature slices с новыми файлами `workbench-*` | Источники, нормализация, обогащение, черновики, работы/решения, уведомления, поля/дашборды и read models. Не переносить всё в ApplicationContext. |
+| T22–T26 | `src/features/publishing/workbench/` | `PublishingService`, `registerPublishingCommands(registry,service)`; PackageRevision, PublicationAnchor и состояния 18. |
+| T27–T29 | `src/features/system/workbench/`, `src/features/workspace-maintenance/workbench/`, `src/features/migration/workbench/` | `MaintenanceService`, `registerMaintenanceCommands(registry,service)`, миграционный протокол и probes. |
+| T30–T41 | `src/app/workbench/` и UI соответствующих feature slices | `WorkbenchClient`, `WorkbenchProvider`, `WorkbenchShell`; страницы вызывают только публичный API 17. |
+
+Номера T закреплены в главном плане. Внутри отведённых файлов допустимы небольшие вспомогательные файлы с одной ответственностью, если это отражено в журнале задачи; соседний публичный контракт не переименовывается без синхронного изменения плана и потребителей.
+
+## K01. Репозиторий
+
+`createWorkbenchRepository(options:{filename:string,artifactRoot:string}):WorkbenchRepository`.
+
+Обязательные операции: `getHead<T extends Header>(ref:EntityRef):T|null`, `readVersion<T extends Header>(ref:VersionRef):T|null`, `append<T extends Header>(entityType:string,value:T,expectedHead:number|null):VersionRef`, `transaction<T>(action:()=>T):T`, `getStateRevision():string`, `close():void`.
+
+append проверяет зарегистрированную схему, ссылки и optimistic revision; предыдущая редакция не заменяется. Async/Promise внутри transaction запрещён. Специализированные запросы истории/поиска добавляются в owning module с индексом и тестом; вызов list() всей истории не становится стандартным API.
+
+T03 добавляет `sqlForModule(moduleId:string):WorkbenchSql` для доверенных серверных адаптеров модулей на том же SQLite-соединении/транзакции. `WorkbenchSql`: `get<T>(sql,params):T|null`, `all<T>(sql,params):T[]`, `run(sql,params):{changes:number}`, `execMigration(id:string,ddl:string):void`; параметры — SqlValue[] (string/number/bigint/null/Uint8Array). Только статический SQL owning module для его `wb_<module>_*` индексов/журналов. Писать историю сущностей в обход append нельзя. Этот интерфейс недоступен пользовательскому API или конструктору формул.
+
+PublicationAnchor не имеет общего Header, поэтому T03 предоставляет отдельные типизированные `readPublicationAnchor(ref)` и `appendPublicationAnchor(anchor,expectedHead)` с той же неизменяемостью/CAS. T03/T07/T09 закрепляют точные дополнительные порты разрешения опубликованной основы и индексного чтения; их сигнатуры описаны в части 01, не заменяются сканированием list().
+
+У anchor поле wire `revision` означает принятую **ревизию пакета**, а VersionRef.revision/expectedHead этого специального repository-порта — внутреннюю редакцию сохранённых метаданных. При уточнении времени merge row version увеличивается, anchor.revision/contentHash/mainCommit прежней публикации не меняются. Эти счётчики не присваивать друг другу.
+
+## K02. Чистый расчёт и материализация
+
+`EvaluationInput={assignment:GoalAssignment,goal:CoreGoalDefinition,method:MethodVersion,facts:ObservedFact[],captures:Capture[],metrics:MetricDefinition[],applicability:Applicability[],corrections:ManualCorrection[],context:EvaluationContext,resolution:{basisRef:VersionRef,templateRef:VersionRef|null,directoryLinkRefs:VersionRef[],publicationAnchors:PublicationAnchor[],actor:ActorRef}}`.
+
+`evaluateAssignment(input:EvaluationInput):NumericEvaluation`; `selectEvaluationFacts(input:EvaluationInput):FactSelection`; тип FactSelection с выбранными refs, пропусками и quality flags определяет T05.
+
+`prepareEvaluation(input:EvaluationInput,repository:WorkbenchRepository):{basisRef:VersionRef,resultRef:VersionRef|null}`. Одинаковая смысловая основа использует прежние refs. Источник данных, измерение и подтверждение этим не создаются.
+
+T07 также определяет серверный `resolveEvaluationInput(request:PrepareEvaluationRequest,repository:WorkbenchRepository,clock:Clock,actor:ActorRef):EvaluationInput`, где request содержит assignmentRef и доменный businessTime. Он разрешает опубликованные/выбранные точные редакции и передаёт их чистому движку; браузер не назначает resolution.basisRef, actor и evaluatedAt.
+
+basisDigest исключает generated Header и evaluatedAt; сам запуск часов не порождает новую основу. `projectEvaluationQuality(stored:NumericEvaluation,input:EvaluationInput):NumericEvaluation` пересчитывает только freshness/canConfirm/qualityFlags на текущие серверные часы, сохраняя числа и refs. Текущие read models и команда подтверждения используют эту проекцию; согласованный срез остаётся неизменяемым. Тест перемещения часов fresh → stale требует прежних refs и отсутствия новых фактов/основ.
+
+`projectFridaySeries(input:FridaySeriesInput):WeeklyPoint[]`; input и WeeklyPoint следуют 16, оцениваемые часы подставляет сервер. DTO оснований не принимается от браузера как доверенный результат.
+
+## K03. Платформа
+
+`Clock={now():UtcInstant}` объявляется в primitives T01 и переэкспортируется платформой; production clock возвращает UTC, тестовый имеет фиксированное значение.
+
+`CommandContext={requestId:UUIDv4,commandId:UUIDv4,installationId:UUIDv4,actor:ActorRef,repository:WorkbenchRepository,clock:Clock,ownAccess:OwnAccessProfile}`. actor задаётся сервером по фактическому hostname/установке/своему профилю, не по автору назначения. OwnAccessProfile определяет T11 по 15; поле не является Bitbucket-идентичностью.
+
+`CommandOutcome<R>={result:R,changedRefs:EntityRef[],editToken:RevisionToken|null}`. `CommandRegistry.register(descriptor)` принимает имя, input/output schema, capability, sync/async, handler `(context:CommandContext,payload)=>Promise<CommandOutcome<R>>`; outputSchema проверяет result. `execute(request:CommandRequest,context:CommandContext)` добавляет commandId и возвращает CommandResult либо принятое задание по 17. Типы конкретного payload/result определяет owning module; unknown не является разрешением пропускать валидацию. Локальный commit эффекта и durable receipt атомарны по T12, иначе повтор после crash мог бы продублировать действие.
+
+`QueryRegistry.register(descriptor)` принимает имя, input/output schema и read handler. `execute(name,request,context)` возвращает зарегистрированную read model. GET/queries не вызывают источник и не создают Attestation.
+
+`createWorkbenchApplication(deps)` получает repository, clock, accessPolicy, command/query registries, job store и зарегистрированные модули. Необязательный до реализации порт не заменяется фальшивым успешным обработчиком; отсутствующая возможность имеет явный unsupported-сценарий.
+
+## K04. UI
+
+`WorkbenchClient.query<T>(name:string,input:QueryRequest):Promise<ApiSuccess<T>>`; `WorkbenchClient.command<T>(input:CommandRequest):Promise<ApiSuccess<T|JobAccepted>>`; `WorkbenchClient.job(id:UUIDv4):Promise<ApiSuccess<JobSnapshot>>`.
+
+Constructor клиента получает `{fetch?:typeof fetch,baseUrl?:string}`; `.session()` возвращает SessionView, `.upload(file,purpose)` использует purpose goal-import/evidence/workspace-restore. CSRF header — `X-CSRF-Token`, значение из SessionView.csrfToken. Старое x-uor-token не является новым протоколом.
+
+ApiSuccess, JobAccepted, JobSnapshot и поля QueryRequest имеют единственный wire 17. API client не вычисляет формулы повторно, не принимает на себя роль сервера и не передаёт hostname/роль из формы.
+
+T13 экспортирует test-only createWorkbenchTestApplication со stable refs goal/ditAssignment/clusterAssignment/productA/productB/source/method. T30 api-harness использует app.inject; T31 ui-harness добавляет open(path) и React Provider/Shell. Ни один seed не является production bootstrap.
+
+## K05. Публикация и эксплуатация
+
+`PublishingService.preview(context,input)`, `submit(context,input)`, `refreshStatus(context,packageId)`, `checkPublication(context)`, `applyPublication(context,mainCommit)` реализуют payload/result зарегистрированных команд 17 и моделей 18; context имеет тип CommandContext. Конкретные экспортируемые типы закреплены частью 03 плана; эти имена не меняются между задачами.
+
+`MaintenanceService` реализует `backup.create`, `backup.restore.preview`, `backup.restore.apply` и безопасное обновление кода. Регистраторы связывают сервисы с CommandRegistry; второй HTTP API не создаётся.
+
+Реальный Bitbucket/Qlik адаптер подключается только после соответствующего probe. Синтетический адаптер доказывает локальный контракт, а не корпоративную работоспособность. Пробам запрещено превращать отсутствие параметров в успешный результат.

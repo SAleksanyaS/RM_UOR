@@ -1,0 +1,92 @@
+# Progress / журнал исполнения
+
+Initial status: planning documents only; no implementation task or product test has been run.
+Branch: `codex/uor-workbench-rebuild`. Source code baseline: `3d8704e4a6ff2195af4f2c0602ed11bff5d38f4b`.
+
+## Task status
+
+Statuses: PLANNED / RUNNING / DONE / BLOCKED_RUNTIME / BLOCKED_BANK_INPUT / FAILED.
+DONE requires actual checks, commit and evidence. Default execution order is in the main plan; numeric order alone is incorrect.
+
+| Task | Plan | Deliverable | Status | Commit / evidence |
+| --- | --- | --- | --- | --- |
+| T00 | Main plan | Verify branch/runtime/baseline | PLANNED | Not executed |
+| T01 | [01-core-and-calculation.md](01-core-and-calculation.md) | Exact numbers, primitive validation and Moscow time | PLANNED | Not executed |
+| T02 | [01-core-and-calculation.md](01-core-and-calculation.md) | All domain-16 contracts, strict schemas, version references and fixture factories | PLANNED | Not executed |
+| T03 | [01-core-and-calculation.md](01-core-and-calculation.md) | Append-only SQLite repository, CAS, synchronous transaction and index foundation | PLANNED | Not executed |
+| T04 | [01-core-and-calculation.md](01-core-and-calculation.md) | Exact conditions, normalization contracts and whitelist reducers | PLANNED | Not executed |
+| T05 | [01-core-and-calculation.md](01-core-and-calculation.md) | Fact selection, explicit time, freshness and expected population | PLANNED | Not executed |
+| T06 | [01-core-and-calculation.md](01-core-and-calculation.md) | Numeric evaluator: weighted N/A, preliminary score and independent mandatory gate | PLANNED | Not executed |
+| T07 | [01-core-and-calculation.md](01-core-and-calculation.md) | Basis materialization, exact method resolution, manual/correction/attestation/snapshot rules | PLANNED | Not executed |
+| T08 | [01-core-and-calculation.md](01-core-and-calculation.md) | Friday projection with original provenance and no invented measurement | PLANNED | Not executed |
+| T09 | [01-core-and-calculation.md](01-core-and-calculation.md) | Indexed history queries and immutable agreed retention | PLANNED | Not executed |
+| T10 | [02-platform-data-and-api.md](02-platform-data-and-api.md) | Строгий wire, локальная сессия и CSRF | PLANNED | Not executed |
+| T11 | [02-platform-data-and-api.md](02-platform-data-and-api.md) | Политика hostname и непереносимый собственный cache | PLANNED | Not executed |
+| T12 | [02-platform-data-and-api.md](02-platform-data-and-api.md) | Durable command registry, задания и идемпотентность | PLANNED | Not executed |
+| T13 | [02-platform-data-and-api.md](02-platform-data-and-api.md) | Статические модули, запросы и изолированная сборка v1 | PLANNED | Not executed |
+| T14 | [02-platform-data-and-api.md](02-platform-data-and-api.md) | Приватные uploads и источник → raw → normalize → capture | PLANNED | Not executed |
+| T15 | [02-platform-data-and-api.md](02-platform-data-and-api.md) | CSV/XLSX mapping, partial import и редакции исходных фактов | PLANNED | Not executed |
+| T16 | [02-platform-data-and-api.md](02-platform-data-and-api.md) | Версионное обогащение и назначения новой команды | PLANNED | Not executed |
+| T17 | [02-platform-data-and-api.md](02-platform-data-and-api.md) | Незавершённые черновики, evidence и точное подтверждение/срез | PLANNED | Not executed |
+| T18 | [02-platform-data-and-api.md](02-platform-data-and-api.md) | Работы, решения и ацикличные зависимости | PLANNED | Not executed |
+| T19 | [02-platform-data-and-api.md](02-platform-data-and-api.md) | Московский календарь, адресные уведомления и личные подписки | PLANNED | Not executed |
+| T20 | [02-platform-data-and-api.md](02-platform-data-and-api.md) | Схемы полей/дашбордов и личные предпочтения | PLANNED | Not executed |
+| T21 | [02-platform-data-and-api.md](02-platform-data-and-api.md) | Индексированные модели пяти экранов и общий поиск | PLANNED | Not executed |
+| T22 | [03-publication-and-recovery.md](03-publication-and-recovery.md) | PackageRevision, manifest, canonical hash и preview | PLANNED | Not executed |
+| T23 | [03-publication-and-recovery.md](03-publication-and-recovery.md) | Собственная staging-ветка и безопасный Git provider | PLANNED | Not executed |
+| T24 | [03-publication-and-recovery.md](03-publication-and-recovery.md) | Нативный Bitbucket port, recovery и capability profile | PLANNED | Not executed |
+| T25 | [03-publication-and-recovery.md](03-publication-and-recovery.md) | TerminalRunner, native auth и fresh gate после ожидания | PLANNED | Not executed |
+| T26 | [03-publication-and-recovery.md](03-publication-and-recovery.md) | Verified main и независимые оси PublicationAnchor | PLANNED | Not executed |
+| T27 | [03-publication-and-recovery.md](03-publication-and-recovery.md) | Обновление кода через существующий durable activation runtime | PLANNED | Not executed |
+| T28 | [03-publication-and-recovery.md](03-publication-and-recovery.md) | Типизированный backup/restore, replace-preview и независимая rescue | PLANNED | Not executed |
+| T29 | [03-publication-and-recovery.md](03-publication-and-recovery.md) | Legacy staging migration и исполняемые probe drivers | PLANNED | Not executed |
+| T30 | [04-interface-and-release.md](04-interface-and-release.md) | API client, ошибки, контекст и тестовый мост | PLANNED | Not executed |
+| T31 | [04-interface-and-release.md](04-interface-and-release.md) | Оболочка, роли, навигация, приветствие и уведомления | PLANNED | Not executed |
+| T32 | [04-interface-and-release.md](04-interface-and-release.md) | Обзор, список и карточка цели | PLANNED | Not executed |
+| T33 | [04-interface-and-release.md](04-interface-and-release.md) | Простой конструктор цели и методики | PLANNED | Not executed |
+| T34 | [04-interface-and-release.md](04-interface-and-release.md) | Источники, импорт, исходные и обогащённые строки | PLANNED | Not executed |
+| T35 | [04-interface-and-release.md](04-interface-and-release.md) | Работы, риски, зависимости и запросы решений | PLANNED | Not executed |
+| T36 | [04-interface-and-release.md](04-interface-and-release.md) | Панель УОР, накопленный пакет и внешний вход Git | PLANNED | Not executed |
+| T37 | [04-interface-and-release.md](04-interface-and-release.md) | Конструктор дашбордов, поля и общий поиск | PLANNED | Not executed |
+| T38 | [04-interface-and-release.md](04-interface-and-release.md) | Обновление, копия и перенос из интерфейса | PLANNED | Not executed |
+| T39 | [04-interface-and-release.md](04-interface-and-release.md) | Переключение рабочего запуска без старого обхода доступа | PLANNED | Not executed |
+| T40 | [04-interface-and-release.md](04-interface-and-release.md) | Сквозной локальный browser/runtime прогон | PLANNED | Not executed |
+| T41 | [04-interface-and-release.md](04-interface-and-release.md) | Банковская приёмка, перенос и комплект общего выпуска | PLANNED | Not executed |
+| T42 | [06-oko-browser-scenarios.md](06-oko-browser-scenarios.md) | Собственный браузерный профиль и управляемый runtime port | PLANNED | Not executed |
+| T43 | [06-oko-browser-scenarios.md](06-oko-browser-scenarios.md) | Recorder после входа, безопасные действия и приватные снимки | PLANNED | Not executed |
+| T44 | [06-oko-browser-scenarios.md](06-oko-browser-scenarios.md) | Версионный scenario draft, параметры и проверка экспорта | PLANNED | Not executed |
+| T45 | [06-oko-browser-scenarios.md](06-oko-browser-scenarios.md) | Воспроизведение, повтор после входа и локальное принятие | PLANNED | Not executed |
+| T46 | [06-oko-browser-scenarios.md](06-oko-browser-scenarios.md) | Мастер без JSON — профиль → запись → проверка → пакет | PLANNED | Not executed |
+| T47 | [06-oko-browser-scenarios.md](06-oko-browser-scenarios.md) | Настоящий локальный browser fixture и полный v1 сценарий | PLANNED | Not executed |
+| T48 | [06-oko-browser-scenarios.md](06-oko-browser-scenarios.md) | Проба Сбербраузера, эксплуатационные инструкции и граница готовности | PLANNED | Not executed |
+
+## Bank readiness
+
+| Probe | Status | Real environment evidence |
+| --- | --- | --- |
+| BP-01 | NOT_READY | Not executed; inputs described in part05 |
+| BP-02 | NOT_READY | Not executed; inputs described in part05 |
+| BP-03 | NOT_READY | Not executed; inputs described in part05 |
+| BP-04 | NOT_READY | Not executed; inputs described in part05 |
+| BP-05 | NOT_READY | Not executed; inputs described in part05 |
+| BP-06 | NOT_READY | Not executed; inputs described in part05 |
+
+## Run entry template
+
+```text
+Task:
+Started at (UTC):
+Branch / commit:
+Runtime Node / npm / Python-if-used / OS / Git:
+Dirty files at entry:
+Current step:
+Changed files:
+Command -> exit code -> evidence file:
+AC / OC checks:
+Commit:
+Open failure / missing input:
+Preserved data / recovery state:
+Next exact action / command:
+```
+
+Do not insert secrets, bank files or full terminal/auth/browser transcripts here. Private evidence stays in .runtime; commit only sanitized result summaries.
