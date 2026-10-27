@@ -16,7 +16,7 @@ DONE requires actual checks, commit and evidence. Default execution order is in 
 | T03 | [01-core-and-calculation.md](01-core-and-calculation.md) | Append-only SQLite repository, CAS, synchronous transaction and index foundation | DONE | Commit titled `feat(workbench): add append-only CAS repository`; 29 focused/regression checks + build GREEN |
 | T04 | [01-core-and-calculation.md](01-core-and-calculation.md) | Exact conditions, normalization contracts and whitelist reducers | DONE | Commit titled `feat(workbench): implement exact conditions and reducers`; 3 tests with numeric vectors + build GREEN |
 | T05 | [01-core-and-calculation.md](01-core-and-calculation.md) | Fact selection, explicit time, freshness and expected population | DONE | Commit titled `feat(workbench): select complete facts with explicit time`; T04–T05 9 tests + build GREEN |
-| T06 | [01-core-and-calculation.md](01-core-and-calculation.md) | Numeric evaluator: weighted N/A, preliminary score and independent mandatory gate | PLANNED | Not executed |
+| T06 | [01-core-and-calculation.md](01-core-and-calculation.md) | Numeric evaluator: weighted N/A, preliminary score and independent mandatory gate | DONE | Commit titled `feat(workbench): evaluate weighted goals without lossy numbers`; 38 focused/regression tests + build GREEN |
 | T07 | [01-core-and-calculation.md](01-core-and-calculation.md) | Basis materialization, exact method resolution, manual/correction/attestation/snapshot rules | PLANNED | Not executed |
 | T08 | [01-core-and-calculation.md](01-core-and-calculation.md) | Friday projection with original provenance and no invented measurement | PLANNED | Not executed |
 | T09 | [01-core-and-calculation.md](01-core-and-calculation.md) | Indexed history queries and immutable agreed retention | PLANNED | Not executed |
@@ -125,6 +125,14 @@ DONE requires actual checks, commit and evidence. Default execution order is in 
 - Ruling: an already aggregated, single observation can be corrected as a scalar. Rewriting multiple ratio/count components from a scalar correction is not defined by the spec; the selector returns `unsupported_correction_reduction` rather than inventing numerator weights or averaging ratios. A future explicit reducer contract can support that case; simple one-row source/sum corrections are implemented now. Original raw/canonical rows are never changed.
 - GREEN `npm.cmd test -- src/features/evaluation/workbench/select-facts.test.ts src/features/evaluation/workbench/conditions.test.ts src/features/evaluation/workbench/reducers.test.ts` → exit0, 3 files /9 tests. `npm.cmd run build` → exit0 (`t05-green.log`, `t05-build.log`).
 - Next exact action: T06 weighted evaluator tests, then `npm.cmd test -- src/features/evaluation/workbench/evaluate.test.ts` RED. Preserve separate preliminary score, mandatory gate and freshness/confirmation.
+
+## Run 2026-10-28 — T06
+
+- Base `75d413a` (T05). RED `npm.cmd test -- src/features/evaluation/workbench/evaluate.test.ts` → exit1, evaluator absent (`t06-red.log`).
+- Added pure weighted evaluator with exact score/preliminary/coverage, independent mandatory gate, N/A reweighting, all-N/A result and zero-applicable-weight block. A missing zero-weight input remains incomplete even when coverage displays100. Stale/unknown freshness preserves the known score and prevents confirmation. No DB, network or system clock is read.
+- Unsupported formulas/configurations and broken selection provenance return explicit blocked diagnostics; no silent default threshold or formula. Inputs and raw values remain unchanged.
+- GREEN `npm.cmd test -- src/features/evaluation/workbench/evaluate.test.ts src/features/evaluation/evaluate.test.ts src/features/evaluation/measurement.test.ts` → exit0, 3 files /38 tests (`t06-green.log`); `npm.cmd run build` → exit0 (`t06-build.log`).
+- Next exact action: T07 `basis.test.ts` and `state-rules.test.ts`, then RED with the repository tests. Add atomic digest lookup/materialization, exact published resolver and ephemeral quality projection before any API/UI wiring.
 
 ## Run entry template
 
