@@ -3,7 +3,7 @@ import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import type { z } from 'zod';
-import type { EntityRef, EvaluationContext, Header, ScopeRef, UtcInstant, UUIDv4, VersionRef } from '../../domain/workbench/primitives';
+import type { EntityRef, EvaluationContext, Header, ScopeRef, Sha256, UtcInstant, UUIDv4, VersionRef } from '../../domain/workbench/primitives';
 import { entityRefSchema, headerSchema, versionRefSchema } from '../../domain/workbench/primitives';
 import { moscowEnd } from '../../domain/workbench/time';
 import { WorkbenchError } from '../../domain/workbench/errors';
@@ -34,6 +34,7 @@ export interface WorkbenchRepository {
   readPublicationAnchor(ref: EntityRef): PublicationAnchor | null;
   appendPublicationAnchor(value: PublicationAnchor, expectedHead: number | null): VersionRef;
   readEvaluationCandidates(query: EvaluationCandidateQuery): EvaluationCandidates;
+  findEvaluationByDigest(digest: Sha256): { basisRef: VersionRef; resultRef: VersionRef | null } | null;
   registerEntityType<T extends Header>(type: string, registration: EntityRegistration<T>): void;
   registerProjection(name: string, project: (entityType: string, value: Header) => void): void;
   sqlForModule(moduleId: string): WorkbenchSql;
@@ -226,6 +227,11 @@ export function createWorkbenchRepository(options: { filename: string; artifactR
       const keys = [...new Set([...factMap.values()].map(f => f.factKey))];
       const correctionRows = keys.length ? db.prepare(`SELECT id FROM wb_correction_index INDEXED BY wb_correction_fact_key WHERE fact_key IN (${keys.map(() => '?').join(',')})`).all(...keys) as Array<{ id: string }> : [];
       return { facts: [...factMap.values()], captures: [...captures.values()], applicability: published<Applicability>(applicabilityRows, 'applicability'), corrections: published<ManualCorrection>(correctionRows, 'manual_correction') };
+    },
+    findEvaluationByDigest(digest) {
+      assertOpen();
+      const row = db.prepare('SELECT basis_id,basis_revision,result_id,result_revision FROM wb_evaluation_digest WHERE digest=?').get(digest) as { basis_id: string; basis_revision: number; result_id: string | null; result_revision: number | null } | undefined;
+      return row ? { basisRef: { entityType: 'evaluation_basis', id: row.basis_id, revision: row.basis_revision }, resultRef: row.result_id === null ? null : { entityType: 'calculation_result', id: row.result_id, revision: row.result_revision! } } : null;
     },
     registerEntityType<T extends Header>(type: string, config: EntityRegistration<T>) {
       assertOpen(); if (!/^[a-z][a-z0-9_]*$/.test(type) || registrations.has(type)) throw new WorkbenchError('ENTITY_TYPE_ALREADY_REGISTERED', { type });

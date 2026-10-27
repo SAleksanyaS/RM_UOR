@@ -17,7 +17,7 @@ DONE requires actual checks, commit and evidence. Default execution order is in 
 | T04 | [01-core-and-calculation.md](01-core-and-calculation.md) | Exact conditions, normalization contracts and whitelist reducers | DONE | Commit titled `feat(workbench): implement exact conditions and reducers`; 3 tests with numeric vectors + build GREEN |
 | T05 | [01-core-and-calculation.md](01-core-and-calculation.md) | Fact selection, explicit time, freshness and expected population | DONE | Commit titled `feat(workbench): select complete facts with explicit time`; T04–T05 9 tests + build GREEN |
 | T06 | [01-core-and-calculation.md](01-core-and-calculation.md) | Numeric evaluator: weighted N/A, preliminary score and independent mandatory gate | DONE | Commit titled `feat(workbench): evaluate weighted goals without lossy numbers`; 38 focused/regression tests + build GREEN |
-| T07 | [01-core-and-calculation.md](01-core-and-calculation.md) | Basis materialization, exact method resolution, manual/correction/attestation/snapshot rules | PLANNED | Not executed |
+| T07 | [01-core-and-calculation.md](01-core-and-calculation.md) | Basis materialization, exact method resolution, manual/correction/attestation/snapshot rules | DONE | Commit titled `feat(workbench): materialize immutable bases and confirmation rules`; 13 focused tests + build GREEN |
 | T08 | [01-core-and-calculation.md](01-core-and-calculation.md) | Friday projection with original provenance and no invented measurement | PLANNED | Not executed |
 | T09 | [01-core-and-calculation.md](01-core-and-calculation.md) | Indexed history queries and immutable agreed retention | PLANNED | Not executed |
 | T10 | [02-platform-data-and-api.md](02-platform-data-and-api.md) | Строгий wire, локальная сессия и CSRF | PLANNED | Not executed |
@@ -133,6 +133,17 @@ DONE requires actual checks, commit and evidence. Default execution order is in 
 - Unsupported formulas/configurations and broken selection provenance return explicit blocked diagnostics; no silent default threshold or formula. Inputs and raw values remain unchanged.
 - GREEN `npm.cmd test -- src/features/evaluation/workbench/evaluate.test.ts src/features/evaluation/evaluate.test.ts src/features/evaluation/measurement.test.ts` → exit0, 3 files /38 tests (`t06-green.log`); `npm.cmd run build` → exit0 (`t06-build.log`).
 - Next exact action: T07 `basis.test.ts` and `state-rules.test.ts`, then RED with the repository tests. Add atomic digest lookup/materialization, exact published resolver and ephemeral quality projection before any API/UI wiring.
+
+## Run 2026-10-28 — T07
+
+- Base `144288d` (T06). RED `npm.cmd test -- src/features/evaluation/workbench/basis.test.ts src/features/evaluation/workbench/state-rules.test.ts src/server/storage/workbench-repository.test.ts` → exit1, new modules/lookup absent (`t07-red.log`).
+- Added canonical semantic basis digest, atomic basis/result/digest-index insertion, registered storage migration and indexed lookup. Repeated preparation (even by another actor or later clock) returns immutable existing refs without a write; new basis/result attributes the actual supplied server actor.
+- Resolver samples Clock once, requires confirmed config anchors and exact method/metric refs, resolves published templates without replacing standalone methods, and validates exact selected lineage links. Unknown merge time does not block confirmed current config. Missing refs never fall back to latest.
+- Added manual transition, correction provenance, attestation and snapshot rules. Confirmation requires exact digest/ref and current admissibility; optional evidence/comment rules follow the new spec. Internal validators accept a complete CalculationResult subtype as well as a plain NumericEvaluation while keeping strict wire schemas.
+- Clock-only quality projection preserves stored numbers/achievement/refs and updates freshness/confirmation flags. Tests persist a real agreed snapshot, advance the clock, and verify both stored result and agreed JSON remain unchanged. Template/method/link updates retain the earlier basis refs. Manual prepare returns resultRef=null.
+- During verification fixed a TypeScript control-flow issue in the throwing mismatch helper; no weakened validation or unknown casts added.
+- Final GREEN same RED command → exit0, 3 files /13 tests (`t07-green.log`); an earlier combined T01–T07 run also passed36 tests. `npm.cmd run build` → exit0 (`t07-build.log`).
+- Next exact action: T08 Friday projection tests, then `npm.cmd test -- src/features/evaluation/workbench/friday.test.ts` RED. Preserve original dates and produce carried points without measurements or DB writes.
 
 ## Run entry template
 
