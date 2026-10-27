@@ -1,6 +1,6 @@
 # Progress / журнал исполнения
 
-Initial status: planning documents only; no implementation task or product test has been run.
+Implementation started on 2026-10-28. See run entries below; task statuses are evidence-based.
 Branch: `codex/uor-workbench-rebuild`. Source code baseline: `3d8704e4a6ff2195af4f2c0602ed11bff5d38f4b`.
 
 ## Task status
@@ -10,8 +10,8 @@ DONE requires actual checks, commit and evidence. Default execution order is in 
 
 | Task | Plan | Deliverable | Status | Commit / evidence |
 | --- | --- | --- | --- | --- |
-| T00 | Main plan | Verify branch/runtime/baseline | PLANNED | Not executed |
-| T01 | [01-core-and-calculation.md](01-core-and-calculation.md) | Exact numbers, primitive validation and Moscow time | PLANNED | Not executed |
+| T00 | Main plan | Verify branch/runtime/baseline | RUNNING | Target Node/npm found; full baseline running |
+| T01 | [01-core-and-calculation.md](01-core-and-calculation.md) | Exact numbers, primitive validation and Moscow time | DONE | Commit titled `feat(workbench): add exact numeric and time primitives`; 5 tests + build GREEN |
 | T02 | [01-core-and-calculation.md](01-core-and-calculation.md) | All domain-16 contracts, strict schemas, version references and fixture factories | PLANNED | Not executed |
 | T03 | [01-core-and-calculation.md](01-core-and-calculation.md) | Append-only SQLite repository, CAS, synchronous transaction and index foundation | PLANNED | Not executed |
 | T04 | [01-core-and-calculation.md](01-core-and-calculation.md) | Exact conditions, normalization contracts and whitelist reducers | PLANNED | Not executed |
@@ -70,6 +70,21 @@ DONE requires actual checks, commit and evidence. Default execution order is in 
 | BP-04 | NOT_READY | Not executed; inputs described in part05 |
 | BP-05 | NOT_READY | Not executed; inputs described in part05 |
 | BP-06 | NOT_READY | Not executed; inputs described in part05 |
+
+## Run 2026-10-28 — execution setup and T01
+
+- Entry branch `codex/uor-workbench-rebuild`, base `34455dd96a16637d464587759239f0f1bd76bc02`; clean working tree. Origin verified as the requested RM_UOR repository.
+- Runtime: Windows x64; default host Node24.22.1 has no npm in PATH. Reused an existing portable, checksum-checked Node22.16.0 distribution under `.runtime/toolchains/node-v22.16.0-win-x64`; npm10.9.2. Python3.8.5 is not the target3.13.5 and is **not used** by this implementation. Git2.33.0.windows.2.
+- Commands below prepend that portable directory to PATH and use `npm.cmd` on Windows. Sandbox blocks Node22 parent-directory lstat, so tests/build require the execution host's approved unsandboxed process runner; product code contains no such workaround.
+- Ruling: execute in the user's explicitly selected existing branch/checkout; no extra worktree or branch is created. Existing working data is preserved.
+- Ruling: use this tracked, tool-independent journal and private `.runtime/validation/workbench` evidence instead of Bash-only skill helpers; the plan's split task files are the briefs. This preserves continuation on machines without those skills.
+- Pre-flight shared interfaces checked: T01→T02/T04/T08 primitive names; T02→T03/T05/T07 entity/ref schemas; T03→T07/T09/T12 same-transaction storage; T05→T06/T07 selection/context; T07→T17/T21 immutable basis vs projected freshness; T10/T11→T12/T13 server actor/access; T14/T15/T16→T17 source pipeline; T12/T13→T22–T29 command/jobs; T22→T23–T26 package vs anchor revisions; T28→T38 backup file endpoint; T13/T30→T31–T38 API-only UI; T42–T45→T34/T46–T48 browser/scenario boundary; T47→T39→T40→T41 cutover ordering. No additional conflict beyond rulings already fixed in CONTRACTS.md and spec21 was found. Recheck each task's exact input/output when starting it.
+- T00: docs verifier PASS (20 checksums /48 tasks /48 AC +8 OC /8 JSON examples). Full existing-suite baseline and build started; see next entry for final results. No dependency or lockfile changes made.
+- T01 RED: `npm.cmd test -- src/domain/workbench/exact-number.test.ts src/domain/workbench/primitives.test.ts src/domain/workbench/time.test.ts` → exit1, all3 modules absent. Evidence `t01-red.log`.
+- T01 implementation: exact BigInt fractions, canonical Decimal/wire schemas, UUID generation, stable errors and Moscow date arithmetic. Formatter rejects invalid precision or more than1000 decimal places; this display-only bound never rounds calculations.
+- During GREEN tests caught leading-zero integer conversion from fractions and an invalid Zod union call; corrected the causes. Rational schema refinements now return validation failure rather than throwing out of safeParse.
+- T01 final same focused command → exit0, 3 files /5 tests. `npm.cmd run build` → exit0 (TypeScript + Vite). Evidence `t01-green.log`, `t01-build.log`. Existing production entry and data are unchanged.
+- Next task: T02. Read its brief in `01-core-and-calculation.md`, write `schemas.test.ts`, run RED, implement strict domain schemas and complete synthetic fixtures. Do not switch production entry before T39.
 
 ## Run entry template
 
