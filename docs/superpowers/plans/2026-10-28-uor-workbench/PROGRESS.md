@@ -10,9 +10,9 @@ DONE requires actual checks, commit and evidence. Default execution order is in 
 
 | Task | Plan | Deliverable | Status | Commit / evidence |
 | --- | --- | --- | --- | --- |
-| T00 | Main plan | Verify branch/runtime/baseline | RUNNING | Target Node/npm found; full baseline running |
+| T00 | Main plan | Verify branch/runtime/baseline | DONE | 99 files /475 tests GREEN; exact-base build GREEN on Node22.16.0/npm10.9.2 |
 | T01 | [01-core-and-calculation.md](01-core-and-calculation.md) | Exact numbers, primitive validation and Moscow time | DONE | Commit titled `feat(workbench): add exact numeric and time primitives`; 5 tests + build GREEN |
-| T02 | [01-core-and-calculation.md](01-core-and-calculation.md) | All domain-16 contracts, strict schemas, version references and fixture factories | PLANNED | Not executed |
+| T02 | [01-core-and-calculation.md](01-core-and-calculation.md) | All domain-16 contracts, strict schemas, version references and fixture factories | DONE | Commit titled `feat(workbench): define versioned domain schemas and fixtures`; T01–T02 10 tests + build GREEN |
 | T03 | [01-core-and-calculation.md](01-core-and-calculation.md) | Append-only SQLite repository, CAS, synchronous transaction and index foundation | PLANNED | Not executed |
 | T04 | [01-core-and-calculation.md](01-core-and-calculation.md) | Exact conditions, normalization contracts and whitelist reducers | PLANNED | Not executed |
 | T05 | [01-core-and-calculation.md](01-core-and-calculation.md) | Fact selection, explicit time, freshness and expected population | PLANNED | Not executed |
@@ -85,6 +85,17 @@ DONE requires actual checks, commit and evidence. Default execution order is in 
 - During GREEN tests caught leading-zero integer conversion from fractions and an invalid Zod union call; corrected the causes. Rational schema refinements now return validation failure rather than throwing out of safeParse.
 - T01 final same focused command → exit0, 3 files /5 tests. `npm.cmd run build` → exit0 (TypeScript + Vite). Evidence `t01-green.log`, `t01-build.log`. Existing production entry and data are unchanged.
 - Next task: T02. Read its brief in `01-core-and-calculation.md`, write `schemas.test.ts`, run RED, implement strict domain schemas and complete synthetic fixtures. Do not switch production entry before T39.
+
+## Run 2026-10-28 — T00 completion and T02
+
+- T01 commit: `92e9f6d`. T02 base: that commit. No dependencies/lockfile/runtime entry changed.
+- T00 baseline `npm.cmd test` → exit0, 99 files /475 tests, 390.02s (`t00-baseline-test.log`). Suite discovery preceded creation of T01 tests, so this is the legacy baseline.
+- Ruling: the initial baseline build started after the long suite, when T02 files were partially written, and failed on absent in-progress imports. It is **not** a legacy defect. Verified the exact initial commit34455dd using `git archive` into a new ignored `.runtime/validation/workbench/baseline-34455dd` directory, then `npm.cmd --prefix .runtime/validation/workbench/baseline-34455dd run build` → exit0 (`t00-baseline-build-clean.log`). No live data was copied or reset.
+- T02 RED `npm.cmd test -- src/domain/workbench/schemas.test.ts` → exit1, schemas/fixture module absent (`t02-red.log`). Additional linked-goal/scope checks first failed as expected (`t02-crossref-red.log`).
+- Added all28 Header entity schemas and all required type families, independent publication anchor/private notification schemas, canonical source parsing defaults and complete numeric fixture graph with source↔goal cycle. Schema defaults are applied on parse; fixture graph includes all its declared targets.
+- Ruling: ReferenceRequirement gains an optional internal `validateTarget` callback. Consumers of the original two fields remain compatible. This lets the same deferred reference gate reject a numeric assignment with null population, a scope with the wrong directory kind, a mismatched goal/source and a value invalid for its exact custom-field definition. Callbacks are not wire data or persisted payloads.
+- T02 GREEN `npm.cmd test -- src/domain/workbench` → exit0, 4 files /10 tests; `npm.cmd run build` → exit0. Evidence `t02-green.log`, `t02-build.log`. No bank integration or UI completion claimed.
+- Next exact action: write `src/server/storage/workbench-repository.test.ts` per T03, run `npm.cmd test -- src/server/storage/workbench-repository.test.ts` for RED, then implement separate append-only wb_* tables. Deferred cyclic references, savepoint rollback, closed async leases and anchor metadata/package revision separation are required gates.
 
 ## Run entry template
 
