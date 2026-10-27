@@ -18,7 +18,7 @@ DONE requires actual checks, commit and evidence. Default execution order is in 
 | T05 | [01-core-and-calculation.md](01-core-and-calculation.md) | Fact selection, explicit time, freshness and expected population | DONE | Commit titled `feat(workbench): select complete facts with explicit time`; T04–T05 9 tests + build GREEN |
 | T06 | [01-core-and-calculation.md](01-core-and-calculation.md) | Numeric evaluator: weighted N/A, preliminary score and independent mandatory gate | DONE | Commit titled `feat(workbench): evaluate weighted goals without lossy numbers`; 38 focused/regression tests + build GREEN |
 | T07 | [01-core-and-calculation.md](01-core-and-calculation.md) | Basis materialization, exact method resolution, manual/correction/attestation/snapshot rules | DONE | Commit titled `feat(workbench): materialize immutable bases and confirmation rules`; 13 focused tests + build GREEN |
-| T08 | [01-core-and-calculation.md](01-core-and-calculation.md) | Friday projection with original provenance and no invented measurement | PLANNED | Not executed |
+| T08 | [01-core-and-calculation.md](01-core-and-calculation.md) | Friday projection with original provenance and no invented measurement | DONE | Commit titled `feat(workbench): project Friday series with retained source dates`; 3 tests + build GREEN |
 | T09 | [01-core-and-calculation.md](01-core-and-calculation.md) | Indexed history queries and immutable agreed retention | PLANNED | Not executed |
 | T10 | [02-platform-data-and-api.md](02-platform-data-and-api.md) | Строгий wire, локальная сессия и CSRF | PLANNED | Not executed |
 | T11 | [02-platform-data-and-api.md](02-platform-data-and-api.md) | Политика hostname и непереносимый собственный cache | PLANNED | Not executed |
@@ -144,6 +144,14 @@ DONE requires actual checks, commit and evidence. Default execution order is in 
 - During verification fixed a TypeScript control-flow issue in the throwing mismatch helper; no weakened validation or unknown casts added.
 - Final GREEN same RED command → exit0, 3 files /13 tests (`t07-green.log`); an earlier combined T01–T07 run also passed36 tests. `npm.cmd run build` → exit0 (`t07-build.log`).
 - Next exact action: T08 Friday projection tests, then `npm.cmd test -- src/features/evaluation/workbench/friday.test.ts` RED. Preserve original dates and produce carried points without measurements or DB writes.
+
+## Run 2026-10-28 — T08
+
+- Base `23ae6b8` (T07). RED `npm.cmd test -- src/features/evaluation/workbench/friday.test.ts` → exit1, projection absent (`t08-red.log`).
+- Implemented a pure Moscow-calendar Friday projection: cut off future business dates/captures, preserve source refs/dates and flat equal values, carry a known value with the original date/warning, keep gaps before the first value and retain unknown-time provenance. No Date.now, evaluator, storage write or artificial Capture is involved.
+- Ruling: whole periods retain their boundaries and become eligible only when completed. A series mixing known as-of and period meanings is rejected as `INCOMPATIBLE_SERIES_TIME`; no implicit temporal conversion. Unknown-time observations are display fallback when no eligible known-business-time value exists and always carry a warning.
+- GREEN same focused command → exit0, 1 file /3 tests (`t08-green.log`); `npm.cmd run build` → exit0 (`t08-build.log`).
+- Current checkpoint: T00–T08 implemented/checked; T09 and later remain PLANNED. The new components still run alongside legacy and have not switched production entry or changed live data. Next is T09 indexed historical read model, including >3000-observation retention/pagination and exact agreed-basis reads.
 
 ## Run entry template
 
