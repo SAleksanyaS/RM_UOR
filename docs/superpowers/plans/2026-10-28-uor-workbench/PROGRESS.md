@@ -13,7 +13,7 @@ DONE requires actual checks, commit and evidence. Default execution order is in 
 | T00 | Main plan | Verify branch/runtime/baseline | DONE | 99 files /475 tests GREEN; exact-base build GREEN on Node22.16.0/npm10.9.2 |
 | T01 | [01-core-and-calculation.md](01-core-and-calculation.md) | Exact numbers, primitive validation and Moscow time | DONE | Commit titled `feat(workbench): add exact numeric and time primitives`; 5 tests + build GREEN |
 | T02 | [01-core-and-calculation.md](01-core-and-calculation.md) | All domain-16 contracts, strict schemas, version references and fixture factories | DONE | Commit titled `feat(workbench): define versioned domain schemas and fixtures`; T01–T02 10 tests + build GREEN |
-| T03 | [01-core-and-calculation.md](01-core-and-calculation.md) | Append-only SQLite repository, CAS, synchronous transaction and index foundation | PLANNED | Not executed |
+| T03 | [01-core-and-calculation.md](01-core-and-calculation.md) | Append-only SQLite repository, CAS, synchronous transaction and index foundation | DONE | Commit titled `feat(workbench): add append-only CAS repository`; 29 focused/regression checks + build GREEN |
 | T04 | [01-core-and-calculation.md](01-core-and-calculation.md) | Exact conditions, normalization contracts and whitelist reducers | PLANNED | Not executed |
 | T05 | [01-core-and-calculation.md](01-core-and-calculation.md) | Fact selection, explicit time, freshness and expected population | PLANNED | Not executed |
 | T06 | [01-core-and-calculation.md](01-core-and-calculation.md) | Numeric evaluator: weighted N/A, preliminary score and independent mandatory gate | PLANNED | Not executed |
@@ -96,6 +96,17 @@ DONE requires actual checks, commit and evidence. Default execution order is in 
 - Ruling: ReferenceRequirement gains an optional internal `validateTarget` callback. Consumers of the original two fields remain compatible. This lets the same deferred reference gate reject a numeric assignment with null population, a scope with the wrong directory kind, a mismatched goal/source and a value invalid for its exact custom-field definition. Callbacks are not wire data or persisted payloads.
 - T02 GREEN `npm.cmd test -- src/domain/workbench` → exit0, 4 files /10 tests; `npm.cmd run build` → exit0. Evidence `t02-green.log`, `t02-build.log`. No bank integration or UI completion claimed.
 - Next exact action: write `src/server/storage/workbench-repository.test.ts` per T03, run `npm.cmd test -- src/server/storage/workbench-repository.test.ts` for RED, then implement separate append-only wb_* tables. Deferred cyclic references, savepoint rollback, closed async leases and anchor metadata/package revision separation are required gates.
+
+## Run 2026-10-28 — T03
+
+- Base `d92911e` (T02); new storage is separate from legacy records and production entry. All fixtures use fresh temporary SQLite databases/artifact folders, never live workspace data.
+- RED `npm.cmd test -- src/server/storage/workbench-repository.test.ts` → exit1, repository absent (`t03-red.log`).
+- Implemented append-only versions/heads, CAS, deferred cyclic-reference validation, immutable Capture revision1, published-head selection, separate anchor metadata revision, indexed candidates and module SQL/projection ports. Module registrations retain typed schema validation rather than casting through unknown.
+- Added rollback tests for thrown writes, dangling refs, projection exceptions, native async functions, Promise/thenable results and writes from a closed async lease; nested SAVEPOINT rollback preserves the outer transaction. Module writes and entity changes share a single stateRevision increment at outer commit.
+- Additional RED cases caught the reserved `entity` module namespace and a 2000-scope OR query exceeding SQLite's expression depth1000. Namespace/table checks now reject core/foreign-table writes; scope matching uses bound JSON row-value membership, not a growing OR expression (`t03-sql-red.log`, `t03-population-red.log`).
+- Refactor: memoize resolved targets inside one immutable validation phase and reuse each capture once per candidate read. This avoids repeatedly parsing a 2000-row capture for every fact. No cache persists beyond the operation.
+- GREEN `npm.cmd test -- src/domain/workbench src/server/storage/workbench-repository.test.ts tests/integration/snapshot-acceptance.test.ts tests/integration/goal-history.test.ts` → exit0, 7 files /29 tests; 2000-member seed/query case853ms in this run, no truncation. `npm.cmd run build` → exit0 (`t03-green.log`, `t03-build.log`). Node22 emits its normal experimental SQLite warning.
+- Next exact action: T04 tests in `src/features/evaluation/workbench/{conditions,reducers}.test.ts`; run `npm.cmd test -- src/features/evaluation/workbench/conditions.test.ts src/features/evaluation/workbench/reducers.test.ts` for RED, then implement exact normalization and whitelisted reducers.
 
 ## Run entry template
 
