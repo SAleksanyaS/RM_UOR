@@ -1,10 +1,12 @@
+import type { HistoryIndexQuery, HistoryIndexPage } from '../../features/history/workbench-history-contracts';
+import { decodeHistoryCursor, encodeHistoryCursor, historyFingerprint } from '../../features/history/workbench-history-cursor';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import type { z } from 'zod';
 import type { EntityRef, EvaluationContext, Header, ScopeRef, Sha256, UtcInstant, UUIDv4, VersionRef } from '../../domain/workbench/primitives';
-import { entityRefSchema, headerSchema, versionRefSchema } from '../../domain/workbench/primitives';
+import { entityRefSchema, headerSchema, moscowDateSchema, scopeRefSchema, utcInstantSchema, versionRefSchema } from '../../domain/workbench/primitives';
 import { moscowEnd } from '../../domain/workbench/time';
 import { WorkbenchError } from '../../domain/workbench/errors';
 import type { Applicability, Capture, EvaluationInput, ManualCorrection, ObservedFact, WorkbenchEntity, WorkbenchEntityType } from '../../domain/workbench/entities';
@@ -33,6 +35,8 @@ export interface WorkbenchRepository {
   readPublishedHead<T extends Header>(ref: EntityRef): T | null;
   readPublicationAnchor(ref: EntityRef): PublicationAnchor | null;
   appendPublicationAnchor(value: PublicationAnchor, expectedHead: number | null): VersionRef;
+  readHistoryRecords(query: HistoryIndexQuery): HistoryIndexPage;
+  readPublishedAt<T extends Header>(ref: EntityRef, effectiveAt: UtcInstant): T | null;
   readEvaluationCandidates(query: EvaluationCandidateQuery): EvaluationCandidates;
   findEvaluationByDigest(digest: Sha256): { basisRef: VersionRef; resultRef: VersionRef | null } | null;
   registerEntityType<T extends Header>(type: string, registration: EntityRegistration<T>): void;
@@ -174,6 +178,44 @@ export function createWorkbenchRepository(options: { filename: string; artifactR
       return read<T>(db.prepare(`SELECT v.payload_json FROM wb_entity_versions v JOIN wb_publication_anchors a ON a.id=v.publication_anchor_id
         AND a.revision=(SELECT MAX(a2.revision) FROM wb_publication_anchors a2 WHERE a2.id=a.id)
         WHERE v.entity_type=? AND v.id=? AND a.publication_state='confirmed' ORDER BY v.revision DESC LIMIT 1`).get(ref.entityType, ref.id) as PayloadRow | undefined);
+    },
+    readPublishedAt<T extends Header>(ref: EntityRef, effectiveAt: UtcInstant): T | null {
+      assertOpen(); entityRefSchema.parse(ref); utcInstantSchema.parse(effectiveAt);
+      const rows = db.prepare(`SELECT v.payload_json,a.payload_json AS anchor_json FROM wb_entity_versions v
+        JOIN wb_publication_anchors a ON a.id=v.publication_anchor_id AND a.revision=(SELECT MAX(revision) FROM wb_publication_anchors WHERE id=a.id)
+        WHERE v.entity_type=? AND v.id=? AND a.publication_state='confirmed' ORDER BY v.revision DESC`).all(ref.entityType,ref.id) as Array<PayloadRow & {anchor_json:string}>;
+      for(const row of rows){const a=JSON.parse(row.anchor_json) as PublicationAnchor;
+        if(a.timeVerification!=='verified'||!a.mergedAt)throw new WorkbenchError('EFFECTIVE_TIME_UNVERIFIED');
+        if(Date.parse(a.mergedAt)<=Date.parse(effectiveAt))return JSON.parse(row.payload_json) as T;
+      }return null;
+    },
+    readHistoryRecords(query: HistoryIndexQuery): HistoryIndexPage {
+      assertOpen();versionRefSchema.parse(query.assignmentRef);versionRefSchema.parse(query.metricRef);scopeRefSchema.parse(query.scope);moscowDateSchema.parse(query.fromInclusive);moscowDateSchema.parse(query.toExclusive);utcInstantSchema.parse(query.capturedBefore);if(query.predecessorBefore)utcInstantSchema.parse(query.predecessorBefore);
+      if(query.assignmentRef.entityType!=='goal_assignment'||query.metricRef.entityType!=='metric_definition'||query.fromInclusive>=query.toExclusive)throw new WorkbenchError('INVALID_HISTORY_QUERY');
+      if(!Number.isInteger(query.limit)||query.limit<1||query.limit>500)throw new WorkbenchError('INVALID_PAGE_LIMIT');
+      const assignment=repository.readVersion<import('../../domain/workbench/entities').GoalAssignment>(query.assignmentRef);
+      const goal=assignment?repository.readPublishedHead<import('../../domain/workbench/entities').CoreGoalDefinition>({entityType:'core_goal_definition',id:assignment.goalId}):null;
+      if(!goal)throw new WorkbenchError('HISTORICAL_BASIS_UNAVAILABLE');
+      const filter=historyFingerprint({...query,cursor:null});
+      const position=query.cursor?decodeHistoryCursor(query.cursor,filter):null;
+      if(position!==null&&(!Array.isArray(position)||position.length!==4||typeof position[0]!=='string'||typeof position[1]!=='string'||typeof position[2]!=='string'||!Number.isSafeInteger(position[3])))throw new WorkbenchError('INVALID_CURSOR');
+      const prefix:SqlValue[]=[query.sourceId??goal.sourceId,query.metricRef.id,query.scope.kind,query.scope.id];
+      const rows=db.prepare(`SELECT id,revision,business_start,captured_at,payload_ref FROM wb_history_observations INDEXED BY wb_history_scope_time
+        WHERE source_id=? AND metric_id=? AND scope_kind=? AND scope_id=? AND business_start>=? AND business_start<? AND captured_at<=?
+        ${position?'AND (business_start,captured_at,id,revision)>(?,?,?,?)':''}
+        ORDER BY business_start,captured_at,id,revision LIMIT ?`).all(...prefix,query.fromInclusive,query.toExclusive,new Date(query.capturedBefore).toISOString(),...(position as SqlValue[]??[]),query.limit+1) as Array<{id:string;revision:number;business_start:string;captured_at:string;payload_ref:string}>;
+      const more=rows.length>query.limit;const selected=rows.slice(0,query.limit);const last=selected.at(-1);
+      const facts=selected.map(row=>repository.readVersion<ObservedFact>(JSON.parse(row.payload_ref))!).filter(Boolean);
+      let predecessors:ObservedFact[]=[];
+      if(query.predecessorBefore&&!query.cursor){
+        // Retain the semantic tie group so UUID ordering cannot hide conflicting evidence.
+        const base=`FROM wb_history_observations h INDEXED BY wb_history_scope_time JOIN wb_entity_versions v ON v.entity_type='observed_fact' AND v.id=h.id AND v.revision=h.revision WHERE h.source_id=? AND h.metric_id=? AND h.scope_kind=? AND h.scope_id=? AND h.business_start<? AND h.captured_at<=? AND json_extract(v.payload_json,'$.state')='known'`;
+        const params=[...prefix,query.fromInclusive,new Date(query.predecessorBefore).toISOString()];
+        const first=db.prepare(`SELECT h.business_start,h.captured_at ${base} ORDER BY h.business_start DESC,h.captured_at DESC,h.id DESC,h.revision DESC LIMIT 1`).get(...params) as {business_start:string;captured_at:string}|undefined;
+        if(first){const tied=db.prepare(`SELECT h.payload_ref ${base} AND h.business_start=? AND h.captured_at=? ORDER BY h.id,h.revision`).all(...params,first.business_start,first.captured_at) as Array<{payload_ref:string}>;predecessors=tied.map(row=>repository.readVersion<ObservedFact>(JSON.parse(row.payload_ref))!).filter(Boolean);}
+      }
+      const captures=[...new Set([...facts,...predecessors].map(f=>f.captureId))].map(id=>repository.getHead<Capture>({entityType:'capture',id})!).filter(Boolean);
+      return {facts,captures,predecessor:predecessors[0]??null,predecessors,nextCursor:more&&last?encodeHistoryCursor(filter,[last.business_start,last.captured_at,last.id,last.revision]):null};
     },
     readPublicationAnchor(ref: EntityRef): PublicationAnchor | null {
       assertOpen(); entityRefSchema.parse(ref); return ref.entityType === 'publication_anchor' ? read<PublicationAnchor>(anchorRow(ref.id)) : null;

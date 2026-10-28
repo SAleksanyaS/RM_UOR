@@ -1,4 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite';
+import { historyIndexDdl } from '../../features/history/workbench-history-index';
 
 /** Separate schema: never updates or replaces legacy records. */
 export function migrateWorkbench(db: DatabaseSync): void {
@@ -37,6 +38,24 @@ export function migrateWorkbench(db: DatabaseSync): void {
     `);
     db.prepare('INSERT OR IGNORE INTO wb_schema_migrations(id,applied_at) VALUES(?,?)').run('workbench-core-v1', new Date().toISOString());
     db.prepare('INSERT OR IGNORE INTO wb_schema_migrations(id,applied_at) VALUES(?,?)').run('workbench-evaluation-digest-v1', new Date().toISOString());
+    // The repository owns the only historical scan: one durable migration, never an online query.
+    if (!db.prepare('SELECT id FROM wb_schema_migrations WHERE id=?').get('workbench-history-backfill-v1')) {
+      db.exec(historyIndexDdl);
+      db.exec(`INSERT OR IGNORE INTO wb_history_observations
+        SELECT f.id,f.revision,json_extract(f.payload_json,'$.sourceId'),json_extract(f.payload_json,'$.metricId'),
+        json_extract(f.payload_json,'$.scope.kind'),json_extract(f.payload_json,'$.scope.id'),
+        COALESCE(json_extract(f.payload_json,'$.businessTime.date'),json_extract(f.payload_json,'$.businessTime.startInclusive')),
+        json_extract(f.payload_json,'$.businessTime.endExclusive'),strftime('%Y-%m-%dT%H:%M:%fZ',json_extract(c.payload_json,'$.capturedAt')),
+        json_object('entityType','observed_fact','id',f.id,'revision',f.revision)
+        FROM wb_entity_versions f JOIN wb_entity_versions c ON c.entity_type='capture' AND c.id=json_extract(f.payload_json,'$.captureId') AND c.revision=1
+        WHERE f.entity_type='observed_fact';
+        INSERT OR IGNORE INTO wb_history_snapshots
+        SELECT s.id,s.revision,json_extract(b.payload_json,'$.assignmentRef.id'),
+        COALESCE(json_extract(b.payload_json,'$.businessTime.date'),json_extract(b.payload_json,'$.businessTime.startInclusive')),
+        b.id,b.revision FROM wb_entity_versions s JOIN wb_entity_versions b ON b.entity_type='evaluation_basis'
+        AND b.id=json_extract(s.payload_json,'$.basisRef.id') AND b.revision=json_extract(s.payload_json,'$.basisRef.revision') WHERE s.entity_type='agreed_snapshot';`);
+      db.prepare('INSERT INTO wb_schema_migrations VALUES(?,?)').run('workbench-history-backfill-v1',new Date().toISOString());
+    }
     db.exec('COMMIT');
   } catch (error) { db.exec('ROLLBACK'); throw error; }
 }
