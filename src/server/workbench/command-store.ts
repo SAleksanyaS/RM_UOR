@@ -7,7 +7,8 @@ import type { CommandContext, CommandOutcome } from './command-registry';
 import { WorkbenchHttpError } from './protocol';
 import type { CommandRequest, JobAccepted } from './protocol';
 
-type Intent = { digest: string; phase: string; accepted_json: string | null; receipt_json: string | null };
+export type CommandRecoveryPolicy = { effect: 'local' | 'sharedDraft' | 'external'; queuedRecovery: 'restart-safe-local' | null };
+type Intent = { digest: string; phase: string; request_json: string; accepted_json: string | null; receipt_json: string | null; recovery_json: string | null };
 const execution = new AsyncLocalStorage<{ context: CommandContext; output: z.ZodType }>();
 const outcomeSchema = z.strictObject({ result: z.record(z.string(), z.unknown()), changedRefs: z.array(entityRefSchema), editToken: z.string().min(1).nullable() });
 export function stableJson(value: unknown): string {
@@ -19,7 +20,8 @@ export const commandDigest = (request: CommandRequest): string => createHash('sh
 export function createCommandStore(repository: WorkbenchRepository) {
   const sql = repository.sqlForModule('commands');
   sql.execMigration('v1', `CREATE TABLE wb_commands_intents(installation_id TEXT NOT NULL,command_id TEXT NOT NULL,name TEXT NOT NULL,digest TEXT NOT NULL,request_json TEXT NOT NULL,phase TEXT NOT NULL,accepted_json TEXT,receipt_json TEXT,PRIMARY KEY(installation_id,command_id))`);
-  const get = (installationId: string, commandId: string) => sql.get<Intent>('SELECT digest,phase,accepted_json,receipt_json FROM wb_commands_intents WHERE installation_id=? AND command_id=?', [installationId, commandId]);
+  sql.execMigration('v2-recovery-policy', 'ALTER TABLE wb_commands_intents ADD COLUMN recovery_json TEXT');
+  const get = (installationId: string, commandId: string) => sql.get<Intent>('SELECT digest,phase,request_json,accepted_json,receipt_json,recovery_json FROM wb_commands_intents WHERE installation_id=? AND command_id=?', [installationId, commandId]);
   return {
     get,
     begin(request: CommandRequest, installationId: string): { row: Intent; created: boolean } {
@@ -30,7 +32,7 @@ export function createCommandStore(repository: WorkbenchRepository) {
         return { row: get(installationId, request.commandId)!, created: true };
       });
     },
-    accept(installationId: string, commandId: string, accepted: JobAccepted) { sql.run('UPDATE wb_commands_intents SET accepted_json=?,phase=? WHERE installation_id=? AND command_id=?', [JSON.stringify(accepted), 'accepted', installationId, commandId]); },
+    accept(installationId: string, commandId: string, accepted: JobAccepted, recovery?: CommandRecoveryPolicy) { sql.run('UPDATE wb_commands_intents SET accepted_json=?,phase=?,recovery_json=? WHERE installation_id=? AND command_id=?', [JSON.stringify(accepted), 'accepted', recovery ? JSON.stringify(recovery) : null, installationId, commandId]); },
     receipt(installationId: string, commandId: string, outcome: CommandOutcome<unknown>) { outcomeSchema.parse(outcome); sql.run('UPDATE wb_commands_intents SET receipt_json=?,phase=? WHERE installation_id=? AND command_id=?', [JSON.stringify(outcome), 'completed', installationId, commandId]); },
     fail(installationId: string, commandId: string) { sql.run('UPDATE wb_commands_intents SET phase=? WHERE installation_id=? AND command_id=? AND receipt_json IS NULL', ['interrupted', installationId, commandId]); },
   };

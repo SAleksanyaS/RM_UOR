@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { createWorkbenchRepository } from '../storage/workbench-repository';
 import { fixtureId, makeHeader } from '../../../tests/fixtures/workbench/factories';
 import { createCommandRegistry, type CommandContext } from './command-registry';
-import { commitCommandEffect } from './command-store';
+import { commitCommandEffect, createCommandStore, withCommandExecution } from './command-store';
 import { createJobStore } from './jobs';
 import { WorkbenchHttpError } from './protocol';
 import type { AccessPolicyService, OwnAccessProfile } from '../../features/identity/workbench-access-policy';
@@ -74,4 +74,151 @@ it('maps invalid command payload to 422 before durable intent', async () => {
   const before = f.context.repository.getStateRevision();
   await expect(f.registry.execute({ commandId: f.context.commandId, name: 'fieldMapping.draft.save', baseRevision: null, payload: { value: 1 } }, f.context)).rejects.toMatchObject({ statusCode: 422 });
   expect(f.context.repository.getStateRevision()).toBe(before);
+});
+
+// These are real durable-intent/accept/commit crash boundaries. No handler or
+// scheduler from the first process survives closing and reopening SQLite.
+function restartFixture(rows: Array<{ seed: number; installationId?: string; name?: string; resource?: string; status?: 'running' | 'retry_wait'; receipt?: boolean; irreversible?: boolean; checkpoint?: boolean; acceptedEffect?: 'local' | 'external' | 'sharedDraft' | null; acceptedRecovery?: boolean }>, maxConcurrent = 2) {
+  const f = fixture(); const store = createCommandStore(f.context.repository);
+  const accepted = rows.map(row => {
+    const installationId = row.installationId ?? f.context.installationId;
+    const request = { commandId: fixtureId(row.seed), name: row.name ?? 'demo.recover', baseRevision: null, payload: { value: String(row.seed) } };
+    store.begin(request, installationId);
+    const job = f.jobs.create(request.commandId, installationId, request.name);
+    store.accept(installationId, request.commandId, job, row.acceptedEffect === null ? undefined : { effect: row.acceptedEffect ?? 'local', queuedRecovery: row.acceptedRecovery === false ? null : 'restart-safe-local' }); f.jobs.setResourceKey(job.jobId, row.resource ?? 'source:durable');
+    if (row.status) { f.jobs.update(job.jobId, { status: 'running' }); if (row.status === 'retry_wait') f.jobs.update(job.jobId, { status: 'retry_wait' }); }
+    if (row.irreversible) f.jobs.markIrreversible(job.jobId);
+    if (row.checkpoint) f.jobs.checkpoint(job.jobId, { stage: 'effect.intent', uncertain: true });
+    if (row.receipt) {
+      const ctx = { ...f.context, commandId: request.commandId, installationId, actor: { ...f.context.actor, installationId } };
+      withCommandExecution(ctx, z.strictObject({ value: z.string() }), () => commitCommandEffect(ctx, () => ({ result: { value: 'durable receipt' }, changedRefs: [], editToken: null })));
+    }
+    return { request, job };
+  });
+  f.context.repository.close();
+  const repository = createWorkbenchRepository(f.config); cleanup.push(() => repository.close());
+  const jobs = createJobStore({ repository, clock: f.context.clock });
+  const registry = createCommandRegistry({ repository, jobs, accessPolicy: f.policy, maxConcurrent });
+  const resolveContext = async (identity: { commandId: string; installationId: string }) => ({ ...f.context, repository, commandId: identity.commandId, installationId: identity.installationId, actor: { hostname: 'server-after-restart', installationId: identity.installationId, profilePersonId: null } });
+  return { ...f, repository, jobs, registry, accepted, resolveContext };
+}
+const recoveryInput = z.strictObject({ value: z.string() });
+
+it('preserves every foreign recovery lifecycle and receipt until its owning installation starts', async () => {
+  const foreignInstallation = fixtureId(2);
+  const f = restartFixture([
+    { seed: 801, installationId: foreignInstallation }, { seed: 802, installationId: foreignInstallation, receipt: true },
+    { seed: 803, installationId: foreignInstallation, status: 'running', receipt: true }, { seed: 804, installationId: foreignInstallation, status: 'running' },
+    { seed: 805, installationId: foreignInstallation, status: 'retry_wait' }, { seed: 806 },
+  ]);
+  const foreignBefore = f.accepted.slice(0, 5).map(({ job }) => f.jobs.get(job.jobId, foreignInstallation));
+  let effects = 0;
+  const descriptor = { name: 'demo.recover', inputSchema: recoveryInput, outputSchema: recoveryInput, capability: 'personal.write' as const, effect: 'local' as const, execution: 'async' as const, queuedRecovery: 'restart-safe-local' as const, handler: async (ctx: CommandContext, payload: { value: string }) => commitCommandEffect(ctx, () => { effects++; return { result: payload, changedRefs: [], editToken: null }; }) };
+  f.registry.register(descriptor);
+  await f.registry.recoverPending(fixtureId(1), f.resolveContext); await f.registry.idle();
+  expect(effects).toBe(1);
+  expect(f.accepted.slice(0, 5).map(({ job }) => f.jobs.get(job.jobId, foreignInstallation))).toEqual(foreignBefore);
+  const ownerRegistry = createCommandRegistry({ repository: f.repository, jobs: f.jobs, accessPolicy: f.policy }); ownerRegistry.register(descriptor);
+  await ownerRegistry.recoverPending(foreignInstallation, f.resolveContext); await ownerRegistry.idle();
+  expect(effects).toBe(2);
+  expect(f.accepted.slice(0, 3).map(({ job }) => f.jobs.get(job.jobId, foreignInstallation)?.status)).toEqual(['succeeded', 'succeeded', 'succeeded']);
+  expect(f.accepted.slice(3, 5).map(({ job }) => f.jobs.get(job.jobId, foreignInstallation)?.status)).toEqual(['interrupted', 'interrupted']);
+});
+
+it('rolls back startup interruption if recovery stops before committing the requeue decision', async () => {
+  const f = restartFixture([{ seed: 701 }]);
+  const interruptedStartup = createCommandRegistry({ repository: f.repository, accessPolicy: f.policy, jobs: { ...f.jobs, update(jobId, patch) { if (patch.status === 'queued') throw Error('Process stopped at requeue boundary'); f.jobs.update(jobId, patch); } } });
+  interruptedStartup.register({ name: 'demo.recover', inputSchema: recoveryInput, outputSchema: recoveryInput, capability: 'personal.write', effect: 'local', execution: 'async', queuedRecovery: 'restart-safe-local', handler: async (_ctx, payload) => ({ result: payload, changedRefs: [], editToken: null }) });
+  await expect(interruptedStartup.recoverPending(fixtureId(1), f.resolveContext)).rejects.toThrow('Process stopped at requeue boundary');
+  f.repository.close();
+  const repository = createWorkbenchRepository(f.config); cleanup.push(() => repository.close());
+  const jobs = createJobStore({ repository, clock: f.context.clock });
+  expect(jobs.get(f.accepted[0].job.jobId, f.context.installationId)).toMatchObject({ status: 'queued' });
+});
+
+it('persists actual queue acceptance policy so a later process can recover the original queued command', async () => {
+  const f = fixture(); const parked = new Promise<never>(() => {});
+  f.registry.register({ name: 'demo.recover', inputSchema: recoveryInput, outputSchema: recoveryInput, capability: 'personal.write', effect: 'local', execution: 'async', queuedRecovery: 'restart-safe-local', resourceKey: () => 'source:accepted', handler: async () => parked });
+  const firstRequest = { commandId: fixtureId(601), name: 'demo.recover', baseRevision: null, payload: { value: 'running-before-crash' } };
+  const nextRequest = { ...firstRequest, commandId: fixtureId(602), payload: { value: 'queued-before-crash' } };
+  const first = await f.registry.execute(firstRequest, { ...f.context, commandId: firstRequest.commandId });
+  const next = await f.registry.execute(nextRequest, { ...f.context, commandId: nextRequest.commandId });
+  if (!('jobId' in first) || !('jobId' in next)) throw Error('Jobs expected');
+  expect(f.jobs.get(first.jobId, f.context.installationId)?.status).toBe('running');
+  expect(f.jobs.get(next.jobId, f.context.installationId)?.status).toBe('queued');
+  // The old process is parked permanently; only the reopened connection runs.
+  f.context.repository.close();
+  const repository = createWorkbenchRepository(f.config); cleanup.push(() => repository.close());
+  const jobs = createJobStore({ repository, clock: f.context.clock }); const registry = createCommandRegistry({ repository, jobs, accessPolicy: f.policy }); let effects = 0;
+  registry.register({ name: 'demo.recover', inputSchema: recoveryInput, outputSchema: recoveryInput, capability: 'personal.write', effect: 'local', execution: 'async', queuedRecovery: 'restart-safe-local', handler: async (ctx, payload) => commitCommandEffect(ctx, () => { effects++; return { result: payload, changedRefs: [], editToken: null }; }) });
+  await registry.recoverPending(fixtureId(1), async identity => ({ ...f.context, repository, commandId: identity.commandId })); await registry.idle();
+  expect(effects).toBe(1);
+  expect(jobs.get(first.jobId, f.context.installationId)).toMatchObject({ status: 'interrupted', result: null });
+  expect(jobs.get(next.jobId, f.context.installationId)).toMatchObject({ status: 'succeeded', result: { value: 'queued-before-crash' } });
+});
+
+it('recovers eligible queued local commands with original identities through the bounded durable-resource queue', async () => {
+  const f = restartFixture([{ seed: 101 }, { seed: 102 }, { seed: 103, resource: 'source:other' }]);
+  let release!: () => void; const gate = new Promise<void>(resolve => { release = resolve; });
+  const started: CommandContext[] = []; const resolved: string[] = []; let active = 0; let maximum = 0;
+  f.registry.register({ name: 'demo.recover', inputSchema: recoveryInput, outputSchema: recoveryInput, capability: 'personal.write', effect: 'local', execution: 'async', queuedRecovery: 'restart-safe-local', resourceKey: () => 'changed-after-restart', handler: async (ctx, payload) => { started.push(ctx); active++; maximum = Math.max(maximum, active); await gate; active--; return commitCommandEffect(ctx, () => ({ result: payload, changedRefs: [], editToken: null })); } });
+  const resolver = async (identity: Parameters<typeof f.resolveContext>[0]) => { resolved.push(identity.commandId); return f.resolveContext(identity); };
+  await f.registry.recoverPending(fixtureId(1), resolver);
+  await new Promise(resolve => setTimeout(resolve, 20));
+  expect(started.map(ctx => ctx.commandId)).toEqual([fixtureId(101), fixtureId(103)]);
+  expect(resolved).toEqual([fixtureId(101), fixtureId(103)]);
+  expect(maximum).toBe(2);
+  // Access changes while the second same-resource command is queued.
+  f.policy.assertCommandAllowed = async () => ({ ...f.context.ownAccess, personId: fixtureId(88) });
+  release(); await f.registry.idle();
+  expect(started[2]).toMatchObject({ commandId: fixtureId(102), installationId: fixtureId(1), actor: { hostname: 'server-after-restart', profilePersonId: fixtureId(88) } });
+  for (const { request, job } of f.accepted) {
+    expect(f.jobs.get(job.jobId, fixtureId(1))).toMatchObject({ commandId: request.commandId, status: 'succeeded', error: null, result: request.payload });
+    expect(f.jobs.get(job.jobId, fixtureId(2))).toBeNull();
+    expect(await f.registry.execute(request, { ...f.context, repository: f.repository, commandId: request.commandId })).toEqual(job);
+  }
+  await f.registry.recoverPending(fixtureId(1), resolver); await f.registry.idle(); expect(started).toHaveLength(3);
+});
+
+it('interrupts uncertain, ineligible and previously running work without replay while recovering every eligible queued job', async () => {
+  const f = restartFixture([
+    ...Array.from({ length: 61 }, (_, n) => ({ seed: 200 + n, resource: `source:${n}` })),
+    { seed: 301, status: 'running' }, { seed: 302, status: 'retry_wait' },
+    { seed: 303, name: 'demo.default' }, { seed: 304, name: 'demo.external' }, { seed: 305, name: 'demo.shared' },
+    { seed: 306, irreversible: true }, { seed: 307, checkpoint: true },
+    { seed: 308, acceptedEffect: 'external' }, { seed: 309, acceptedEffect: 'sharedDraft' }, { seed: 310, acceptedEffect: null }, { seed: 311, acceptedRecovery: false },
+  ]);
+  let calls = 0;
+  for (const [name, effect] of [['demo.recover', 'local'], ['demo.default', 'local'], ['demo.external', 'external'], ['demo.shared', 'sharedDraft']] as const) {
+    f.registry.register({ name, inputSchema: recoveryInput, outputSchema: recoveryInput, capability: 'personal.write', effect, execution: 'async', ...(name === 'demo.recover' ? { queuedRecovery: 'restart-safe-local' as const } : {}), handler: async (_ctx, payload) => { calls++; return { result: payload, changedRefs: [], editToken: null }; } });
+  }
+  await f.registry.recoverPending(fixtureId(1), f.resolveContext); await f.registry.idle();
+  expect(calls).toBe(61);
+  for (const { job } of f.accepted.slice(61)) expect(f.jobs.get(job.jobId, fixtureId(1))).toMatchObject({ status: 'interrupted', result: null, error: null, retryAvailable: false });
+});
+
+it('closes accepted jobs from atomic receipts after restart without reconstructing context or repeating effects', async () => {
+  const f = restartFixture([{ seed: 401, receipt: true }, { seed: 402, status: 'running', receipt: true }, { seed: 403, status: 'retry_wait', receipt: true }]);
+  // Receipt reconciliation also works without opting into queued replay.
+  f.registry.register({ name: 'demo.recover', inputSchema: recoveryInput, outputSchema: recoveryInput, capability: 'personal.write', effect: 'local', execution: 'async', handler: async () => { throw Error('Must not replay committed effect'); } });
+  await f.registry.recoverPending(fixtureId(1), async () => { throw Error('Receipt must precede reconstruction'); }); await f.registry.idle();
+  for (const { job } of f.accepted) expect(f.jobs.get(job.jobId, fixtureId(1))).toMatchObject({ status: 'succeeded', result: { value: 'durable receipt' }, error: null });
+});
+
+it.each(['access', 'capability', 'context', 'schema'] as const)('stops recovered queued work on fresh %s failure before its effect', async failure => {
+  const f = restartFixture([{ seed: 501 }]); let effects = 0;
+  f.registry.register({ name: 'demo.recover', inputSchema: failure === 'schema' ? z.strictObject({ value: z.literal('new-schema') }) : recoveryInput, outputSchema: recoveryInput, capability: 'uor.prepare', effect: 'local', execution: 'async', queuedRecovery: 'restart-safe-local', handler: async (_ctx, payload) => { effects++; return { result: payload, changedRefs: [], editToken: null }; } });
+  if (failure === 'access') f.policy.assertCommandAllowed = async () => { throw new WorkbenchHttpError(403, 'COMMAND_FORBIDDEN', 'Revoked'); };
+  if (failure === 'capability') f.policy.assertCommandAllowed = async () => ({ ...f.context.ownAccess, role: 'viewer' });
+  await f.registry.recoverPending(fixtureId(1), async identity => ({ ...await f.resolveContext(identity), ...(failure === 'context' ? { installationId: fixtureId(999) } : {}) })); await f.registry.idle();
+  expect(effects).toBe(0);
+  expect(f.jobs.get(f.accepted[0].job.jobId, fixtureId(1))).toMatchObject({ status: 'failed', result: null, error: { code: failure === 'context' ? 'COMMAND_CONTEXT_MISMATCH' : failure === 'schema' ? 'VALIDATION_FAILED' : 'COMMAND_FORBIDDEN', retryable: false } });
+});
+
+it('lets an atomic receipt win when an async handler loses its response after committing', async () => {
+  const f = fixture(); let effects = 0;
+  f.registry.register({ name: 'demo.responseLost', inputSchema: recoveryInput, outputSchema: recoveryInput, capability: 'personal.write', effect: 'local', execution: 'async', handler: async (ctx, payload) => { commitCommandEffect(ctx, () => { effects++; return { result: payload, changedRefs: [], editToken: null }; }); throw Error('Response lost after local commit'); } });
+  const accepted = await f.registry.execute({ commandId: f.context.commandId, name: 'demo.responseLost', baseRevision: null, payload: { value: 'once' } }, f.context); await f.registry.idle();
+  if (!('jobId' in accepted)) throw Error('Job expected');
+  expect(f.jobs.get(accepted.jobId, f.context.installationId)).toMatchObject({ status: 'succeeded', result: { value: 'once' }, error: null }); expect(effects).toBe(1);
 });

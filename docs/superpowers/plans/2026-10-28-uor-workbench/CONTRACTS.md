@@ -66,6 +66,8 @@ basisDigest исключает generated Header и evaluatedAt; сам запу�
 
 `QueryRegistry.register(descriptor)` принимает имя, input/output schema и read handler. `execute(name,request,context)` возвращает зарегистрированную read model. GET/queries не вызывают источник и не создают Attestation.
 
+T12 queued recovery is explicit: only an asynchronous local descriptor with `queuedRecovery: 'restart-safe-local'` may opt in. Acceptance persists that policy alongside the original command/job IDs and resource key. Legacy/unknown policies, external/shared effects, running/retry-wait work, checkpoints and irreversible stages are not automatically replayed. `CommandRegistry.recoverPending(installationId, resolveContext)` runs once after module registration and scopes every recovery read/write to that trusted installation; foreign job lifecycles remain unchanged. The trusted server resolver reconstructs the current hostname/profile context at the actual bounded queue slot, and the registry repeats access/capability gates. Recovery decisions commit atomically before scheduling; a durable atomic receipt reconciles the existing job without repeating its effect, including after a lost handler response. The checkpoint lookup uses a job-id index without trimming history. T13 calls this startup hook from the isolated `createWorkbenchApp`; no local session or old grant is restored.
+
 `createWorkbenchApplication(deps)` получает repository, clock, accessPolicy, command/query registries, job store и зарегистрированные модули. Необязательный до реализации порт не заменяется фальшивым успешным обработчиком; отсутствующая возможность имеет явный unsupported-сценарий.
 
 ## K04. UI
