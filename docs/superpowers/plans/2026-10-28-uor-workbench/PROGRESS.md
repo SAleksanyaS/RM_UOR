@@ -5,7 +5,7 @@ Branch: `codex/uor-workbench-rebuild`. Source code baseline: `3d8704e4a6ff2195af
 
 ## Continue here
 
-T00–T08 are implemented in separate commits; T09 is the next planned task. Read the latest run entry and [core checkpoint review](CORE_CHECKPOINT_REVIEW.md) before continuing. The new workbench is still separate from the production entry (cutover is T39); no live data has been migrated.
+T00–T11 are implemented in separate commits. T12/T13 have checked core implementations with remaining completion gates; T19 has a checked foundation. Resume at the T12 gap below, then T13's completion gate and T14. Read the latest run entry and [core checkpoint review](CORE_CHECKPOINT_REVIEW.md). The workbench remains separate from the production entry (T39); no live data has been migrated.
 
 Resume commands from the repository root:
 
@@ -18,7 +18,7 @@ node docs/superpowers/plans/2026-10-28-uor-workbench/verify-plan.mjs
 
 Use Node22.16.0/npm10.9.2. On this Windows executor the portable runtime is already cached in `.runtime/toolchains/node-v22.16.0-win-x64`; prepend its absolute path to PATH and use `npm.cmd`. On another machine use the standard installed target runtime, not that machine-specific path. Never reinstall over live workspace data.
 
-T09 begins by reading its exact brief in `01-core-and-calculation.md`, writing `src/features/history/workbench-history.test.ts`, then `npm test -- src/features/history/workbench-history.test.ts` for RED. Verify >3000 observations, immutable agreed basis, daily gaps, Friday predecessor and paginated indexed queries. Follow the index-namespace note in CORE_CHECKPOINT_REVIEW.md. Do not skip to UI or production cutover.
+Next exact task: read T12 in `02-platform-data-and-api.md` and add a restart test for an explicitly eligible local queued command. Current recovery safely marks queued/running/retry_wait as interrupted; it does **not** reconstruct and schedule eligible local work after restart. Implement an explicit eligibility/reconciliation policy with original command/job IDs, server-derived context, fresh gates and the same bounded resource queue. Never replay an uncertain external write. Run `npm test -- src/server/workbench/command-registry.test.ts src/server/workbench/jobs.test.ts`, then complete T13's integration gate before T14. T19 still needs T17/T18 bindings and list pagination. Do not skip to UI/cutover or redo completed T09.
 
 ## Task status
 
@@ -36,17 +36,17 @@ DONE requires actual checks, commit and evidence. Default execution order is in 
 | T06 | [01-core-and-calculation.md](01-core-and-calculation.md) | Numeric evaluator: weighted N/A, preliminary score and independent mandatory gate | DONE | Commit titled `feat(workbench): evaluate weighted goals without lossy numbers`; 38 focused/regression tests + build GREEN |
 | T07 | [01-core-and-calculation.md](01-core-and-calculation.md) | Basis materialization, exact method resolution, manual/correction/attestation/snapshot rules | DONE | Commit titled `feat(workbench): materialize immutable bases and confirmation rules`; 13 focused tests + build GREEN |
 | T08 | [01-core-and-calculation.md](01-core-and-calculation.md) | Friday projection with original provenance and no invented measurement | DONE | Commit titled `feat(workbench): project Friday series with retained source dates`; 3 tests + build GREEN |
-| T09 | [01-core-and-calculation.md](01-core-and-calculation.md) | Indexed history queries and immutable agreed retention | PLANNED | Not executed |
-| T10 | [02-platform-data-and-api.md](02-platform-data-and-api.md) | Строгий wire, локальная сессия и CSRF | PLANNED | Not executed |
-| T11 | [02-platform-data-and-api.md](02-platform-data-and-api.md) | Политика hostname и непереносимый собственный cache | PLANNED | Not executed |
-| T12 | [02-platform-data-and-api.md](02-platform-data-and-api.md) | Durable command registry, задания и идемпотентность | PLANNED | Not executed |
-| T13 | [02-platform-data-and-api.md](02-platform-data-and-api.md) | Статические модули, запросы и изолированная сборка v1 | PLANNED | Not executed |
+| T09 | [01-core-and-calculation.md](01-core-and-calculation.md) | Indexed history queries and immutable agreed retention | DONE | `2b3dc5f`; 3001 rows, frozen basis, keyset pagination; 9 focused tests |
+| T10 | [02-platform-data-and-api.md](02-platform-data-and-api.md) | Строгий wire, локальная сессия и CSRF | DONE | `2a2c033`; protocol/session/origin/CSRF/error tests |
+| T11 | [02-platform-data-and-api.md](02-platform-data-and-api.md) | Политика hostname и непереносимый собственный cache | DONE | `874b600`; 24 focused tests incl actual private cache |
+| T12 | [02-platform-data-and-api.md](02-platform-data-and-api.md) | Durable command registry, задания и идемпотентность | RUNNING | `11f381d`; core 8 tests GREEN; eligible local restart scheduling still pending |
+| T13 | [02-platform-data-and-api.md](02-platform-data-and-api.md) | Статические модули, запросы и изолированная сборка v1 | RUNNING | `1f8c4a0`; implementation tested; completion gate waits for T12 recovery |
 | T14 | [02-platform-data-and-api.md](02-platform-data-and-api.md) | Приватные uploads и источник → raw → normalize → capture | PLANNED | Not executed |
 | T15 | [02-platform-data-and-api.md](02-platform-data-and-api.md) | CSV/XLSX mapping, partial import и редакции исходных фактов | PLANNED | Not executed |
 | T16 | [02-platform-data-and-api.md](02-platform-data-and-api.md) | Версионное обогащение и назначения новой команды | PLANNED | Not executed |
 | T17 | [02-platform-data-and-api.md](02-platform-data-and-api.md) | Незавершённые черновики, evidence и точное подтверждение/срез | PLANNED | Not executed |
 | T18 | [02-platform-data-and-api.md](02-platform-data-and-api.md) | Работы, решения и ацикличные зависимости | PLANNED | Not executed |
-| T19 | [02-platform-data-and-api.md](02-platform-data-and-api.md) | Московский календарь, адресные уведомления и личные подписки | PLANNED | Not executed |
+| T19 | [02-platform-data-and-api.md](02-platform-data-and-api.md) | Московский календарь, адресные уведомления и личные подписки | RUNNING | `6810b40`; foundation 14 tests GREEN; T17/T18/query bindings pending |
 | T20 | [02-platform-data-and-api.md](02-platform-data-and-api.md) | Схемы полей/дашбордов и личные предпочтения | PLANNED | Not executed |
 | T21 | [02-platform-data-and-api.md](02-platform-data-and-api.md) | Индексированные модели пяти экранов и общий поиск | PLANNED | Not executed |
 | T22 | [03-publication-and-recovery.md](03-publication-and-recovery.md) | PackageRevision, manifest, canonical hash и preview | PLANNED | Not executed |
@@ -182,6 +182,26 @@ DONE requires actual checks, commit and evidence. Default execution order is in 
 - `node docs/superpowers/plans/2026-10-28-uor-workbench/verify-plan.mjs` → exit0, approved checksums and document links intact. `git diff --check` → exit0. Clarified that the documentation verifier does not itself execute product checks. README now links this implementation journal.
 - Commit for this fix pass: titled `fix(workbench): close core review findings` (contains this entry and sanitized review report). Eight task implementation commits precede it. No real bank probes, main merge, deployment or production-entry switch performed. Live runtime data and the compat checkout remain untouched.
 - **Next task remains T09**, first action: read its brief/index-namespace ruling, write `src/features/history/workbench-history.test.ts`, then run `npm.cmd test -- src/features/history/workbench-history.test.ts` RED. No T09 implementation is partially staged or represented as complete. Source files and all continuation information are committed together; private logs are supplementary, not required to resume.
+
+## Run 2026-10-28 — four-stream time-bounded implementation
+
+- User asked for maximum parallel streams and an attempt to finish in20 minutes. Start04:23:07UTC, target04:43:07UTC. Used all4 slots: history, transport/composition, identity/notifications, and root commands/jobs/integration. Shared checkout; file ownership separated, only root staged/committed. No extra branches/worktrees, main merge or live bank effects.
+- T09 `2b3dc5f`: indexed immutable history with transactional projection/backfill, source-version/cursor binding, daily gaps, whole periods, exact agreed basis and optional verified wall-clock publication selection. 3001 observations survive archive/reopen and pagination. RED→GREEN also caught period page size, missing/conflicting predecessor, and a late-captured older-business-date Friday predecessor. Index name `wb_history_snapshot_assignment_time` stays within module namespace. Final history9/9; required storage/basis/legacy regression29/29 before last history-only edge addition. Logs `parallel-t09-*.log`.
+- T10 `2a2c033`: strict wire17, process-local cookies/session, exact loopback/origin/CSRF and safe envelopes/errors. Peer review reproduced provider-error text leakage; only explicit safe errors can expose text/details. POST requires configured Origin. Domain error codes map to stable HTTP status without exposing arbitrary Error messages. T10+T13 combined12 tests GREEN, `parallel-t13-green.log`.
+- T11 `874b600`: server hostname normalization, globally unambiguous private registry, own installation+both-repository-bound offline projection and fresh external gates. Curator/chief ordinary capabilities equal; no Bitbucket identity binding. Cache rejects links and uses actual user-only Windows DACL. Explicit revocation invalidates grant; transient outage allows only own previously verified drafts. 24 tests GREEN. Real registry adapter remains not_ready until BP02.
+- T12 core `11f381d`: durable typed command intent/receipts, same-ID replay/conflict, atomic local effect+receipt, durable job event/checkpoint history, per-resource bounded queue, owner-only job access, late-cancel guard, fresh gates at actual execution/retry, native-auth waiting_user preserved, and idle drain. RED→GREEN fixed queued jobs stuck forever, retry bypassing queue, input ZodError500 instead of422, and auth waiting overwritten as failure. Tests retain61+ jobs and350 checkpoints without lifetime caps.8 tests GREEN, `parallel-t12-auth-green.log`.
+- **T12 remaining gate / ruling:** unknown queued work is conservatively interrupted after restart; automatic reconstruction/scheduling of explicitly eligible local commands is not implemented. This is safer than pretending queued work will resume. Complete that behavior and fault-injection coverage before calling T12 DONE; external writes still require owning reconciliation.
+- T13 implementation `1f8c4a0`: static validated module graph/owners/schema registry, query registry, isolated Fastify application and real empty/scope-split fixtures. No success stubs for unavailable future features. Actual source hook spy proves reads do not capture; personal tool owner and backup declaration tested. Default navigation collision and provider-safe error mapping were peer-reviewed and fixed.5 T13 tests GREEN. T13 completion remains gated by T12's remaining recovery behavior.
+- T19 foundation `6810b40`: Moscow working calendar/reminder calculations, private durable notifications/read/subscriptions, current-event dedup, missed-day catchup, cancellable polling/backoff and receipt-wrapped own commands.14 tests GREEN. Still missing T17 reminders.draft.save, T18 real cause provider, application lifecycle wiring and T21 list pagination. Convenience read is latest200; persisted event/read/subscription history is unbounded. No fictitious provider or DraftService registered.
+- Integration: all new modules jointly **110 tests /22 files GREEN** (`parallel-combined-focused.log`); **npm run build exit0** (`parallel-final-build.log`). Fixed parallel test-import/narrowing/parameter-shadow type errors; source contents normalized to LF only, no runtime change from normalization.
+- Whole-suite verification is recorded in the following final entry when complete. Product entry remains legacy until T39; source/PR/UI/T42+ browser automation are still planned. No BP was marked passed from synthetic fixtures.
+
+## Final verification of the parallel pass — 2026-10-28
+
+- `npm.cmd test` → **exit0, 121 files /585 tests**, 359.40s (`.runtime/validation/workbench/parallel-full-test.log`). This is the complete existing+new suite after runtime code freeze, not merely the focused tests.
+- `npm.cmd run build` → **exit0**, TypeScript+Vite (`parallel-final-build.log`), Node22.16.0/npm10.9.2. Targeted combined suite110/110 also passed. No lockfile/dependency changes.
+- `git diff --check` → exit0 after LF normalization; approved-doc verifier PASS. Six implementation commits `2b3dc5f..6810b40` plus this journal commit. All source changes are committed; private test logs are supplementary and not required by the next agent.
+- The user20-minute target did not make all remaining tasks complete. Actual completed additions are T09–T11; checked implementations/foundations for T12/T13/T19 retain the explicit gaps above. T14–T18/T20+ and bank probes remain unimplemented/unverified. Continue from T12's local queued recovery completion gate, then finish T13 gate and T14. No production-entry switch, real bank session or main merge is claimed.
 
 ## Run entry template
 
