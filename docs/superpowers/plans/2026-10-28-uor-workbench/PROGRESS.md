@@ -5,7 +5,7 @@ Branch: `codex/uor-workbench-rebuild`. Source code baseline: `3d8704e4a6ff2195af
 
 ## Continue here
 
-T00–T11 are implemented in separate commits. T12/T13 have checked core implementations with remaining completion gates; T19 has a checked foundation. Resume at the T12 gap below, then T13's completion gate and T14. Read the latest run entry and [core checkpoint review](CORE_CHECKPOINT_REVIEW.md). The workbench remains separate from the production entry (T39); no live data has been migrated.
+T00–T13 are implemented and checked. T19 has a checked foundation with later bindings still pending. Resume at T14; do not redo completed T09 or T12 recovery. Read the latest run entry and [core checkpoint review](CORE_CHECKPOINT_REVIEW.md). The workbench remains separate from the production entry (T39); no live data has been migrated.
 
 Resume commands from the repository root:
 
@@ -18,7 +18,7 @@ node docs/superpowers/plans/2026-10-28-uor-workbench/verify-plan.mjs
 
 Use Node22.16.0/npm10.9.2. On this Windows executor the portable runtime is already cached in `.runtime/toolchains/node-v22.16.0-win-x64`; prepend its absolute path to PATH and use `npm.cmd`. On another machine use the standard installed target runtime, not that machine-specific path. Never reinstall over live workspace data.
 
-Next exact task: read T12 in `02-platform-data-and-api.md` and add a restart test for an explicitly eligible local queued command. Current recovery safely marks queued/running/retry_wait as interrupted; it does **not** reconstruct and schedule eligible local work after restart. Implement an explicit eligibility/reconciliation policy with original command/job IDs, server-derived context, fresh gates and the same bounded resource queue. Never replay an uncertain external write. Run `npm test -- src/server/workbench/command-registry.test.ts src/server/workbench/jobs.test.ts`, then complete T13's integration gate before T14. T19 still needs T17/T18 bindings and list pagination. Do not skip to UI/cutover or redo completed T09.
+Next exact task: read T14 in `02-platform-data-and-api.md`, write failing private-file/source-pipeline tests, then implement the authenticated upload port and immutable raw → normalize → enrich → capture flow with atomic receipts. Use `findByCommand` for operationId=jobId; the public source.capture payload remains only goalId. Preserve failed-collection fallback and original dates; no hidden file fallback for Qlik. Run `npm test -- src/server/workbench/files.test.ts src/features/connectors/workbench-source-service.test.ts` and impacted route/application tests. T19 still needs T17/T18 bindings and list pagination. Do not skip to UI/cutover.
 
 ## Task status
 
@@ -39,8 +39,8 @@ DONE requires actual checks, commit and evidence. Default execution order is in 
 | T09 | [01-core-and-calculation.md](01-core-and-calculation.md) | Indexed history queries and immutable agreed retention | DONE | `2b3dc5f`; 3001 rows, frozen basis, keyset pagination; 9 focused tests |
 | T10 | [02-platform-data-and-api.md](02-platform-data-and-api.md) | Строгий wire, локальная сессия и CSRF | DONE | `2a2c033`; protocol/session/origin/CSRF/error tests |
 | T11 | [02-platform-data-and-api.md](02-platform-data-and-api.md) | Политика hostname и непереносимый собственный cache | DONE | `874b600`; 24 focused tests incl actual private cache |
-| T12 | [02-platform-data-and-api.md](02-platform-data-and-api.md) | Durable command registry, задания и идемпотентность | RUNNING | `11f381d`; core 8 tests GREEN; eligible local restart scheduling still pending |
-| T13 | [02-platform-data-and-api.md](02-platform-data-and-api.md) | Статические модули, запросы и изолированная сборка v1 | RUNNING | `1f8c4a0`; implementation tested; completion gate waits for T12 recovery |
+| T12 | [02-platform-data-and-api.md](02-platform-data-and-api.md) | Durable command registry, задания и идемпотентность | DONE | `1775ad3`; installation-scoped eligible local restart recovery, atomic receipt reconciliation, indexed checkpoints; full 598/598 GREEN |
+| T13 | [02-platform-data-and-api.md](02-platform-data-and-api.md) | Статические модули, запросы и изолированная сборка v1 | DONE | Commit titled `feat(workbench): reconcile queued jobs during isolated startup`; real restart/session/job/replay HTTP test, full 598/598 + build GREEN |
 | T14 | [02-platform-data-and-api.md](02-platform-data-and-api.md) | Приватные uploads и источник → raw → normalize → capture | PLANNED | Not executed |
 | T15 | [02-platform-data-and-api.md](02-platform-data-and-api.md) | CSV/XLSX mapping, partial import и редакции исходных фактов | PLANNED | Not executed |
 | T16 | [02-platform-data-and-api.md](02-platform-data-and-api.md) | Версионное обогащение и назначения новой команды | PLANNED | Not executed |
@@ -202,6 +202,19 @@ DONE requires actual checks, commit and evidence. Default execution order is in 
 - `npm.cmd run build` → **exit0**, TypeScript+Vite (`parallel-final-build.log`), Node22.16.0/npm10.9.2. Targeted combined suite110/110 also passed. No lockfile/dependency changes.
 - `git diff --check` → exit0 after LF normalization; approved-doc verifier PASS. Six implementation commits `2b3dc5f..6810b40` plus this journal commit. All source changes are committed; private test logs are supplementary and not required by the next agent.
 - The user20-minute target did not make all remaining tasks complete. Actual completed additions are T09–T11; checked implementations/foundations for T12/T13/T19 retain the explicit gaps above. T14–T18/T20+ and bank probes remain unimplemented/unverified. Continue from T12's local queued recovery completion gate, then finish T13 gate and T14. No production-entry switch, real bank session or main merge is claimed.
+
+## Run 2026-10-28 — T12 recovery completion and T13 startup integration
+
+- Continued from `4a6415b` in a fresh isolated clone of the requested branch. The supplied chat summary was older than the tracked journal; completed T09–T11 were not repeated. No old workspace or live runtime data was copied, reset or reinstalled.
+- Runtime: official Node22.16.0/npm10.9.2 archive downloaded into the ignored `.runtime/toolchains`, checked against Node's SHA256 manifest. `npm ci --no-audit --no-fund` installed the existing lockfile unchanged. Git commits use per-command Codex author identity because this new clone has no configured author; global Git settings are unchanged.
+- T12 `1775ad3`: original and current descriptors must explicitly opt into asynchronous local queued recovery. Persisted effect/policy, command/job IDs and resource key survive restart. Recovery is scoped to the trusted installation before any lifecycle write; another installation's jobs/receipts remain unchanged and recoverable by that owner. Current hostname/profile/access/capability are reconstructed at the actual bounded queue slot. Legacy, external/shared, running/retry-wait, checkpointed and irreversible work is not blindly replayed.
+- Local durable receipts reconcile pending jobs without another effect or false failure after response loss. Interruption, receipt reconciliation and requeue decisions share one synchronous transaction before scheduling, so another crash during recovery rolls back cleanly. Added a checkpoint(job_id) covering index without trimming retained history.
+- T13: after module registration and isolated Fastify readiness, startup invokes `recoverPending(installationId, resolver)`. The real temp SQLite restart test polls the original job over HTTP, replays its command once, verifies current server actor, and proves foreign job state plus HTTP ownership isolation. Legacy production startup remains unchanged.
+- RED evidence: missing recovery and async post-commit false failure; a second startup crash left a job interrupted; independent review reproduced foreign lifecycle mutation and a repeated unindexed checkpoint scan. Each fix has an observed RED→GREEN regression. Final focused command across command-registry/jobs/application/recovery-application: exit0, 4 files/23 tests. Independent scoped review: both findings addressed, no new blocking issue; documentation signature nit corrected.
+- Initial whole-suite sandbox attempt was stopped after Windows denied temporary Git config writes/atomic renames. Approved-process run then reported 594 passed/4 failed: existing path tests compared the inherited 8.3 TEMP alias `ALEKSA~1` to canonical `Aleksandr`, breaking Vite/bootstrap/update fixtures. Set TEMP/TMP **for the test process only** to `fs.realpathSync.native(os.tmpdir())`; all four affected files/11 tests then passed without product/test changes.
+- **Final fresh full verification:** canonical TEMP/TMP, approved process, Node22.16.0/npm10.9.2: `npm.cmd test -- --fileParallelism --maxWorkers=4` → **exit0, 122 files/598 tests, 95.70s** (`t12-t13-full-test-canonical.log`). `npm.cmd run build` → **exit0**, TypeScript+Vite (`t12-t13-final-build.log`). SQLite experimental/upstream Rollup warnings remain unchanged. No failures were hidden or assertions weakened.
+- Private RED/GREEN/review logs are under `.runtime/validation/workbench/continuation`; tracked code, tests and this journal are sufficient to resume. Approved-document verifier and `git diff --check` passed. No bank probe, external provider write, main merge, deployment or production-entry switch is claimed.
+- Next: T14 private uploads/source pipeline. Read its exact task/specs. Internal context/profile binding must come from trusted published inventory and saved allowed context, not a fabricated first assignment/date. T19 remains a foundation, not DONE.
 
 ## Run entry template
 

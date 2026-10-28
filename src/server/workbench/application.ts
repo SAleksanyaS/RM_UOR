@@ -1,4 +1,5 @@
 import type { Clock, UUIDv4 } from '../../domain/workbench/index';
+import { newUuid } from '../../domain/workbench/primitives';
 import { canUseCapability, type AccessPolicyService } from '../../features/identity/workbench-access-policy';
 import { installHistoryIndex } from '../../features/history/workbench-history-index';
 import type { WorkbenchRepository } from '../storage/workbench-repository';
@@ -17,6 +18,22 @@ export type WorkbenchApplicationDeps = {
   // T21/T22 bind these narrow reads when catalog/publication read models exist.
   readState?: { defaultContext(context: QueryContext): Promise<GlobalContext | null>; publishedCommit(): string | null };
 };
+
+/** Startup uses the current installation and hostname, without restoring a session or an old grant. */
+export async function recoverWorkbenchCommands(deps: WorkbenchApplicationDeps): Promise<void> {
+  await deps.commands.recoverPending(deps.installationId, async identity => {
+    if (identity.installationId !== deps.installationId) throw new WorkbenchHttpError(404, 'JOB_NOT_FOUND', 'Job not found');
+    const hostname = deps.hostname();
+    if (!hostname.trim()) throw new WorkbenchHttpError(503, 'HOSTNAME_UNAVAILABLE', 'Server hostname is unavailable');
+    const ownAccess = await deps.accessPolicy.resolveOwnAccess();
+    return {
+      requestId: newUuid(), commandId: identity.commandId, installationId: deps.installationId,
+      repository: deps.repository, clock: deps.clock, ownAccess,
+      actor: { hostname, installationId: deps.installationId, profilePersonId: ownAccess.personId },
+    };
+  });
+}
+
 export function createWorkbenchApplication(deps: WorkbenchApplicationDeps): WorkbenchHttpPort {
   // Validate the entire import graph before installing projections or descriptors.
   validateModules(deps.modules);

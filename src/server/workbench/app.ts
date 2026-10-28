@@ -1,6 +1,6 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import cookie from '@fastify/cookie';
-import { createWorkbenchApplication, type WorkbenchApplicationDeps } from './application';
+import { createWorkbenchApplication, recoverWorkbenchCommands, type WorkbenchApplicationDeps } from './application';
 import { registerWorkbenchRoutes } from './routes';
 
 /** Isolated v1 composition; legacy launcher is deliberately unchanged until T39. */
@@ -11,6 +11,8 @@ export async function createWorkbenchApp(deps: WorkbenchApplicationDeps): Promis
     await app.register(cookie);
     app.decorate('workbenchTransport', { sessions: deps.sessions, allowedOrigins: deps.allowedOrigins });
     await registerWorkbenchRoutes(app, application);
-    await app.ready(); return app;
+    await app.ready();
+    await recoverWorkbenchCommands(deps);
+    return app;
   } catch (error) { await app.close(); throw error; }
 }
