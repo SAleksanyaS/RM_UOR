@@ -106,4 +106,29 @@ describe('immutable evaluation bases', () => {
     const resolved = resolveEvaluationInput({ ...request(i), assignmentRef: versionRef('goal_assignment', 15, 2) }, r, { now: () => i.context.evaluatedAt }, i.goal.actor);
     expect(prepareEvaluation(resolved, r).resultRef).toBeNull();
   });
+
+  it('rejects unrelated directory links used to claim scope compatibility', () => {
+    const i = makeNumericFixture();
+    const root = i.facts[0]; const child = { ...root, id: fixtureId(991), scope: { kind: 'product' as const, id: fixtureId(102) }, lineage: { ...root.lineage } };
+    root.origin = 'reducer'; root.lineage = { ...root.lineage, inputFactRefs: [{ entityType: 'observed_fact', id: child.id, revision: 1 }], directoryLinkRefs: [versionRef('directory_link', 80)] };
+    i.facts.push(child);
+    const graph = makeEntityGraph(i);
+    graph.entries.push({ entityType: 'directory_link', value: { ...makeHeader(80, { publicationAnchorId: i.goal.publicationAnchorId }), kind: 'leader', scope: i.assignment.scope, personId: i.goal.primaryCuratorPersonId } });
+    const { r } = setup(graph);
+    expect(() => resolveEvaluationInput(request(i), r, { now: () => i.context.evaluatedAt }, i.goal.actor)).toThrowError(expect.objectContaining({ code: 'LINEAGE_SCOPE_MISMATCH' }));
+  });
+
+  it('accepts an exact published product-to-team lineage path', () => {
+    const i = makeNumericFixture({ scope: { kind: 'team', id: fixtureId(102) } });
+    const root = i.facts[0]; const productScope = { kind: 'product' as const, id: fixtureId(101) };
+    const child = { ...root, id: fixtureId(991), scope: productScope, factKey: 'demo_product_input', lineage: { ...root.lineage } };
+    i.captures[0].canonicalRows[0].dimensions.demo_scope_id = productScope.id;
+    root.origin = 'reducer'; root.lineage = { ...root.lineage, inputFactRefs: [{ entityType: 'observed_fact', id: child.id, revision: 1 }], directoryLinkRefs: [versionRef('directory_link', 80)] }; i.facts.push(child);
+    const graph = makeEntityGraph(i);
+    graph.entries.push({ entityType: 'directory_link', value: { ...makeHeader(80, { publicationAnchorId: i.goal.publicationAnchorId }), kind: 'product_team', from: { entityType: 'directory_entity', id: productScope.id }, to: { entityType: 'directory_entity', id: i.assignment.scope.id } } });
+    const { r } = setup(graph);
+    const resolved = resolveEvaluationInput(request(i), r, { now: () => i.context.evaluatedAt }, i.goal.actor);
+    const saved = prepareEvaluation(resolved, r);
+    expect(r.readVersion<CalculationResult>(saved.resultRef!)).toMatchObject({ calculation: 'ready', canConfirm: true, scorePercent: { numerator: '100', denominator: '1' } });
+  });
 });

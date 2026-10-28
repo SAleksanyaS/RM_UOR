@@ -61,5 +61,5 @@ for(const file of markdown){
 if(problems.length){for(const p of problems)console.error(p);process.exitCode=1;}
 else{
   console.log(`PASS: ${manifest.length} approved document checksums; ${tasks.size} tasks; ${acIds.length} AC + 8 OC; ${examples} JSON examples; local links.`);
-  console.log('Documentation validation only. Product tests, build and bank probes were not executed.');
+  console.log('Documentation validation only. This command does not run product tests, build or bank probes.');
 }

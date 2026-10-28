@@ -3,6 +3,23 @@
 Implementation started on 2026-10-28. See run entries below; task statuses are evidence-based.
 Branch: `codex/uor-workbench-rebuild`. Source code baseline: `3d8704e4a6ff2195af4f2c0602ed11bff5d38f4b`.
 
+## Continue here
+
+T00–T08 are implemented in separate commits; T09 is the next planned task. Read the latest run entry and [core checkpoint review](CORE_CHECKPOINT_REVIEW.md) before continuing. The new workbench is still separate from the production entry (cutover is T39); no live data has been migrated.
+
+Resume commands from the repository root:
+
+```text
+git branch --show-current
+git status --short
+git log -12 --oneline
+node docs/superpowers/plans/2026-10-28-uor-workbench/verify-plan.mjs
+```
+
+Use Node22.16.0/npm10.9.2. On this Windows executor the portable runtime is already cached in `.runtime/toolchains/node-v22.16.0-win-x64`; prepend its absolute path to PATH and use `npm.cmd`. On another machine use the standard installed target runtime, not that machine-specific path. Never reinstall over live workspace data.
+
+T09 begins by reading its exact brief in `01-core-and-calculation.md`, writing `src/features/history/workbench-history.test.ts`, then `npm test -- src/features/history/workbench-history.test.ts` for RED. Verify >3000 observations, immutable agreed basis, daily gaps, Friday predecessor and paginated indexed queries. Follow the index-namespace note in CORE_CHECKPOINT_REVIEW.md. Do not skip to UI or production cutover.
+
 ## Task status
 
 Statuses: PLANNED / RUNNING / DONE / BLOCKED_RUNTIME / BLOCKED_BANK_INPUT / FAILED.
@@ -152,6 +169,19 @@ DONE requires actual checks, commit and evidence. Default execution order is in 
 - Ruling: whole periods retain their boundaries and become eligible only when completed. A series mixing known as-of and period meanings is rejected as `INCOMPATIBLE_SERIES_TIME`; no implicit temporal conversion. Unknown-time observations are display fallback when no eligible known-business-time value exists and always carry a warning.
 - GREEN same focused command → exit0, 1 file /3 tests (`t08-green.log`); `npm.cmd run build` → exit0 (`t08-build.log`).
 - Current checkpoint: T00–T08 implemented/checked; T09 and later remain PLANNED. The new components still run alongside legacy and have not switched production entry or changed live data. Next is T09 indexed historical read model, including >3000-observation retention/pagination and exact agreed-basis reads.
+
+## Run 2026-10-28 — checkpoint review fixes and complete verification
+
+- Review base/head `34455dd..8ee8910`. A fresh read-only reviewer reported3 Important findings and no Critical/Minor findings. Details and boundaries: [CORE_CHECKPOINT_REVIEW.md](CORE_CHECKPOINT_REVIEW.md).
+- R1: reproduce a published correction of one derived observation (expected50, received100). Apply the correction at its target logical observation, preserve correction/original lineage refs in the semantic basis, and preserve original freshness. Unsupported multi-aggregate redistribution is explicitly blocked rather than ignored.
+- R2: reproduce a result using another metric through lineage (expected blocked, received ready); also reproduce an unrelated leader link used as scope proof. Enforce metric identity in the pure traversal and actual exact published ancestor/descendant directory paths in the server resolver. The pure input's resolution.directoryLinkRefs is server-verified context, not a browser-controlled assertion. A valid product→team path remains supported.
+- R3: reproduce a single-quoted SQLite table name bypassing the module namespace and rewriting an immutable goal in a temporary DB. Reject ambiguous single-quoted structural identifiers before string-literal stripping. Regression verifies rejection and the unchanged original goal.
+- RED: `npm.cmd test -- src/features/evaluation/workbench/basis.test.ts src/features/evaluation/workbench/evaluate.test.ts` → exit1 (both lineage defects); `npm.cmd test -- src/server/storage/workbench-repository.test.ts src/features/evaluation/workbench/select-facts.test.ts` → exit1 (correction and SQL defects). Evidence `review-lineage-red.log`, `review-correction-sql-red.log`.
+- GREEN: repository + selector + resolver/basis + evaluator focused suite → exit0, 4 files /24 tests (`review-fixes-green.log`); additional valid-path test → exit0, 7 basis tests (`review-path-green.log`). The first whole-suite checkpoint run overlapped the new RED regression and failed on that reproduced defect; it is not a legacy baseline failure or completion evidence.
+- **Final fresh verification after all runtime fixes:** `npm.cmd test` → exit0, **111 files /518 tests**, 341.92s (`checkpoint-final-test.log`); then `npm.cmd run build` → exit0 (`checkpoint-final-build.log`), Node22.16.0/npm10.9.2. No failures or skipped failures were suppressed. SQLite experimental warnings are from Node22.
+- `node docs/superpowers/plans/2026-10-28-uor-workbench/verify-plan.mjs` → exit0, approved checksums and document links intact. `git diff --check` → exit0. Clarified that the documentation verifier does not itself execute product checks. README now links this implementation journal.
+- Commit for this fix pass: titled `fix(workbench): close core review findings` (contains this entry and sanitized review report). Eight task implementation commits precede it. No real bank probes, main merge, deployment or production-entry switch performed. Live runtime data and the compat checkout remain untouched.
+- **Next task remains T09**, first action: read its brief/index-namespace ruling, write `src/features/history/workbench-history.test.ts`, then run `npm.cmd test -- src/features/history/workbench-history.test.ts` RED. No T09 implementation is partially staged or represented as complete. Source files and all continuation information are committed together; private logs are supplementary, not required to resume.
 
 ## Run entry template
 

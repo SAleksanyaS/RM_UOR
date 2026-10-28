@@ -38,6 +38,7 @@ export function selectEvaluationFacts(input: EvaluationInput): FactSelection {
     if (old && JSON.stringify(old) !== JSON.stringify(fact)) conflictingRefs.add(id); else byRef.set(id, fact);
   }
   const confirmed = new Set(input.resolution.publicationAnchors.filter(a => a.publicationState === 'confirmed').map(a => a.id));
+  const verifiedDirectoryRefs = new Set(input.resolution.directoryLinkRefs.map(key));
   const isPublished = (entity: Header) => entity.publicationAnchorId !== null && confirmed.has(entity.publicationAnchorId);
   const heads = <T extends Header>(values: T[]): T[] => {
     const result = new Map<string, T>(); for (const v of values.filter(isPublished)) if (!result.has(v.id) || result.get(v.id)!.revision < v.revision) result.set(v.id, v);
@@ -92,6 +93,7 @@ export function selectEvaluationFacts(input: EvaluationInput): FactSelection {
     const visit = (fact: ObservedFact, visiting: Set<string>) => {
       const id = key(version('observed_fact', fact)); result.factRefs.push(version('observed_fact', fact));
       if (visiting.has(id)) { problems.push('lineage_cycle'); return; }
+      if (fact.metricId !== metric.id) { problems.push('lineage_metric_mismatch'); return; }
       if (fact.unitCode !== metric.unit.code) { problems.push('incompatible_units'); return; }
       if (fact.sourceId !== input.goal.sourceId) { problems.push('lineage_source_mismatch'); return; }
       if (!fact.lineage.inputFactRefs.length) { leaves.set(id, fact); return; }
@@ -99,34 +101,54 @@ export function selectEvaluationFacts(input: EvaluationInput): FactSelection {
       for (const ref of fact.lineage.inputFactRefs) {
         const child = byRef.get(key(ref));
         if (ref.entityType !== 'observed_fact' || !child || !eligible(child)) { problems.push('lineage_reference_missing'); continue; }
-        if ((child.scope.kind !== fact.scope.kind || child.scope.id !== fact.scope.id) && !fact.lineage.directoryLinkRefs.length) { problems.push('lineage_scope_mismatch'); continue; }
+        if ((child.scope.kind !== fact.scope.kind || child.scope.id !== fact.scope.id) && (!fact.lineage.directoryLinkRefs.length || fact.lineage.directoryLinkRefs.some(ref => !verifiedDirectoryRefs.has(key(ref))))) { problems.push('lineage_scope_mismatch'); continue; }
         visit(child, path);
       }
     };
     chosen.forEach(fact => visit(fact, new Set()));
     const freshness: Freshness[] = []; const rows: CanonicalSourceRow[] = []; const overrides = new Map<string, ExactNumber>();
-    for (const leaf of leaves.values()) {
-      if (leaf.state !== 'known' || leaf.value === null) { freshness.push('unknown'); problems.push('missing_fact'); continue; }
-      const matching = corrections.filter(c => c.factKey === leaf.factKey);
+    const acceptedCorrection = (fact: ObservedFact) => {
+      const matching = corrections.filter(c => c.factKey === fact.factKey);
       const usable: Array<{ correction: ManualCorrection; originals: ObservedFact[] }> = [];
       for (const correction of matching) {
         const originals = correction.originalFactRefs.map(ref => byRef.get(key(ref)));
         if (originals.some(f => !f)) { problems.push('correction_original_fact_missing'); continue; }
         const exact = originals.filter((f): f is ObservedFact => !!f);
-        if (exact.every(f => f.factKey === leaf.factKey && f.sourceId === leaf.sourceId && f.metricId === leaf.metricId && f.scope.kind === leaf.scope.kind && f.scope.id === leaf.scope.id && sameTime(f.businessTime, leaf.businessTime))) usable.push({ correction, originals: exact });
+        if (exact.every(f => f.factKey === fact.factKey && f.sourceId === fact.sourceId && f.metricId === fact.metricId && f.scope.kind === fact.scope.kind && f.scope.id === fact.scope.id && sameTime(f.businessTime, fact.businessTime))) usable.push({ correction, originals: exact });
       }
-      if (usable.length > 1) { problems.push('ambiguous_correction'); continue; }
-      const accepted = usable[0];
+      for (const item of usable) { result.correctionRefs.push(version('manual_correction', item.correction)); result.factRefs.push(...item.originals.map(f => version('observed_fact', f))); }
+      if (usable.length > 1) { problems.push('ambiguous_correction'); return undefined; }
+      return usable[0];
+    };
+    const originalQuality = (original: ObservedFact, visited = new Set<string>()) => {
+      const id = key(version('observed_fact', original));
+      if (visited.has(id)) { problems.push('lineage_cycle'); return; }
+      const path = new Set(visited); path.add(id); result.factRefs.push(version('observed_fact', original));
+      if (!eligible(original)) { problems.push('correction_original_fact_missing'); return; }
+      const quality = factFreshness({ fact: original, rule, evaluatedAt: input.context.evaluatedAt }); freshness.push(quality.freshness); problems.push(...quality.qualityFlags);
+      for (const ref of original.lineage.inputFactRefs) { const child = byRef.get(key(ref)); if (!child) problems.push('correction_original_fact_missing'); else originalQuality(child, path); }
+    };
+    for (const leaf of leaves.values()) {
+      if (leaf.state !== 'known' || leaf.value === null) { freshness.push('unknown'); problems.push('missing_fact'); continue; }
+      const accepted = acceptedCorrection(leaf);
       if (accepted) {
-        overrides.set(leaf.id, accepted.correction.replacement); result.correctionRefs.push(version('manual_correction', accepted.correction)); result.factRefs.push(...accepted.originals.map(f => version('observed_fact', f)));
+        overrides.set(leaf.id, accepted.correction.replacement);
         if (compare(leaf.value, accepted.correction.replacement) !== 0) problems.push('correction_source_discrepancy');
       }
-      for (const original of accepted?.originals ?? [leaf]) { const quality = factFreshness({ fact: original, rule, evaluatedAt: input.context.evaluatedAt }); freshness.push(quality.freshness); problems.push(...quality.qualityFlags); }
+      for (const original of accepted?.originals ?? [leaf]) originalQuality(original);
       const capture = captures.get(leaf.captureId);
       if (!capture || capture.sourceId !== leaf.sourceId || capture.id !== leaf.lineage.captureId) { problems.push('lineage_capture_missing'); continue; }
       const selectedRows = leaf.lineage.sourceRowKeys.map(rowKey => capture.canonicalRows.find(row => row.rowKey === rowKey));
       if (!selectedRows.length || selectedRows.some(row => !row)) { problems.push('lineage_row_missing'); continue; }
       for (const row of selectedRows) if (row) rows.push(row);
+    }
+    let rootOverride: ExactNumber | null = null;
+    for (const root of chosen.filter(f => f.lineage.inputFactRefs.length > 0)) {
+      const accepted = acceptedCorrection(root); if (!accepted) continue;
+      accepted.originals.forEach(original => originalQuality(original));
+      if (root.value !== null && compare(root.value, accepted.correction.replacement) !== 0) problems.push('correction_source_discrepancy');
+      if (chosen.length === 1) rootOverride = accepted.correction.replacement;
+      else problems.push('unsupported_correction_reduction');
     }
     result.factRefs = refs(result.factRefs); result.correctionRefs = refs(result.correctionRefs);
     result.freshness = aggregateFreshness(result.missingPopulation.length ? [...freshness, 'unknown'] : freshness.length ? freshness : ['unknown']);
@@ -158,6 +180,7 @@ export function selectEvaluationFacts(input: EvaluationInput): FactSelection {
         }
       }
     }
+    if (rootOverride !== null && result.value !== null) result.value = rootOverride;
     result.qualityFlags = flags(problems);
     if (problems.some(p => !warningOnly.has(p))) result.value = null;
     return result;

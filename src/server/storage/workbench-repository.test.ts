@@ -105,6 +105,9 @@ describe('append-only workbench repository', () => {
     expect(() => jobs.execMigration('bad', 'DROP TABLE wb_entity_heads')).toThrow();
     expect(() => r.sqlForModule('entity')).toThrowError(expect.objectContaining({ code: 'INVALID_MODULE_ID' }));
     expect(() => jobs.run('DELETE FROM records AS wb_jobs_alias')).toThrowError(expect.objectContaining({ code: 'MODULE_SQL_NAMESPACE_FORBIDDEN' }));
+    expect(() => jobs.run("UPDATE 'wb_entity_versions' SET payload_json=json_set(payload_json,'$.title','CORRUPTED') WHERE entity_type='core_goal_definition' AND EXISTS(SELECT 1 FROM wb_jobs_test)"))
+      .toThrowError(expect.objectContaining({ code: 'MODULE_SQL_NAMESPACE_FORBIDDEN' }));
+    expect(r.getHead<{ title: string } & import('../../domain/workbench/primitives').Header>({ entityType: 'core_goal_definition', id: graph.input.goal.id })?.title).toBe(graph.input.goal.title);
   });
 
   it('indexes only scoped candidates and supports explicitly registered module entities', () => {

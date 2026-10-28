@@ -108,4 +108,19 @@ describe('explicit fact selection', () => {
     expect(selected.qualityFlags).not.toContain('ambiguous_fact_selection');
     expect(selected.factRefs).toHaveLength(2);
   });
+
+  it('applies a published correction to one logical derived observation', () => {
+    const i = makeNumericFixture(); const root = i.facts[0];
+    const leaf = { ...root, id: fixtureId(980), factKey: 'demo_leaf', lineage: { ...root.lineage } };
+    root.origin = 'reducer'; root.lineage = { ...root.lineage, inputFactRefs: [ref('observed_fact', leaf)] };
+    i.facts.push(leaf);
+    // The leaf is an earlier input to the selected current root, not an equal-time competing source fact.
+    const earlierCapture = { ...i.captures[0], id: fixtureId(981), capturedAt: '2026-10-23T08:00:00Z' };
+    i.captures.push(earlierCapture); leaf.captureId = earlierCapture.id; leaf.lineage = { ...leaf.lineage, captureId: earlierCapture.id };
+    i.corrections = [{ ...makeHeader(982, { publicationAnchorId: i.goal.publicationAnchorId }), factKey: root.factKey, originalFactRefs: [ref('observed_fact', root)], replacement: '50', reason: 'Demo verified correction' }];
+    const selected = selectEvaluationFacts(i);
+    expect(selected.metrics[0].value).toBe('50');
+    expect(selected.correctionRefs).toEqual([ref('manual_correction', i.corrections[0])]);
+    expect(selected.factRefs).toContainEqual(ref('observed_fact', root));
+  });
 });

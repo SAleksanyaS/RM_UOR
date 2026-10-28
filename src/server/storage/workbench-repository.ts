@@ -249,6 +249,10 @@ export function createWorkbenchRepository(options: { filename: string; artifactR
       const prefix = `wb_${moduleId}_`;
       const guard = (sql: string, migration = false) => {
         // A defense for trusted static adapters, never an interpreter for user-supplied SQL.
+        // SQLite accepts single-quoted identifiers. Do not erase a possible table name as if it were data.
+        const withoutComments = sql.replace(/--[^\n]*|\/\*[\s\S]*?\*\//g, ' ');
+        if (/\b(?:FROM|JOIN|INTO|UPDATE|TABLE|REFERENCES)\s*(?:IF\s+(?:NOT\s+)?EXISTS\s+)?(?:\(\s*)*'/i.test(withoutComments)
+          || (/\bCREATE\s+(?:UNIQUE\s+)?INDEX\b/i.test(withoutComments) && /\bON\s*'/i.test(withoutComments))) throw new WorkbenchError('MODULE_SQL_NAMESPACE_FORBIDDEN', { moduleId });
         const tokens = sql.replace(/'([^']|'')*'/g, "''").replace(/--[^\n]*|\/\*[\s\S]*?\*\//g, ' ');
         if (/\b(?:ATTACH|DETACH|PRAGMA|VACUUM|BEGIN|COMMIT|ROLLBACK|SAVEPOINT|RELEASE|TRIGGER)\b/i.test(tokens)
           || /\bsqlite_\w+/i.test(tokens) || (!migration && /;\s*\S/.test(tokens))) throw new WorkbenchError('MODULE_SQL_FORBIDDEN');

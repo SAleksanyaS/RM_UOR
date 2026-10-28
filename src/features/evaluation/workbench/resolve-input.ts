@@ -1,5 +1,5 @@
-import type { CoreGoalDefinition, DirectoryLink, EvaluationInput, GoalAssignment, MethodVersion, MetricDefinition, PrepareEvaluationRequest, SourceDefinition, Template } from '../../../domain/workbench/entities';
-import type { ActorRef, Clock, EntityRef, Header, VersionRef } from '../../../domain/workbench/primitives';
+import type { CoreGoalDefinition, DirectoryEntity, DirectoryLink, EvaluationInput, GoalAssignment, MethodVersion, MetricDefinition, ObservedFact, PrepareEvaluationRequest, SourceDefinition, Template } from '../../../domain/workbench/entities';
+import type { ActorRef, Clock, EntityRef, Header, ScopeRef, VersionRef } from '../../../domain/workbench/primitives';
 import { actorRefSchema, evaluationContextSchema, newUuid, versionRefSchema } from '../../../domain/workbench/primitives';
 import { WorkbenchError } from '../../../domain/workbench/errors';
 import type { PublicationAnchor } from '../../../domain/workbench/publication';
@@ -41,10 +41,40 @@ export function resolveEvaluationInput(request: PrepareEvaluationRequest, reposi
     const selection = selectEvaluationFacts(input);
     const chosen = new Set(selection.factRefs.map(ref => `${ref.id}/${ref.revision}`));
     const links = new Map<string, VersionRef>();
-    for (const fact of input.facts.filter(f => chosen.has(`${f.id}/${f.revision}`))) for (const ref of fact.lineage.directoryLinkRefs) {
-      if (ref.entityType !== 'directory_link') throw new WorkbenchError('BROKEN_REFERENCE', { ref });
-      exact<DirectoryLink>(ref); links.set(`${ref.id}/${ref.revision}`, ref);
-    }
+    const scopeKey = (scope: ScopeRef) => `${scope.kind}/${scope.id}`;
+    const verifyPath = (from: ScopeRef, to: ScopeRef, definitions: DirectoryLink[]): boolean => {
+      const edges = new Map<string, string[]>();
+      const kinds = { dit_cluster: ['dit', 'cluster'], cluster_product: ['cluster', 'product'], cluster_team: ['cluster', 'team'], product_team: ['product', 'team'] } as const;
+      for (const link of definitions) {
+        if (link.kind === 'leader') continue;
+        const [parent, child] = kinds[link.kind];
+        const a = head<DirectoryEntity>(link.from); const b = head<DirectoryEntity>(link.to);
+        if (a.kind !== parent || b.kind !== child) throw new WorkbenchError('LINEAGE_SCOPE_MISMATCH');
+        const key = `${parent}/${a.id}`; edges.set(key, [...(edges.get(key) ?? []), `${child}/${b.id}`]);
+      }
+      const reaches = (start: string, target: string): boolean => {
+        const pending = [start]; const seen = new Set<string>();
+        while (pending.length) { const key = pending.pop()!; if (key === target) return true; if (seen.has(key)) continue; seen.add(key); pending.push(...(edges.get(key) ?? [])); }
+        return false;
+      };
+      // An ancestor/descendant relation in either direction is valid; a shared ancestor does not join sibling scopes.
+      return reaches(scopeKey(from), scopeKey(to)) || reaches(scopeKey(to), scopeKey(from));
+    };
+    const seen = new Set<string>();
+    const verifyFact = (fact: ObservedFact) => {
+      const id = `${fact.id}/${fact.revision}`; if (seen.has(id)) return; seen.add(id);
+      const definitions = fact.lineage.directoryLinkRefs.map(ref => {
+        if (ref.entityType !== 'directory_link') throw new WorkbenchError('BROKEN_REFERENCE', { ref });
+        const link = exact<DirectoryLink>(ref); links.set(`${ref.id}/${ref.revision}`, ref); return link;
+      });
+      for (const ref of fact.lineage.inputFactRefs) {
+        const child = input.facts.find(f => f.id === ref.id && f.revision === ref.revision);
+        if (!child || ref.entityType !== 'observed_fact') continue; // The pure selector reports broken/cyclic lineage.
+        if (scopeKey(child.scope) !== scopeKey(fact.scope) && !verifyPath(fact.scope, child.scope, definitions)) throw new WorkbenchError('LINEAGE_SCOPE_MISMATCH');
+        verifyFact(child);
+      }
+    };
+    input.facts.filter(f => chosen.has(`${f.id}/${f.revision}`)).forEach(verifyFact);
     input.resolution.directoryLinkRefs = [...links.values()].sort((a, b) => `${a.id}/${a.revision}` < `${b.id}/${b.revision}` ? -1 : 1);
     input.resolution.publicationAnchors = [...anchors.values()];
   }

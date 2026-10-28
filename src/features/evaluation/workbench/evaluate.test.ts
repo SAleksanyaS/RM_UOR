@@ -47,4 +47,13 @@ describe('exact assignment evaluator', () => {
     const wrongUnit = makeNumericFixture(); wrongUnit.metrics[0].unit.code = 'hours';
     expect(evaluateAssignment(wrongUnit)).toMatchObject({ calculation: 'blocked', canConfirm: false });
   });
+
+  it('blocks a result built from another metric through lineage', () => {
+    const input = makeNumericFixture({ values: ['80', '100'] });
+    input.facts[0].lineage.inputFactRefs = [{ entityType: 'observed_fact', id: input.facts[1].id, revision: 1 }];
+    const result = evaluateAssignment(input);
+    expect(result.calculation).toBe('blocked');
+    expect(result.qualityFlags).toContain('lineage_metric_mismatch');
+    expect(result.canConfirm).toBe(false);
+  });
 });
