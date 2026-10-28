@@ -1,21 +1,38 @@
-import { readFile, mkdir, writeFile, stat, rm } from 'node:fs/promises';
+import { readFile, mkdir, writeFile, stat, lstat, rm } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import type { BrowserContext, Page } from 'playwright';
 import { safeArtifactPath } from '../../server/workspace/paths';
 import { ConnectorError, scenarioSchema, stepSchema, type PrivateProfile, type BrowserScenario, type BrowserStep } from './contracts';
 import { browserProfilePath, checkedUrl, withProfileQueue, type Downloaded } from './transport';
+import { assertRecordedField, cancelWorkbenchRecording, completedBrowserDownload, finishWorkbenchRecording, hasWorkbenchRecording, recordingReady, startWorkbenchRecording, waitForWorkbenchRecordingComplete, readWorkbenchRecordingScreenshot } from './workbench-browser-recorder';
+import type { RecordedBrowserStep } from '../../domain/workbench/browser-scenario';
+import { resolveRecordedLocator } from './workbench-browser-locators';
+export const waitForRecordingComplete = waitForWorkbenchRecordingComplete;
+export const readRecordingScreenshot = readWorkbenchRecordingScreenshot;
+export async function cancelRecording(runtime: string, owner: string, id: string): Promise<boolean> {
+  if (hasWorkbenchRecording(id)) return cancelWorkbenchRecording(runtime, owner, id);
+  await finishRecording(runtime, owner, id, false); return false;
+}
 const browserLimits = new WeakMap<BrowserContext,{error?:ConnectorError}>();
+export type BrowserLaunchOptions = NonNullable<Parameters<typeof import('playwright')['chromium']['launchPersistentContext']>[1]>;
+export interface BrowserLauncherPort { launchPersistent(profile: PrivateProfile, profilePath: string, options: BrowserLaunchOptions): Promise<BrowserContext> }
+export type BrowserHelperOptions = { launcher?: BrowserLauncherPort; signal?: AbortSignal; authenticatedSelector?: string; workbenchRecording?: boolean; workbenchSteps?: RecordedBrowserStep[] };
 
-export async function openBrowser(runtime: string, profile: PrivateProfile): Promise<BrowserContext> {
+export async function openBrowser(runtime: string, profile: PrivateProfile, options: BrowserHelperOptions = {}): Promise<BrowserContext> {
   const browser = profile.browser; if (!browser) throw new ConnectorError('configuration_required', 'Настройте executable/channel и приватный профиль браузера');
+  for (const candidate of [path.join(runtime, 'browser-profiles'), path.join(runtime, 'browser-profiles', browser.profileDirectory)]) {
+    try { const entry = await lstat(candidate); if (entry.isSymbolicLink() || !entry.isDirectory()) throw new ConnectorError('configuration_required', 'Папка профиля браузера не должна быть ссылкой'); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+  }
   const folder = await browserProfilePath(runtime, profile); await mkdir(folder, { recursive: true });
   let chromium: typeof import('playwright')['chromium'];
   try { ({ chromium } = await import('playwright')); } catch { throw new ConnectorError('configuration_required', 'Установите Playwright и Chromium либо укажите executablePath'); }
   const certs = await Promise.all((browser.clientCertificates ?? []).map(async c => ({ origin: checkedUrl(c.origin, profile).origin, cert: await readFile(c.certFile), key: await readFile(c.keyFile), ...(c.passphraseEnv ? { passphrase: process.env[c.passphraseEnv] } : {}) })));
   const downloads=await safeArtifactPath(runtime,`browser-downloads/${randomUUID()}`);await mkdir(downloads,{recursive:true});
   let context: BrowserContext;
-  try { context = await chromium.launchPersistentContext(folder, { executablePath: browser.executablePath, channel: browser.channel, headless: browser.headless, serviceWorkers:'block', downloadsPath:downloads, acceptDownloads: true, ignoreHTTPSErrors: false, clientCertificates: certs }); }
+  const launchOptions: BrowserLaunchOptions = { executablePath: browser.executablePath, channel: browser.channel, headless: browser.headless, serviceWorkers:'block', downloadsPath:downloads, acceptDownloads: true, ignoreHTTPSErrors: false, clientCertificates: certs };
+  try { context = options.launcher ? await options.launcher.launchPersistent(profile, folder, launchOptions) : await chromium.launchPersistentContext(folder, launchOptions); }
   catch { await rm(downloads,{recursive:true,force:true}).catch(()=>{});throw new ConnectorError('configuration_required', 'Не удалось запустить Chromium. Проверьте executable/channel, установку браузера и занятость профиля'); }
   try{
   context.setDefaultTimeout(profile.timeoutMs); context.setDefaultNavigationTimeout(profile.timeoutMs);
@@ -43,31 +60,33 @@ export async function readScenario(runtime: string, id: string): Promise<Browser
   try { return scenarioSchema.parse(JSON.parse(await readFile(await safeArtifactPath(runtime, `connector-scenarios/${id}.json`), 'utf8'))); }
   catch { throw new ConnectorError('configuration_required', 'Сценарий не найден или содержит неподдерживаемые действия'); }
 }
-export async function executeBrowser(runtime: string, profile: PrivateProfile, scenario: BrowserScenario, parameters: Record<string, string>, signal: AbortSignal): Promise<Downloaded> {
+export async function executeBrowser(runtime: string, profile: PrivateProfile, scenario: BrowserScenario, parameters: Record<string, string>, signal: AbortSignal, options: BrowserHelperOptions = {}): Promise<Downloaded> {
   return withProfileQueue(await browserProfilePath(runtime, profile), signal, async () => {
-    const context = await openBrowser(runtime, profile), abort = () => { void context.close(); }; signal.addEventListener('abort', abort, { once: true });
+    const context = await openBrowser(runtime, profile, options), abort = () => { void context.close(); }; signal.addEventListener('abort', abort, { once: true });
     const totalTimer=setTimeout(()=>{const limit=browserLimits.get(context)!;limit.error=new ConnectorError('timeout','Истекло общее время браузерного сбора');void context.close();},Math.min(120000,profile.timeoutMs*4));
     try {
       signal.throwIfAborted(); const page = context.pages()[0] ?? await context.newPage();
       await page.goto(checkedUrl(scenario.startUrl, profile).href);
       if(/login|sign.?in|sso|oauth|saml|authorize/i.test(new URL(page.url()).pathname))throw new ConnectorError('manual_login_required','Откройте профиль и завершите вход вручную');
       let downloaded: Downloaded | undefined;
-      for (const step of scenario.steps) {
+      for (const step of options.workbenchSteps ?? scenario.steps) {
         signal.throwIfAborted(); checkedUrl(page.url(), profile);
+        if (options.authenticatedSelector && !await (options.workbenchSteps ? recordingReady : recorderReady)(page, options.authenticatedSelector, new URL(scenario.startUrl).origin)) throw new ConnectorError('manual_login_required', 'Откройте профиль и завершите вход вручную');
         if (profile.browser?.loginUrlPattern && new RegExp(profile.browser.loginUrlPattern).test(page.url())) throw new ConnectorError('manual_login_required', 'Откройте профиль и завершите вход вручную');
         if (step.action === 'goto') { await page.goto(checkedUrl(step.url, profile).href); continue; }
-        const locator = page.locator(step.selector);
+        const locator = 'locator' in step ? await resolveRecordedLocator(page, step.framePath, step.locator, profile) : page.locator(step.selector);
         if (step.action === 'fill' || step.action === 'select') {
-          await assertSafeField(page, step.selector); const value = parameters[step.parameter];
+          if ('locator' in step) await assertRecordedField(locator); else await assertSafeField(page, step.selector); const value = parameters[step.parameter];
           if (value === undefined || /password|token|secret|otp|saml|credential/i.test(step.parameter)) throw new ConnectorError('configuration_required', 'Не задан безопасный параметр сценария');
           if (step.action === 'fill') await locator.fill(value); else await locator.selectOption(value);
         } else if (step.action === 'click') await locator.click();
-        else if (step.action === 'check') { await assertSafeField(page, step.selector); await locator.setChecked(step.checked); }
+        else if (step.action === 'check') { if ('locator' in step) await assertRecordedField(locator); else await assertSafeField(page, step.selector); await locator.setChecked(step.checked); }
         else if (step.action === 'wait') await locator.waitFor({ state: 'visible' });
         else {
           const [file] = await Promise.all([page.waitForEvent('download'), locator.click()]);
+          if (options.workbenchSteps) { downloaded = await completedBrowserDownload(file, profile); await file.delete(); continue; }
           if (await file.failure()) throw new ConnectorError('incomplete', 'Браузер не завершил выгрузку');
-          const filePath = await file.path(); if (!filePath || (await stat(filePath)).size > profile.maxBytes) throw new ConnectorError('format', 'Выгрузка отсутствует или превышает ограничение размера');
+          const filePath = await file.path(); const fileSize = filePath ? (await stat(filePath)).size : 0; if (!filePath || fileSize === 0 || fileSize > profile.maxBytes) throw new ConnectorError('format', 'Выгрузка отсутствует, пуста или превышает ограничение размера');
           downloaded = { bytes: await readFile(filePath), name: file.suggestedFilename(), contentType: '' }; await file.delete();
         }
       }
@@ -80,17 +99,20 @@ export async function executeBrowser(runtime: string, profile: PrivateProfile, s
 interface Recording { id: string; owner: string; context: BrowserContext; scenario: BrowserScenario; release: () => void; expires: NodeJS.Timeout; parameters: Record<string, string>; screenshots: string[]; pendingDownload?:boolean }
 const recordings = new Map<string, Recording>();
 async function recorderReady(page:Page,selector:string,origin:string){try{return new URL(page.url()).origin===origin&&!/login|sign.?in|sso|oauth|saml|authorize/i.test(new URL(page.url()).pathname)&&await page.locator(selector).isVisible()&&!await page.locator('input[type="password"],input[autocomplete="one-time-code"],[data-authentication],[data-login],iframe[src*="sso"],iframe[src*="login"]').evaluateAll(elements=>elements.some(el=>el.getClientRects().length>0));}catch{return false;}}
-export async function startRecording(runtime: string, owner: string, profile: PrivateProfile, startUrl: string, observe=true,authenticatedSelector?:string,onClosed?:()=>void) {
+export async function startRecording(runtime: string, owner: string, profile: PrivateProfile, startUrl: string, observe=true,authenticatedSelector?:string,onClosed?:()=>void, options: BrowserHelperOptions = {}) {
   if(observe&&!authenticatedSelector)throw new ConnectorError('configuration_required','Для записи задайте элемент, видимый только после успешного входа в источник');
+  if (observe && options.workbenchRecording) return startWorkbenchRecording(runtime, owner, profile, startUrl, authenticatedSelector!, onClosed, options, openBrowser);
   checkedUrl(startUrl, profile); const id = randomUUID();
   let ready!: (record: Recording) => void, failed!: (error: unknown) => void;
   const started = new Promise<Recording>((resolve, reject) => { ready = resolve; failed = reject; });
-  const waiting=new AbortController(),signal=waiting.signal,queueTimer=setTimeout(()=>waiting.abort(),profile.timeoutMs);
+  const waiting=new AbortController(),signal=options.signal ? AbortSignal.any([waiting.signal, options.signal]) : waiting.signal,queueTimer=setTimeout(()=>waiting.abort(),profile.timeoutMs);
   void withProfileQueue(await browserProfilePath(runtime, profile), signal, async () => {
     let context: BrowserContext | undefined;
     try {
       clearTimeout(queueTimer);
-      context = await openBrowser(runtime, { ...profile, browser: { ...profile.browser!, headless: false } });
+      context = await openBrowser(runtime, { ...profile, browser: { ...profile.browser!, headless: false } }, options);
+      const ownedContext=context,abort=()=>{void ownedContext.close();};signal.addEventListener('abort',abort,{once:true});
+      context.once('close',()=>signal.removeEventListener('abort',abort));signal.throwIfAborted();
       let release!: () => void; const done = new Promise<void>(resolve => { release = resolve; });
       const record: Recording = { id, owner, context, scenario: { id: `scenario-${id}`, startUrl, steps: [] }, release, expires: setTimeout(() => release(), 15 * 60_000), parameters: {}, screenshots: [] };
       const sourceOrigin = new URL(startUrl).origin;
@@ -134,13 +156,14 @@ export async function startRecording(runtime: string, owner: string, profile: Pr
   let record:Recording;try{record=await started;}finally{clearTimeout(queueTimer);} return { recordingId: record.id, message: 'Войдите вручную. Запись действий действует только на origin источника; значения полей не записываются. Завершите запись в приложении.' };
 }
 export async function finishRecording(runtime: string, owner: string, id: string, save: boolean) {
+  if (hasWorkbenchRecording(id)) return finishWorkbenchRecording(runtime, owner, id, save);
   const record = recordings.get(id); if (!record || record.owner !== owner) throw new ConnectorError('access_denied', 'Запись принадлежит другой сессии или завершена');
   try {
     const scenario = scenarioSchema.parse(record.scenario);
     if (save) { const directory = await safeArtifactPath(runtime, 'connector-scenarios'); await mkdir(directory, { recursive: true }); await writeFile(path.join(directory, `${scenario.id}.json`), JSON.stringify(scenario, null, 2), { flag: 'wx' }); }
     const directory=await safeArtifactPath(runtime,`connector-recordings/${id}`);await mkdir(directory,{recursive:true});
     await writeFile(path.join(directory,'manifest.json'),JSON.stringify({ownerSessionId:owner,files:record.screenshots.map(file=>path.basename(file))}));
-    return { scenario, parameters: [...new Set(scenario.steps.flatMap(s => s.action === 'fill' || s.action === 'select' ? [s.parameter] : []))], screenshotCount: record.screenshots.length,screenshots:record.screenshots.map(file=>({url:`/api/connectors/recordings/${id}/screenshots/${path.basename(file,'.png')}`,label:`Шаг ${path.basename(file,'.png')}`})) };
+    return { scenario, parameters: [...new Set(scenario.steps.flatMap(s => s.action === 'fill' || s.action === 'select' ? [s.parameter] : []))], screenshotCount: record.screenshots.length,screenshots:record.screenshots.map(file=>({url:`/api/connectors/recordings/${id}/screenshots/${path.basename(file,'.png')}`,label:`Шаг ${path.basename(file,'.png')}`})), workbenchSteps: undefined, completedDownload: undefined };
   } finally { record.release(); await record.context.close().catch(() => {}); }
 }
 export async function stopAllRecordings() { for (const record of recordings.values()) { record.release(); await record.context.close().catch(() => {}); } }

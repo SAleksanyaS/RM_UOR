@@ -5,3 +5,4 @@ export { addMoscowDays, moscowStart, moscowEnd } from './time';
 export type * from './entities';
 export type * from './publication';
 export * from './schemas';
+export * from './browser-scenario';

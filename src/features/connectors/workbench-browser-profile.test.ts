@@ -1,0 +1,43 @@
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, expect, it } from 'vitest';
+import type { CommandContext } from '../../server/workbench/command-registry';
+import { createBrowserProfileService } from './workbench-browser-profile';
+import { privateProfileSchema } from './contracts';
+const roots: string[] = [];
+afterEach(async () => { for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }); });
+const installationId = '00000000-0000-4000-8000-000000000001', sourceId = '00000000-0000-4000-8000-000000000002';
+const context = { installationId, ownAccess: { role: 'viewer', personId: null, policyState: 'verified' }, actor: { installationId, profilePersonId: null } } as CommandContext;
+it('viewer personal profile survives reopen with CAS and no shared database writes', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'uor-browser-profile-')); roots.push(root);
+  const options = { runtimeRoot: root, repository: context.repository, clock: { now: () => '2026-10-28T09:00:00Z' } };
+  const service = createBrowserProfileService(options);
+  const profile = privateProfileSchema.parse({ allowedOrigins: ['https://report.example.invalid'], browser: { executablePath: process.execPath, profileDirectory: 'report' }, bearerEnv: 'SYNTHETIC_TOKEN_NAME' });
+  const saved = await service.set(context, { sourceId, profileId: 'report', profile, expectedRevision: null });
+  const reopened = createBrowserProfileService(options);
+  expect(await reopened.getOwn(context, sourceId)).toMatchObject({ profileId: 'report', configured: true, sessionState: 'closed', revision: saved.revision });
+  await expect(service.set(context, { sourceId, profileId: 'report', profile, expectedRevision: null })).rejects.toMatchObject({ code: 'REVISION_CONFLICT' });
+  expect(await service.getOwn({ ...context, ownAccess: { ...context.ownAccess, personId: '00000000-0000-4000-8000-000000000003' } }, sourceId)).toMatchObject({ configured: false, profile: null });
+  const config = await readFile(path.join(root, 'workbench-browser', installationId, 'unassigned', 'local-config', 'connectors.json'), 'utf8');
+  expect(config).toContain('SYNTHETIC_TOKEN_NAME'); expect(config).not.toContain('cookies');
+});
+it('rejects URL origins with paths and a missing executable before storing a profile', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'uor-browser-profile-')); roots.push(root);
+  const service = createBrowserProfileService({ runtimeRoot: root, repository: context.repository, clock: { now: () => '2026-10-28T09:00:00Z' } });
+  const profile = privateProfileSchema.parse({ allowedOrigins: ['https://report.example.invalid/report'], browser: { executablePath: process.execPath, profileDirectory: 'report' } });
+  await expect(service.set(context, { sourceId, profileId: 'report', profile, expectedRevision: null })).rejects.toMatchObject({ code: 'BROWSER_CONFIGURATION_INVALID' });
+  await expect(service.set(context, { sourceId, profileId: 'report', profile: { ...profile, allowedOrigins: ['https://report.example.invalid'], browser: { ...profile.browser!, executablePath: path.join(root, 'missing.exe') } }, expectedRevision: null })).rejects.toMatchObject({ code: 'BROWSER_CONFIGURATION_INVALID' });
+});
+it('detects stale binding-only writes between two already configured profiles', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'uor-browser-profile-')); roots.push(root);
+  const service = createBrowserProfileService({ runtimeRoot: root, repository: context.repository, clock: { now: () => '2026-10-28T09:00:00Z' } });
+  const a = privateProfileSchema.parse({ allowedOrigins: ['https://report.example.invalid'], browser: { executablePath: process.execPath, profileDirectory: 'a' } });
+  const b = { ...a, browser: { ...a.browser!, profileDirectory: 'b' } };
+  const first = await service.set(context, { sourceId, profileId: 'a', profile: a, expectedRevision: null });
+  const second = await service.set(context, { sourceId, profileId: 'b', profile: b, expectedRevision: first.revision });
+  const latest = await service.set(context, { sourceId, profileId: 'a', profile: a, expectedRevision: second.revision });
+  expect(latest.revision).not.toBe(second.revision);
+  await expect(service.set(context, { sourceId, profileId: 'b', profile: b, expectedRevision: second.revision })).rejects.toMatchObject({ code: 'REVISION_CONFLICT' });
+  expect(await service.getOwn(context, sourceId)).toMatchObject({ profileId: 'a', revision: latest.revision });
+});
