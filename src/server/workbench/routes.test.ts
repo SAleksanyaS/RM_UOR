@@ -26,7 +26,7 @@ async function fixture() {
     if (input.name === 'source.capture.async') return envelope({ jobId: id, status: 'queued', pollAfterMs: 1000 }, r.requestId);
     return envelope({ commandId: input.commandId, result: {}, changedRefs: [], editToken: null }, r.requestId);
   });
-  const port: WorkbenchHttpPort = { session, refreshSession: session, meta: async () => envelope(null, id).meta, command: commandSpy as WorkbenchHttpPort['command'], query: async (_name, _input, r) => envelope({}, r.requestId), job: async () => { throw Object.assign(new Error('Not found'), { statusCode: 404, code: 'JOB_NOT_FOUND' }); } };
+  const port: WorkbenchHttpPort = { upload: async () => { throw new WorkbenchHttpError(422, 'INVALID_FILE', 'No file fixture'); }, session, refreshSession: session, meta: async () => envelope(null, id).meta, command: commandSpy as WorkbenchHttpPort['command'], query: async (_name, _input, r) => envelope({}, r.requestId), job: async () => { throw Object.assign(new Error('Not found'), { statusCode: 404, code: 'JOB_NOT_FOUND' }); } };
   await registerWorkbenchRoutes(app, port); await app.ready();
   const get = () => app.inject({ method: 'GET', url: '/api/v1/session', headers: { host: '127.0.0.1' } });
   const initial = await get();

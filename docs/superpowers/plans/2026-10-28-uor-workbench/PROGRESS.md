@@ -5,7 +5,7 @@ Branch: `codex/uor-workbench-rebuild`. Source code baseline: `3d8704e4a6ff2195af
 
 ## Continue here
 
-T00–T13 are implemented and checked. T19 has a checked foundation with later bindings still pending. Resume at T14; do not redo completed T09 or T12 recovery. Read the latest run entry and [core checkpoint review](CORE_CHECKPOINT_REVIEW.md). The workbench remains separate from the production entry (T39); no live data has been migrated.
+T00–T14 are implemented and checked. T19 has a checked foundation with later bindings still pending. **User priority now overrides the default order: OKO browser recording/replay and actual download first, then enrichment; other work is deferred.** Read the latest run entry and [core checkpoint review](CORE_CHECKPOINT_REVIEW.md). The workbench remains separate from the production entry (T39); no live data has been migrated.
 
 Resume commands from the repository root:
 
@@ -18,7 +18,7 @@ node docs/superpowers/plans/2026-10-28-uor-workbench/verify-plan.mjs
 
 Use Node22.16.0/npm10.9.2. On this Windows executor the portable runtime is already cached in `.runtime/toolchains/node-v22.16.0-win-x64`; prepend its absolute path to PATH and use `npm.cmd`. On another machine use the standard installed target runtime, not that machine-specific path. Never reinstall over live workspace data.
 
-Next exact task: read T14 in `02-platform-data-and-api.md`, write failing private-file/source-pipeline tests, then implement the authenticated upload port and immutable raw → normalize → enrich → capture flow with atomic receipts. Use `findByCommand` for operationId=jobId; the public source.capture payload remains only goalId. Preserve failed-collection fallback and original dates; no hidden file fallback for Qlik. Run `npm test -- src/server/workbench/files.test.ts src/features/connectors/workbench-source-service.test.ts` and impacted route/application tests. T19 still needs T17/T18 bindings and list pagination. Do not skip to UI/cutover.
+Next exact path: T42 managed private browser → T43 recorder → completed-download replay, with the T15 pure CSV/XLSX parser as a necessary dependency, then T16 enrichment. Filters and export clicks come from the recorded interaction, not a hard-coded report workflow. A successfully completed, nonempty download ends recording automatically; a download event or click alone is insufficient. T44 shared draft publication and T45 production source wiring still require their actual prerequisites; do not claim them complete merely because the runtime works. T19 and the general interface/publication/cutover work remain deferred. Preserve failed-collection fallback and original dates; no hidden file fallback for Qlik.
 
 ## Task status
 
@@ -41,7 +41,7 @@ DONE requires actual checks, commit and evidence. Default execution order is in 
 | T11 | [02-platform-data-and-api.md](02-platform-data-and-api.md) | Политика hostname и непереносимый собственный cache | DONE | `874b600`; 24 focused tests incl actual private cache |
 | T12 | [02-platform-data-and-api.md](02-platform-data-and-api.md) | Durable command registry, задания и идемпотентность | DONE | `1775ad3`; installation-scoped eligible local restart recovery, atomic receipt reconciliation, indexed checkpoints; full 598/598 GREEN |
 | T13 | [02-platform-data-and-api.md](02-platform-data-and-api.md) | Статические модули, запросы и изолированная сборка v1 | DONE | Commit titled `feat(workbench): reconcile queued jobs during isolated startup`; real restart/session/job/replay HTTP test, full 598/598 + build GREEN |
-| T14 | [02-platform-data-and-api.md](02-platform-data-and-api.md) | Приватные uploads и источник → raw → normalize → capture | PLANNED | Not executed |
+| T14 | [02-platform-data-and-api.md](02-platform-data-and-api.md) | Приватные uploads и источник → raw → normalize → capture | DONE | Commit titled `feat(workbench): stage private uploads and retain source capture lineage`; focused69/69 + build; source/file scoped re-reviews PASS |
 | T15 | [02-platform-data-and-api.md](02-platform-data-and-api.md) | CSV/XLSX mapping, partial import и редакции исходных фактов | PLANNED | Not executed |
 | T16 | [02-platform-data-and-api.md](02-platform-data-and-api.md) | Версионное обогащение и назначения новой команды | PLANNED | Not executed |
 | T17 | [02-platform-data-and-api.md](02-platform-data-and-api.md) | Незавершённые черновики, evidence и точное подтверждение/срез | PLANNED | Not executed |
@@ -235,3 +235,13 @@ Next exact action / command:
 ```
 
 Do not insert secrets, bank files or full terminal/auth/browser transcripts here. Private evidence stays in .runtime; commit only sanitized result summaries.
+
+## T14 checkpoint and user priority change — 2026-10-28
+
+Implemented private purpose/owner-bound streamed uploads and immutable raw → normalize → enrich → capture/facts/history with an atomic local receipt. Added pinned @fastify/multipart9.4.0 and its additive dependencies without upgrading existing packages. No production startup/cutover or real bank data was changed. Source inventory, saved context and adapters are explicit injected ports, not production demo defaults.
+
+Independent file/source reviews each found two important defects; all four were reproduced, corrected and scoped re-reviewed PASS. The passive-XLSX gate now uses bounded linear structure scanning before decoded namespace/coordinate validation. Current-source fallback now exposes durable latest partial-attempt diagnostics beside retained successful data, and an invalid local pointer no longer suppresses valid verified Git data. See CONTRACTS for the required future T17/T21 consumer gate.
+
+Final target-runtime checks: source17/17, files/upload23/23, combined affected API/command/jobs/source/files8files69/69 PASS; build PASS (`t14-checkpoint-build.log`). A broad exploratory run passed126files641tests but included one newly written T42 RED runtime fixture while that task was in progress; it is not reported as a clean full suite. Full integration will run after the browser/parser slices freeze. Private logs/reports remain under .runtime/validation/workbench/continuation; no source files, browser profiles or private test artifacts are committed.
+
+User explicitly reordered remaining work to OKO recording/replay/download first and enrichment next. All filters/actions are learned from interaction; recording must end automatically after a completed nonempty download. T42 and the T15 pure parser dependency are underway; general import apply, publication, dashboards and remaining platform work are deferred. No exact corporate URL was found in the old baseline public connector configuration/runbook search; the recorded start URL remains configurable, so this does not block implementation.

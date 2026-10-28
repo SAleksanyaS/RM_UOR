@@ -5,6 +5,7 @@ import { installHistoryIndex } from '../../features/history/workbench-history-in
 import type { WorkbenchRepository } from '../storage/workbench-repository';
 import type { CommandRegistry } from './command-registry';
 import type { JobStore } from './jobs';
+import { filePurposeSchema, type FileStore } from './files';
 import { validateModules, type PlatformModule } from './modules';
 import type { QueryContext, QueryRegistry } from './query-registry';
 import type { LocalRequest, WorkbenchHttpPort } from './routes';
@@ -14,7 +15,7 @@ import { globalContextSchema, WorkbenchHttpError, type ApiSuccess, type GlobalCo
 export type WorkbenchApplicationDeps = {
   hostname: () => string; repository: WorkbenchRepository; clock: Clock; accessPolicy: AccessPolicyService;
   commands: CommandRegistry; queries: QueryRegistry; jobs: JobStore; modules: PlatformModule[];
-  sessions: LocalSessionStore; allowedOrigins: string[]; installationId: UUIDv4;
+  sessions: LocalSessionStore; allowedOrigins: string[]; installationId: UUIDv4; files: FileStore;
   // T21/T22 bind these narrow reads when catalog/publication read models exist.
   readState?: { defaultContext(context: QueryContext): Promise<GlobalContext | null>; publishedCommit(): string | null };
 };
@@ -53,6 +54,12 @@ export function createWorkbenchApplication(deps: WorkbenchApplicationDeps): Work
   };
   return {
     session, refreshSession: session, meta,
+    async upload(input, request) {
+      const ctx = await context(request);
+      const purpose = filePurposeSchema.safeParse(input.purpose); if (!purpose.success) throw new WorkbenchHttpError(422, 'VALIDATION_FAILED', 'Invalid file purpose');
+      if (!canUseCapability(ctx.ownAccess, purpose.data === 'workspace-restore' ? 'workspace.backup' : 'uor.prepare')) throw new WorkbenchHttpError(403, 'ACCESS_DENIED', 'The current own profile does not permit this upload');
+      return envelope(await deps.files.stage({ ...input, purpose: purpose.data, installationId: deps.installationId }), request);
+    },
     async query(name, request, local) { const ctx = await context(local); return envelope(await deps.queries.execute(name, request, ctx), local); },
     async command(request, local) {
       const ctx = await context(local);

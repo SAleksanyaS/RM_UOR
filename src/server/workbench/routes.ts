@@ -2,12 +2,17 @@ import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { isIP } from 'node:net';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
+import multipart from '@fastify/multipart';
+import { Transform } from 'node:stream';
+import { defaultFileLimits, fileHandleViewSchema, type FileHandleView, type FileStore } from './files';
+import { withMultipartUpload } from './multipart-upload';
 import { uuidSchema, type UUIDv4 } from '../../domain/workbench/index';
 import type { LocalSessionStore } from './session';
 import { apiSuccessSchema, commandRequestSchema, commandResultSchema, fieldProblems, jobAcceptedSchema, jobSnapshotSchema, metaSchema, problemSchema, queryRequestSchema, sessionViewSchema, WorkbenchHttpError, type ApiSuccess, type CommandRequest, type CommandResult, type JobAccepted, type JobSnapshot, type Meta, type Problem, type QueryRequest, type SessionView } from './protocol';
 
 export type LocalRequest = { requestId: UUIDv4; sessionId: UUIDv4 };
 export interface WorkbenchHttpPort {
+  upload(input: Omit<Parameters<FileStore['stage']>[0], 'installationId'>, request: LocalRequest): Promise<ApiSuccess<FileHandleView>>;
   session(request: LocalRequest): Promise<SessionView>;
   refreshSession(request: LocalRequest): Promise<SessionView>;
   meta(request: LocalRequest): Promise<Meta>;
@@ -52,6 +57,13 @@ export async function registerWorkbenchRoutes(app: FastifyInstance, application:
   if (allowedOrigins.length === 0 || allowedOrigins.some(origin => { try { return new URL(origin).origin !== origin; } catch { return true; } })) throw new Error('Exact configured allowedOrigins are required');
   // Encapsulation preserves legacy hooks/errors until T39 switches the entry point.
   await app.register(async api => {
+    await api.register(multipart, { limits: { files: 1, fields: 1, parts: 2, fileSize: defaultFileLimits.restoreBytes, fieldSize: 32, fieldNameSize: 20, headerPairs: 16 } });
+    api.addHook('preParsing', async (request, _reply, payload) => {
+      if (request.method !== 'POST' || request.routeOptions.url !== '/api/v1/files' || !request.isMultipart()) return payload;
+      let received = 0;
+      const bounded = new Transform({ transform(chunk: Buffer, _encoding, callback) { received += chunk.length; if (received > defaultFileLimits.restoreBytes + 65536) callback(new WorkbenchHttpError(413, 'FILE_TOO_LARGE', 'The upload exceeds the server size limit')); else callback(null, chunk); } });
+      payload.on('error', error => bounded.destroy(error)); return payload.pipe(bounded);
+    });
     api.addHook('onRequest', async (request, reply) => {
       const requestId = randomUUID(); requestIds.set(request, requestId);
       reply.header('x-request-id', requestId).header('cache-control', 'no-store');
@@ -102,6 +114,11 @@ export async function registerWorkbenchRoutes(app: FastifyInstance, application:
       const response = apiSuccessSchema(z.union([commandResultSchema, jobAcceptedSchema])).parse({ ...result, requestId: r.requestId });
       if ('jobId' in response.data) reply.code(202);
       return response;
+    });
+    api.post('/files', async (request, reply) => {
+      const r = local(request, true);
+      const result = await withMultipartUpload(request, value => application.upload(value, r));
+      reply.code(201); return apiSuccessSchema(fileHandleViewSchema).parse({ ...result, requestId: r.requestId });
     });
     api.get<{ Params: { jobId: string } }>('/jobs/:jobId', async request => {
       const r = local(request); const parsed = uuidSchema.safeParse(request.params.jobId);

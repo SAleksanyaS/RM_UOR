@@ -25,6 +25,7 @@
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.2",
+    "@fastify/multipart": "9.4.0",
     "@salutejs/sdds-themes": "0.85.0",
     "@xmldom/xmldom": "0.9.12",
     "exceljs": "4.4.0",

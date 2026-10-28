@@ -72,6 +72,16 @@ T12 queued recovery is explicit: only an asynchronous local descriptor with `que
 
 ## K04. UI
 
+### Current implementation rulings: source ingestion and OKO priority
+
+The user has prioritized browser recording/replay and a real OKO download, then enrichment, ahead of the remaining general platform/interface tasks. Recording learns filters/actions from interaction and ends automatically only after a completed, bounded, nonempty download. The approved browser scenario wire and personal-profile boundary remain in force. T42 may use its own private profile service before the generic T20 preferences implementation; this does not imply shared publication, T39 cutover or corporate SberBrowser verification.
+
+T14 exposes `createFileStore` with owned, purpose-bound handles and verified readback; the `/api/v1/files` endpoint accepts one streamed multipart file plus purpose, after local session/origin/CSRF and capability checks. Staging does not guess CSV encoding or delimiter. The bounded passive-XLSX gate validates decoded coordinates and namespace local names after a linear pre-allocation XML structure check. Other evidence remains opaque; this is not a malware scanner or PDF renderer.
+
+Source adapters return the strict `RawBatch`; normalize/enrich remain injected separate ports. `createSourceStore` uses explicit trusted published bindings and saved own context, not a guessed first assignment. The accepted job resource key is checked again before collection/commit. Immutable raw, capture, fact revisions, history, current pointer and receipt commit together. Synthetic adapters demonstrate the contract only.
+
+`SourceFallback.coverage` describes retained delivered data. `latestAttempt` and `warnings` separately expose the current own goal/context/source attempt, including a partial capture with no accepted facts. **T17/T21 must combine this latest attempt's completeness/issues with calculation completeness before claiming current completeness or enabling confirmation.** The existing fact selector can otherwise combine valid new A with retained old B and still calculate a complete result. This checkpoint does not implement those future consumers. An inapplicable local capture falls through to independently verified Git data, with original dates and no fallback writes.
+
 `WorkbenchClient.query<T>(name:string,input:QueryRequest):Promise<ApiSuccess<T>>`; `WorkbenchClient.command<T>(input:CommandRequest):Promise<ApiSuccess<T|JobAccepted>>`; `WorkbenchClient.job(id:UUIDv4):Promise<ApiSuccess<JobSnapshot>>`.
 
 Constructor клиента получает `{fetch?:typeof fetch,baseUrl?:string}`; `.session()` возвращает SessionView, `.upload(file,purpose)` использует purpose goal-import/evidence/workspace-restore. CSRF header — `X-CSRF-Token`, значение из SessionView.csrfToken. Старое x-uor-token не является новым протоколом.

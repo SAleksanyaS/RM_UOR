@@ -1,3 +1,4 @@
+import { createFileStore, defaultFileLimits } from './files';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -55,7 +56,7 @@ it('startup recovers an eligible local job with server identity and exposes its 
   };
   let app: Awaited<ReturnType<typeof createWorkbenchApp>> | undefined;
   try {
-    app = await createWorkbenchApp({ hostname: () => 'SERVER-RESTART', repository, clock, accessPolicy, commands, queries: new QueryRegistry(), jobs, modules: [module], sessions: createLocalSessionStore({ clock }), allowedOrigins: ['http://127.0.0.1:5173'], installationId });
+    app = await createWorkbenchApp({ files: createFileStore({ directory: path.join(root, 'private-files'), limits: defaultFileLimits }), hostname: () => 'SERVER-RESTART', repository, clock, accessPolicy, commands, queries: new QueryRegistry(), jobs, modules: [module], sessions: createLocalSessionStore({ clock }), allowedOrigins: ['http://127.0.0.1:5173'], installationId });
     await commands.idle();
     expect(jobs.get(accepted.jobId, installationId)).toMatchObject({ commandId, status: 'succeeded', result: { value: 'restored' }, error: null });
     expect(actors).toEqual([{ hostname: 'SERVER-RESTART', installationId, profilePersonId: fixtureId(9) }]);

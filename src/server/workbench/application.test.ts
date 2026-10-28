@@ -1,3 +1,4 @@
+import { createFileStore, defaultFileLimits } from './files';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
@@ -30,7 +31,7 @@ it('query_has_no_capture_or_draft_effect_and_registered_local_tool_is_personal_o
   const module: PlatformModule = { id: 'test-tool', version: '1.0.0', platformContractVersion: 1, dependsOn: [], owns: { namespaces: ['test-tool.personal'], entityTypes: [] }, schemas: [], hooks: { backup: { describeOwnedData: () => ({ namespaces: ['test-tool.personal'], ownership: 'installation' }) } }, queries: [{ name: 'test-tool.notes', inputSchema: queryRequestSchema, outputSchema: z.strictObject({ note: z.string().nullable() }), handler: async context => ({ note: sql.get<{ note: string }>('SELECT note FROM wb_test_tool_notes WHERE installation_id=?', [context.installationId])?.note ?? null }) }], commands: [{ name: 'test-tool.local.save', inputSchema: z.strictObject({ note: z.string() }), outputSchema: z.strictObject({ note: z.string() }), capability: 'personal.write', effect: 'local', execution: 'sync', handler: async (ctx, payload) => { actorSpy(ctx.actor); return commitCommandEffect(ctx, () => { sql.run('INSERT OR REPLACE INTO wb_test_tool_notes VALUES(?,?)', [ctx.installationId, payload.note]); return { result: payload, changedRefs: [], editToken: null }; }); } }] };
   module.hooks.source = { describe: () => ({ kind: 'synthetic' }), capture: captureSpy };
   expect(module.hooks.backup!.describeOwnedData()).toEqual({ namespaces: ['test-tool.personal'], ownership: 'installation' });
-  const app = await createWorkbenchApp({ hostname: () => 'SERVER-HOST', repository, clock, accessPolicy, commands, queries, jobs, modules: [module], sessions: createLocalSessionStore({ clock }), allowedOrigins: ['http://127.0.0.1:5173'], installationId: id });
+  const app = await createWorkbenchApp({ files: createFileStore({ directory: path.join(root, 'private-files'), limits: defaultFileLimits }), hostname: () => 'SERVER-HOST', repository, clock, accessPolicy, commands, queries, jobs, modules: [module], sessions: createLocalSessionStore({ clock }), allowedOrigins: ['http://127.0.0.1:5173'], installationId: id });
   cleanup.push(async () => { await app.close(); repository.close(); if (!path.basename(root).startsWith('uor-app-')) throw Error('Invalid temp root'); rmSync(root, { recursive: true, force: true }); });
   const session = await app.inject({ method: 'GET', url: '/api/v1/session', headers: { host: 'localhost' } });
   const headers = { host: 'localhost', origin: 'http://127.0.0.1:5173', cookie: String(session.headers['set-cookie']).split(';')[0], 'x-csrf-token': session.json().data.csrfToken };

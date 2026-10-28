@@ -59,3 +59,17 @@ it('uses an indexed checkpoint lookup after reopening retained job history', () 
     } finally { inspection.close(); }
   } finally { repository.close(); }
 });
+
+it('preserves queue identity across restart without exposing another installation resource', () => {
+  const f = fixture();
+  const accepted = f.jobs.create(fixtureId(300), fixtureId(1), 'source.capture');
+  f.jobs.setResourceKey(accepted.jobId, 'source:published-source-a');
+  f.repo.close();
+  const repository = createWorkbenchRepository(f.config);
+  try {
+    const jobs = createJobStore({ repository, clock: f.clock });
+    expect(jobs.getResourceKey(accepted.jobId, fixtureId(1))).toBe('source:published-source-a');
+    expect(jobs.getResourceKey(accepted.jobId, fixtureId(2))).toBeNull();
+    expect(jobs.getResourceKey(fixtureId(301), fixtureId(1))).toBeNull();
+  } finally { repository.close(); }
+});

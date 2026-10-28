@@ -1,3 +1,4 @@
+import { createFileStore, defaultFileLimits } from '../files';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
@@ -57,7 +58,7 @@ export async function createWorkbenchTestApplication(options: { role: 'viewer' |
       async assertFreshPublishAllowed() { throw new WorkbenchHttpError(503, 'INTEGRATION_NOT_READY', 'Synthetic fixture has no external publishing port'); },
     };
     const jobs = createJobStore({ repository, clock }); commands = createCommandRegistry({ repository, jobs, accessPolicy });
-    app = await createWorkbenchApp({ repository, clock, hostname: () => 'test-workbench-host', installationId: fixtureId(1), accessPolicy, commands, queries: new QueryRegistry(), jobs, modules: [], sessions: createLocalSessionStore({ clock }), allowedOrigins: ['http://127.0.0.1:5173'], readState: { defaultContext: async () => defaultContext, publishedCommit: () => options.scenario === 'scope-split' ? inputCommit : null } });
+    app = await createWorkbenchApp({ files: createFileStore({ directory: path.join(root, 'private-files'), limits: defaultFileLimits }), repository, clock, hostname: () => 'test-workbench-host', installationId: fixtureId(1), accessPolicy, commands, queries: new QueryRegistry(), jobs, modules: [], sessions: createLocalSessionStore({ clock }), allowedOrigins: ['http://127.0.0.1:5173'], readState: { defaultContext: async () => defaultContext, publishedCommit: () => options.scenario === 'scope-split' ? inputCommit : null } });
     return { app, repository, refs, close };
   } catch (error) { await close(); throw error; }
 }

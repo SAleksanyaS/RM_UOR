@@ -24,6 +24,7 @@ export interface JobStore extends JobSink {
   openAuth(jobId: string, installationId: string): Promise<void>;
   name(jobId: string, installationId: string): string | null;
   setResourceKey(jobId: string, resourceKey: string): void;
+  getResourceKey(jobId: string, installationId: string): string | null;
   setScheduler(schedule: (resource: string, run: () => Promise<void>) => Promise<void>): void;
 }
 const terminal = new Set<JobStatus>(['succeeded', 'partial', 'failed', 'cancelled']);
@@ -85,6 +86,7 @@ export function createJobStore({ repository, clock }: { repository: WorkbenchRep
     async openAuth(jobId, installationId) { const row = owned(jobId, installationId); const action = controls.get(jobId)?.openAuth; if (row.snapshot.status !== 'waiting_user' || !action) throw new WorkbenchHttpError(409, 'AUTH_NOT_AVAILABLE', 'Authentication action unavailable'); await action(); },
     name(jobId, installationId) { const row = raw(jobId); return row?.installation_id === installationId ? row.name : null; },
     setResourceKey(jobId, resourceKey) { if (!raw(jobId)) throw new WorkbenchHttpError(404, 'JOB_NOT_FOUND', 'Job not found'); sql.run('UPDATE wb_jobs_heads SET resource_key=? WHERE job_id=?', [resourceKey, jobId]); },
+    getResourceKey(jobId, installationId) { const row = raw(jobId); return row?.installation_id === installationId ? row.resource_key : null; },
     setScheduler(schedule) { scheduler = schedule; },
   };
   return store;
