@@ -19,6 +19,13 @@ async function fixture(limits = { goalImportBytes: 10 * 1024 ** 2, evidenceBytes
 async function* chunks(value: Uint8Array) { for (let start = 0; start < value.length; start += 65536) yield value.subarray(start, start + 65536); }
 const csv = Buffer.from('product,value\nsynthetic,92.00\n');
 const upload = (bytes: Uint8Array = csv) => ({ installationId: owner, purpose: 'goal-import' as const, name: 'input.csv', mediaType: 'text/csv', stream: chunks(bytes) });
+it('binds new personal uploads to the person as well as the installation after reopen', async () => {
+  const f = await fixture(); const handle = await f.files.stage({ ...upload(), profilePersonId: other });
+  const reopened = fileModule.createFileStore({ directory: path.join(f.root, 'private'), limits: f.limits });
+  expect(Buffer.from((await reopened.read(handle.fileHandle, owner, 'goal-import', other)).bytesValue)).toEqual(csv);
+  await expect(reopened.read(handle.fileHandle, owner, 'goal-import', owner)).rejects.toMatchObject({ statusCode: 404 });
+  await expect(reopened.read(handle.fileHandle, owner, 'goal-import')).rejects.toMatchObject({ statusCode: 404 });
+});
 it('stages_exact_private_handle_and_reads_verified_copies_after_restart', async () => {
   const f = await fixture(); const handle = await f.files.stage(upload());
   expect(Object.keys(handle).sort()).toEqual(['bytes', 'fileHandle', 'mediaType', 'name', 'sha256']);

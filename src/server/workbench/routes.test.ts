@@ -1,5 +1,6 @@
 import Fastify from 'fastify';
 import cookie from '@fastify/cookie';
+import { createHash } from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createLocalSessionStore } from './session';
 import { registerWorkbenchRoutes, type WorkbenchHttpPort } from './routes';
@@ -11,7 +12,7 @@ const clock = { now: () => '2026-10-28T09:00:00Z' };
 const command = { commandId: id, name: 'source.capture', baseRevision: null, payload: { goalId: id } };
 const apps: ReturnType<typeof Fastify>[] = [];
 afterEach(async () => { for (const app of apps.splice(0)) await app.close(); });
-async function fixture() {
+async function fixture(artifact?: { bytes: Uint8Array; name: string; mimeType: string; sha256: string }) {
   const app = Fastify(); apps.push(app); await app.register(cookie);
   const sessions = createLocalSessionStore({ clock });
   app.decorate('workbenchTransport', { allowedOrigins: ['http://127.0.0.1:5173'], sessions });
@@ -27,15 +28,38 @@ async function fixture() {
     return envelope({ commandId: input.commandId, result: {}, changedRefs: [], editToken: null }, r.requestId);
   });
   const port: WorkbenchHttpPort = { upload: async () => { throw new WorkbenchHttpError(422, 'INVALID_FILE', 'No file fixture'); }, session, refreshSession: session, meta: async () => envelope(null, id).meta, command: commandSpy as WorkbenchHttpPort['command'], query: async (_name, _input, r) => envelope({}, r.requestId), job: async () => { throw Object.assign(new Error('Not found'), { statusCode: 404, code: 'JOB_NOT_FOUND' }); } };
+  let artifactOwner: string | undefined;
+  port.browserResult = async (resultId, _kind, local) => {
+    if (!artifact || resultId !== id || local.sessionId !== artifactOwner) throw new WorkbenchHttpError(404, 'RESULT_NOT_FOUND', 'Result not found');
+    return artifact;
+  };
   await registerWorkbenchRoutes(app, port); await app.ready();
   const get = () => app.inject({ method: 'GET', url: '/api/v1/session', headers: { host: '127.0.0.1' } });
   const initial = await get();
   const cookieHeader = String(initial.headers['set-cookie']).split(';')[0];
+  artifactOwner = cookieHeader.split('=')[1];
   const csrf = initial.json().data.csrfToken;
   const post = (payload: unknown, extra: Record<string, string> = {}, url = '/api/v1/commands') => app.inject({ method: 'POST', url, payload: JSON.stringify(payload), headers: { host: '127.0.0.1', origin: 'http://127.0.0.1:5173', 'content-type': 'application/json', cookie: cookieHeader, 'x-csrf-token': csrf, ...extra } });
   return { app, sessions, get, initial, post, commandSpy, cookieHeader, csrf };
 }
 describe('workbench HTTP transport', () => {
+  it('serves verified own result bytes through the protected attachment route only', async () => {
+    const bytes = Buffer.from('Product,Value\nA,92');
+    const f = await fixture({ bytes, name: 'Отчёт.csv', mimeType: 'text/csv; charset=utf-8', sha256: createHash('sha256').update(bytes).digest('hex') });
+    const url = `/api/v1/browser/results/${id}/original`;
+    expect((await f.app.inject({ method: 'GET', url, headers: { host: 'localhost' } })).statusCode).toBe(401);
+    const own = await f.app.inject({ method: 'GET', url, headers: { host: 'localhost', cookie: f.cookieHeader } });
+    expect(own.statusCode).toBe(200); expect(own.rawPayload).toEqual(bytes);
+    expect(own.headers['content-disposition']).toContain('attachment;');
+    expect(own.headers['cache-control']).toBe('no-store'); expect(own.headers['x-content-type-options']).toBe('nosniff');
+    const other = await f.get(); const foreign = String(other.headers['set-cookie']).split(';')[0];
+    expect((await f.app.inject({ method: 'GET', url, headers: { host: 'localhost', cookie: foreign } })).statusCode).toBe(404);
+    expect((await f.app.inject({ method: 'GET', url, headers: { host: 'localhost', cookie: f.cookieHeader, origin: 'https://foreign.invalid' } })).statusCode).toBe(403);
+    expect((await f.app.inject({ method: 'GET', url: `/api/v1/browser/results/${id}/private`, headers: { host: 'localhost', cookie: f.cookieHeader } })).statusCode).toBe(404);
+    const bad = await fixture({ bytes, name: 'export.csv', mimeType: 'text/csv', sha256: '0'.repeat(64) });
+    const tampered = await bad.app.inject({ method: 'GET', url, headers: { host: 'localhost', cookie: bad.cookieHeader } });
+    expect(tampered.statusCode).toBe(422); expect(tampered.json().error.code).toBe('INTEGRITY_MISMATCH');
+  });
   it('uses_exact_envelope_and_cookie', async () => {
     const f = await fixture();
     expect(f.initial.statusCode).toBe(200);

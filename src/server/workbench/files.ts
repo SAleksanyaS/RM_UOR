@@ -9,16 +9,16 @@ import { WorkbenchHttpError } from './protocol';
 
 export type FilePurpose = 'goal-import' | 'evidence' | 'workspace-restore';
 export type FileHandleView = { fileHandle: UUIDv4; name: string; mediaType: string; bytes: number; sha256: string };
-export type StagedFile = FileHandleView & { purpose: FilePurpose; installationId: UUIDv4; bytesValue: Uint8Array };
+export type StagedFile = FileHandleView & { purpose: FilePurpose; installationId: UUIDv4; profilePersonId?: UUIDv4 | null; bytesValue: Uint8Array };
 export type FileLimits = { goalImportBytes: number; evidenceBytes: number; restoreBytes: number; restoreExpandedBytes: number };
 export interface FileStore {
-  stage(input: { installationId: UUIDv4; purpose: FilePurpose; name: string; mediaType: string; stream: AsyncIterable<Uint8Array> }): Promise<FileHandleView>;
-  read(handle: UUIDv4, installationId: UUIDv4, purpose: FilePurpose): Promise<StagedFile>;
+  stage(input: { installationId: UUIDv4; profilePersonId?: UUIDv4 | null; purpose: FilePurpose; name: string; mediaType: string; stream: AsyncIterable<Uint8Array> }): Promise<FileHandleView>;
+  read(handle: UUIDv4, installationId: UUIDv4, purpose: FilePurpose, profilePersonId?: UUIDv4 | null): Promise<StagedFile>;
 }
 export const defaultFileLimits: Readonly<FileLimits> = { goalImportBytes: 10 * 1024 ** 2, evidenceBytes: 32 * 1024 ** 2, restoreBytes: 64 * 1024 ** 2, restoreExpandedBytes: 256 * 1024 ** 2 };
 export const filePurposeSchema = z.enum(['goal-import', 'evidence', 'workspace-restore']);
 export const fileHandleViewSchema = z.strictObject({ fileHandle: uuidSchema, name: z.string().min(1).max(255), mediaType: z.string().min(1).max(150), bytes: z.number().int().positive().safe(), sha256: z.string().regex(/^[a-f0-9]{64}$/) });
-const metadataSchema = fileHandleViewSchema.extend({ purpose: filePurposeSchema, installationId: uuidSchema });
+const metadataSchema = fileHandleViewSchema.extend({ purpose: filePurposeSchema, installationId: uuidSchema, profilePersonId: uuidSchema.nullable().optional() });
 export const fileValidationError = () => new WorkbenchHttpError(422, 'INVALID_FILE', 'The file is invalid or unsupported');
 const missing = () => new WorkbenchHttpError(404, 'FILE_NOT_FOUND', 'File not found');
 export function assertFileName(name: string): void {
@@ -50,7 +50,7 @@ export function createFileStore(options: { directory: string; limits: FileLimits
   return {
     async stage(input) {
       assertFileName(input.name);
-      if (!uuidSchema.safeParse(input.installationId).success || !filePurposeSchema.safeParse(input.purpose).success || typeof input.mediaType !== 'string') throw fileValidationError();
+      if (!uuidSchema.safeParse(input.installationId).success || (input.profilePersonId !== undefined && !uuidSchema.nullable().safeParse(input.profilePersonId).success) || !filePurposeSchema.safeParse(input.purpose).success || typeof input.mediaType !== 'string') throw fileValidationError();
       const base = await root(), id = randomUUID(), temporary = path.join(base, '.pending-' + id), final = path.join(base, id);
       await mkdir(temporary, { mode: 0o700 }); let finalized = false;
       try {
@@ -63,7 +63,7 @@ export function createFileStore(options: { directory: string; limits: FileLimits
         await validateFileContent(input.purpose, input.name, input.mediaType, bytesValue, limits);
         const view: FileHandleView = { fileHandle: id, name: input.name, mediaType: input.mediaType, bytes, sha256 };
         const meta = await open(path.join(temporary, 'metadata.json'), 'wx', 0o600);
-        try { await meta.writeFile(JSON.stringify({ ...view, installationId: input.installationId, purpose: input.purpose })); await meta.sync(); } finally { await meta.close(); }
+        try { await meta.writeFile(JSON.stringify({ ...view, installationId: input.installationId, purpose: input.purpose, ...(input.profilePersonId !== undefined ? { profilePersonId: input.profilePersonId } : {}) })); await meta.sync(); } finally { await meta.close(); }
         await assertPhysicalPath(directory, true); await assertPhysicalPath(temporary, true); await rename(temporary, final); finalized = true;
         return view;
       } finally {
@@ -75,13 +75,13 @@ export function createFileStore(options: { directory: string; limits: FileLimits
         }
       }
     },
-    async read(handle, installationId, purpose) {
+    async read(handle, installationId, purpose, profilePersonId) {
       if (!uuidSchema.safeParse(handle).success || !uuidSchema.safeParse(installationId).success || !filePurposeSchema.safeParse(purpose).success) throw missing();
       try {
         const base = await root(); const stored = path.join(base, handle);
         const parsed = metadataSchema.safeParse(JSON.parse((await verifiedRead(path.join(stored, 'metadata.json'), 32768)).toString('utf8')));
         if (!parsed.success) throw fileValidationError(); const metadata = parsed.data;
-        if (metadata.installationId !== installationId || metadata.purpose !== purpose) throw missing();
+        if (metadata.installationId !== installationId || metadata.purpose !== purpose || (metadata.profilePersonId !== undefined && metadata.profilePersonId !== profilePersonId)) throw missing();
         if (metadata.fileHandle !== handle || metadata.bytes > cap(purpose)) throw fileValidationError(); assertFileName(metadata.name);
         const bytes = await verifiedRead(path.join(stored, 'bytes'), cap(purpose));
         if (bytes.length !== metadata.bytes || createHash('sha256').update(bytes).digest('hex') !== metadata.sha256) throw new WorkbenchHttpError(422, 'INTEGRITY_MISMATCH', 'The staged file failed integrity verification');

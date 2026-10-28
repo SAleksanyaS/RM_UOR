@@ -10,6 +10,8 @@
   "packageManager": "npm@10.9.2",
   "scripts": {
     "dev": "node scripts/dev.mjs",
+    "dev:oko": "tsx scripts/oko.ts",
+    "start:oko": "tsx scripts/oko.ts --serve",
     "dev:server": "tsx watch src/server/main.ts",
     "dev:client": "vite --host 127.0.0.1",
     "test": "vitest run",

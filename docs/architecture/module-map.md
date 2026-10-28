@@ -128,6 +128,8 @@ flowchart TD
 
 ## Проверки по границам
 
+Отдельный личный интерфейс ОКО: `src/app/oko` и `features/connectors/workbench` → существующий workbench v1 transport → `workbench-workflow-module/service/store`. Сборка — `oko-application.ts`, запуск — `scripts/oko.ts`; legacy entry остаётся прежним. Сервис связывает управляемый браузер, чистый tabular parser/normalizer/enrichment и приватные результаты с проверкой ownership/hash. Временный режим reader/editor владеет только local preview, состояние не считается verified registry. См. [пользовательский путь](../OKO_WORKFLOW.md).
+
 | Изменение | Существующие адресные проверки |
 |---|---|
 | Методика/состав/fingerprint | `evaluation/evaluate.test.ts`, `evaluation/measurement.test.ts`, `snapshots/select-facts.test.ts`, `tests/integration/assignment-scope.test.ts`, `tests/integration/goal-history.test.ts` |

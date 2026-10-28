@@ -1,3 +1,5 @@
+import { readWorkbenchRecordingStatus, readWorkbenchRecordingDownload } from './workbench-browser-recorder';
+import { selectBrowserReportMarker } from './workbench-browser-picker';
 import { randomUUID } from 'node:crypto';
 import { lstat, mkdir } from 'node:fs/promises';
 import path from 'node:path';
@@ -25,6 +27,12 @@ export interface BrowserRuntimePort {
   waitForCompletion(input: { handleId: UUIDv4; owner: BrowserOwner }): Promise<RecordedBrowserScenario>;
   closeOwned(owner: BrowserOwner): Promise<void>;
 }
+export type BrowserRecordingStatus = { state: 'idle' | 'recording' | 'completed' | 'failed' | 'interrupted'; problem: { code: string; message: string } | null };
+export interface BrowserWorkflowRuntimePort extends BrowserRuntimePort {
+  readRecordingStatus(input: { owner: BrowserOwner; handleId: UUIDv4 }): Promise<BrowserRecordingStatus>;
+  readRecordingDownload(input: { owner: BrowserOwner; handleId: UUIDv4 }): Promise<Downloaded>;
+  selectMarker(input: { owner: BrowserOwner; profile: PrivateProfile; startUrl: string }, signal: AbortSignal): Promise<{ selector: string; label: string }>;
+}
 const ownerSchema = z.strictObject({ installationId: uuidSchema, profilePersonId: uuidSchema.nullable() });
 export function browserOwnerKey(owner: BrowserOwner): string { const valid = ownerSchema.parse(owner); return `${valid.installationId}/${valid.profilePersonId ?? 'unassigned'}`; }
 export async function browserOwnerRoot(runtimeRoot: string, owner: BrowserOwner): Promise<string> {
@@ -42,7 +50,7 @@ function fromLegacy(step: BrowserStep): RecordedBrowserStep {
   const { selector, ...rest } = step;
   return { ...rest, locator: { kind: 'css', selector } };
 }
-export function createBrowserRuntime({ runtimeRoot, launcher }: { runtimeRoot: string; launcher?: BrowserLauncherPort }): BrowserRuntimePort {
+export function createBrowserRuntime({ runtimeRoot, launcher }: { runtimeRoot: string; launcher?: BrowserLauncherPort }): BrowserWorkflowRuntimePort {
   const handles = new Map<string, { owner: string; root: string; recorderId: string; input: BrowserLoginInput }>();
   const finished = new Map<string, { owner: string; root: string; recorderId: string; result: RecordedBrowserScenario; timer: NodeJS.Timeout }>();
   const pending = new Set<{ owner: string; controller: AbortController; settled: Promise<void> }>();
@@ -61,7 +69,27 @@ export function createBrowserRuntime({ runtimeRoot, launcher }: { runtimeRoot: s
       return { handleId, state: 'open', mode };
     } finally { pending.delete(request); settled(); }
   };
-  const runtime: BrowserRuntimePort = {
+  const runtime: BrowserWorkflowRuntimePort = {
+    async readRecordingStatus({ handleId, owner }) {
+      const key = browserOwnerKey(owner), cached = finished.get(handleId);
+      if (cached?.owner === key) return { state: cached.result.hasDownload ? 'completed' : 'idle', problem: null };
+      const handle = handles.get(handleId);
+      if (!handle || handle.owner !== key) return { state: 'interrupted', problem: { code: 'BROWSER_HANDLE_NOT_FOUND', message: 'Сессия браузера отсутствует или прервана' } };
+      return readWorkbenchRecordingStatus(handle.root, handle.owner, handle.recorderId);
+    },
+    async readRecordingDownload({ handleId, owner }) {
+      const key = browserOwnerKey(owner), handle = handles.get(handleId) ?? finished.get(handleId);
+      if (!handle || handle.owner !== key) throw new WorkbenchHttpError(404, 'BROWSER_HANDLE_NOT_FOUND', 'Browser session not found');
+      return readWorkbenchRecordingDownload(handle.root, key, handle.recorderId);
+    },
+    async selectMarker(input, signal) {
+      const owner = browserOwnerKey(input.owner);
+      if (closing.has(owner)) throw new DOMException('Owner browser sessions are closing', 'AbortError');
+      const controller = new AbortController(); let settled!: () => void;
+      const request = { owner, controller, settled: new Promise<void>(resolve => { settled = resolve; }) }; pending.add(request);
+      try { return await selectBrowserReportMarker({ ...input, runtimeRoot, signal: AbortSignal.any([signal, controller.signal]), launcher }); }
+      finally { pending.delete(request); settled(); }
+    },
     openLogin: (input, signal) => open(input, signal, 'login'), startRecording: (input, signal) => open(input, signal, 'record'),
     async finish({ handleId, owner, save }) {
       if (save) throw new WorkbenchHttpError(422, 'SCENARIO_REVIEW_REQUIRED', 'Review and save through the scenario draft service');

@@ -4,7 +4,7 @@ import { utcInstantSchema, uuidSchema, type Clock, type UUIDv4, type UtcInstant 
 import { ownPolicyCacheValueSchema, type OwnPolicyCache } from './workbench-policy-cache';
 
 export type Capability = 'business.read' | 'capture.local' | 'calculation.local' | 'personal.write' | 'uor.prepare' | 'package.submit' | 'publication.apply' | 'workspace.backup';
-export type OwnAccessProfile = { role: 'viewer' | 'curator' | 'chief'; displayName: string | null; personId: UUIDv4 | null; policyState: 'verified' | 'offline_cached' | 'unavailable' | 'revoked' | 'invalid'; checkedAt: UtcInstant | null };
+export type OwnAccessProfile = { role: 'viewer' | 'curator' | 'chief'; displayName: string | null; personId: UUIDv4 | null; policyState: 'verified' | 'offline_cached' | 'unavailable' | 'revoked' | 'invalid' | 'local_preview'; checkedAt: UtcInstant | null };
 export interface AccessPolicyService {
   resolveOwnAccess(): Promise<OwnAccessProfile>;
   assertCommandAllowed(commandName: string): Promise<OwnAccessProfile>;
@@ -15,7 +15,7 @@ export class RegistryReadError extends Error {
   constructor(public readonly kind: 'network' | 'timeout' | 'auth_expired' | 'forbidden' | 'invalid', message: string = kind) { super(message); this.name = 'RegistryReadError'; }
 }
 export class AccessPolicyError extends Error {
-  constructor(public readonly code: 'ACCESS_DENIED' | 'ACCESS_RECHECK_REQUIRED', message: string) { super(message); this.name = 'AccessPolicyError'; }
+  constructor(public readonly code: 'ACCESS_DENIED' | 'ACCESS_RECHECK_REQUIRED' | 'LOCAL_PREVIEW_ONLY', message: string) { super(message); this.name = 'AccessPolicyError'; }
   readonly statusCode = 403;
 }
 export const serverHostname = osHostname;
@@ -28,7 +28,7 @@ export function createUnavailableRegistryReadPort(): RegistryReadPort & { readin
 export function canUseCapability(profile: OwnAccessProfile, capability: Capability): boolean {
   switch (capability) {
     case 'business.read': case 'capture.local': case 'calculation.local': case 'personal.write': case 'publication.apply': case 'workspace.backup': return true;
-    case 'uor.prepare': return profile.role !== 'viewer' && (profile.policyState === 'verified' || profile.policyState === 'offline_cached');
+    case 'uor.prepare': return profile.role !== 'viewer' && (profile.policyState === 'verified' || profile.policyState === 'offline_cached' || profile.policyState === 'local_preview');
     case 'package.submit': return profile.role !== 'viewer' && profile.policyState === 'verified';
     default: return false;
   }

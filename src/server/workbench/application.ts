@@ -8,7 +8,7 @@ import type { JobStore } from './jobs';
 import { filePurposeSchema, type FileStore } from './files';
 import { validateModules, type PlatformModule } from './modules';
 import type { QueryContext, QueryRegistry } from './query-registry';
-import type { LocalRequest, WorkbenchHttpPort } from './routes';
+import type { BrowserResultArtifact, LocalRequest, WorkbenchHttpPort } from './routes';
 import type { LocalSessionStore } from './session';
 import { globalContextSchema, WorkbenchHttpError, type ApiSuccess, type GlobalContext, type Meta } from './protocol';
 
@@ -18,6 +18,7 @@ export type WorkbenchApplicationDeps = {
   sessions: LocalSessionStore; allowedOrigins: string[]; installationId: UUIDv4; files: FileStore;
   // T21/T22 bind these narrow reads when catalog/publication read models exist.
   readState?: { defaultContext(context: QueryContext): Promise<GlobalContext | null>; publishedCommit(): string | null };
+  browserResults?: { read(context: QueryContext, resultId: UUIDv4, kind: 'original' | 'enriched'): Promise<BrowserResultArtifact> };
 };
 
 /** Startup uses the current installation and hostname, without restoring a session or an old grant. */
@@ -58,15 +59,20 @@ export function createWorkbenchApplication(deps: WorkbenchApplicationDeps): Work
       const ctx = await context(request);
       const purpose = filePurposeSchema.safeParse(input.purpose); if (!purpose.success) throw new WorkbenchHttpError(422, 'VALIDATION_FAILED', 'Invalid file purpose');
       if (!canUseCapability(ctx.ownAccess, purpose.data === 'workspace-restore' ? 'workspace.backup' : 'uor.prepare')) throw new WorkbenchHttpError(403, 'ACCESS_DENIED', 'The current own profile does not permit this upload');
-      return envelope(await deps.files.stage({ ...input, purpose: purpose.data, installationId: deps.installationId }), request);
+      return envelope(await deps.files.stage({ ...input, purpose: purpose.data, installationId: deps.installationId, profilePersonId: ctx.ownAccess.personId }), request);
     },
     async query(name, request, local) { const ctx = await context(local); return envelope(await deps.queries.execute(name, request, ctx), local); },
+    async browserResult(resultId, kind, local) {
+      const ctx = await context(local);
+      if (!deps.browserResults) throw new WorkbenchHttpError(404, 'RESULT_NOT_FOUND', 'Result not found');
+      return deps.browserResults.read(ctx, resultId, kind);
+    },
     async command(request, local) {
       const ctx = await context(local);
       const hostname = deps.hostname(); if (!hostname.trim()) throw new WorkbenchHttpError(503, 'HOSTNAME_UNAVAILABLE', 'Server hostname is unavailable');
       const actor = { hostname, installationId: deps.installationId, profilePersonId: ctx.ownAccess.personId };
       return envelope(await deps.commands.execute(request, { ...ctx, commandId: request.commandId, actor }), local);
     },
-    async job(id, request) { assertSession(request); const job = deps.jobs.get(id, deps.installationId); if (!job) throw new WorkbenchHttpError(404, 'JOB_NOT_FOUND', 'Job not found'); return envelope(job, request); },
+    async job(id, request) { const ctx = await context(request); await deps.commands.assertJobAccess?.(id, ctx); const job = deps.jobs.get(id, deps.installationId); if (!job) throw new WorkbenchHttpError(404, 'JOB_NOT_FOUND', 'Job not found'); return envelope(job, request); },
   };
 }

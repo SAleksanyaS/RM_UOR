@@ -21,7 +21,7 @@ import type { BrowserRuntimePort, RecordedBrowserScenario } from './workbench-br
 
 type RecordState = { id: string; runtime: string; owner: string; context: BrowserContext; startUrl: string; selector: string;
   steps: RecordedBrowserStep[]; screenshots: string[]; queue: Promise<void>; downloads: Set<Promise<void>>; completed: boolean;
-  cancellation: AbortController;
+  sample?: Downloaded; cancellation: AbortController;
   closed: boolean; problem?: ConnectorError; release(): void; terminal: Promise<void>; end(): void; timer: NodeJS.Timeout; retention?: NodeJS.Timeout };
 const records = new Map<string, RecordState>();
 const authPath = /login|sign.?in|sso|oauth|saml|authorize/i;
@@ -71,6 +71,16 @@ function own(runtime: string, owner: string, id: string): RecordState {
   return record;
 }
 export function hasWorkbenchRecording(id: string): boolean { return records.has(id); }
+export function readWorkbenchRecordingStatus(runtime: string, owner: string, id: string) {
+  const record = own(runtime, owner, id);
+  return { state: record.problem ? 'failed' as const : record.completed ? 'completed' as const : record.closed ? 'interrupted' as const : 'recording' as const,
+    problem: record.problem ? { code: record.problem.code, message: record.problem.message } : null };
+}
+export function readWorkbenchRecordingDownload(runtime: string, owner: string, id: string): Downloaded {
+  const record = own(runtime, owner, id);
+  if (!record.completed || !record.sample) throw new ConnectorError('incomplete', 'Завершённая выгрузка записи недоступна');
+  return { ...record.sample, bytes: Buffer.from(record.sample.bytes) };
+}
 export async function cancelWorkbenchRecording(runtime: string, owner: string, id: string): Promise<boolean> {
   const record = own(runtime, owner, id);
   if (record.completed) return true;
@@ -160,14 +170,14 @@ export async function startWorkbenchRecording(runtime: string, owner: string, pr
         const task = (async () => {
           try {
             if (!await recordingReady(page, selector, origin)) { await file.cancel(); return; }
-            await completedBrowserDownload(file, profile, record.cancellation.signal);
+            const sample = await completedBrowserDownload(file, profile, record.cancellation.signal);
             await page.evaluate(async () => { await (window as unknown as { __uorRecorderDrain?: () => Promise<void> }).__uorRecorderDrain?.(); }).catch(() => {});
             await record.queue;
             if (record.problem) throw record.problem;
             const last = record.steps.at(-1);
             if (last?.action !== 'click') throw new ConnectorError('configuration_required', 'Выгрузка не связана с записанным нажатием. Повторите запись');
             if (!await recordingReady(page, selector, origin)) throw new ConnectorError('manual_login_required', 'Сессия отчёта требует входа');
-            record.steps[record.steps.length - 1] = { ...last, action: 'download' }; record.completed = true; await file.delete(); await close();
+            record.steps[record.steps.length - 1] = { ...last, action: 'download' }; record.sample = sample; record.completed = true; await file.delete(); await close();
           } catch (error) { record.problem = error instanceof ConnectorError ? error : new ConnectorError('incomplete', 'Выгрузка не завершена'); await close(); }
         })();
         record.downloads.add(task); void task.finally(() => record.downloads.delete(task)); return task;

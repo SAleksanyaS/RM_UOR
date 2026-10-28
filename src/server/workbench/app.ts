@@ -4,13 +4,14 @@ import { createWorkbenchApplication, recoverWorkbenchCommands, type WorkbenchApp
 import { registerWorkbenchRoutes } from './routes';
 
 /** Isolated v1 composition; legacy launcher is deliberately unchanged until T39. */
-export async function createWorkbenchApp(deps: WorkbenchApplicationDeps): Promise<FastifyInstance> {
+export async function createWorkbenchApp(deps: WorkbenchApplicationDeps, options: { configure?: (app: FastifyInstance) => Promise<void> } = {}): Promise<FastifyInstance> {
   const application = createWorkbenchApplication(deps);
   const app = Fastify({ logger: false, trustProxy: false });
   try {
     await app.register(cookie);
     app.decorate('workbenchTransport', { sessions: deps.sessions, allowedOrigins: deps.allowedOrigins });
     await registerWorkbenchRoutes(app, application);
+    await options.configure?.(app);
     await app.ready();
     await recoverWorkbenchCommands(deps);
     return app;

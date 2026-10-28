@@ -156,3 +156,18 @@ it('records a real authenticated Edge export, ends on completion, and replays ex
     expect(file.bytes.toString()).toBe('Value\n92');
   } finally { await runtime.closeOwned(owner); await Promise.all(contexts.map(context => context.close().catch(() => {}))); server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); }
 }, 30000);
+it('reads recording status without ending it and privately retains an owner-bound sample after finish', async () => {
+  const f = await fixture(true), input = { owner: f.owner, handleId: f.started.recordingId };
+  expect(await f.runtime.readRecordingStatus(input)).toEqual({ state: 'recording', problem: null });
+  expect(f.closed()).toBe(false);
+  await expect(f.runtime.readRecordingDownload(input)).rejects.toMatchObject({ code: 'incomplete' });
+  f.authenticate(); await f.emit({ action: 'click', locator: { kind: 'css', selector: '#export' } });
+  const file = await f.download(Buffer.from('Value\n92')); await file.pending;
+  expect(await f.runtime.readRecordingStatus(input)).toEqual({ state: 'completed', problem: null });
+  await f.runtime.finish({ ...input, save: false });
+  const sample = await f.runtime.readRecordingDownload(input); expect(Buffer.from(sample.bytes).toString()).toBe('Value\n92');
+  sample.bytes[0] = 0;
+  expect(Buffer.from((await f.runtime.readRecordingDownload(input)).bytes).toString()).toBe('Value\n92');
+  await expect(f.runtime.readRecordingDownload({ ...input, owner: { ...f.owner, profilePersonId: fixtureId(99) } })).rejects.toMatchObject({ statusCode: 404 });
+  expect((await createBrowserRuntime({ runtimeRoot: f.root }).readRecordingStatus(input)).state).toBe('interrupted');
+});

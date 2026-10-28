@@ -11,5 +11,5 @@ export default defineConfig(async () => {
       // Keep Vite's defaults when adding the application's private file boundaries.
       '.env', '.env.*', '*.{crt,pem}', '**/.git/**',
       '**/.runtime/**', '**/config/*.local.json', '**/{credentials,secrets,curators}*.json', '*.{key,pfx,p12,bundle}', '**/.git',
-    ] } }, build: { outDir: 'dist' } };
+    ] } }, build: { outDir: 'dist', rollupOptions: { input: { app: path.resolve(process.cwd(), 'index.html'), oko: path.resolve(process.cwd(), 'oko.html') } } } };
 });

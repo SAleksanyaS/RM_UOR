@@ -100,6 +100,18 @@ T13 экспортирует test-only createWorkbenchTestApplication со stabl
 
 ## K05. Публикация и эксплуатация
 
+### Уточнение владельца: временный доступ и личный путь ОКО (2026-10-28)
+
+По прямому указанию владельца изолированный запуск `npm run dev:oko` / `npm run start:oko` использует временный переключатель «Читатель / Редактор» без hostname-реестра. Его состояние — `policyState: local_preview`, а не `verified`; локальная личность установки сохраняется при переключении. Команда `source.browser.role.set` принимает только `viewer|curator`. Публикация общих данных и роль chief недоступны. Будущий режим `roleMode: registry` сохранён отдельно; общий производственный entry не переключён.
+
+`source.browser.workspace` принимает отдельный `OwnQueryRequest` с `context:null`; предметные queries по-прежнему требуют полный контекст. Личные команды/receipts/jobs связываются с installation + person до возврата кеша и при повторном выполнении. Новые upload handles также получают server-derived person; scoped handle без совпадающего person не читается.
+
+`createOkoWorkflowService` владеет личными профилями, записью, mapping, справочником и результатом. Мутации одного workflow сериализуются по installation/person/id до private write и CAS. После длительных операций повторно проверяются capability и person. Query читает статус записи без завершения/сохранения; явная finish-команда получает и разбирает полностью скачанный образец. UI вызывает её автоматически после completed. Marker выбирается кликом в управляемом браузере, без CSS/JSON. Вход выполняется вручную вне recorder.
+
+Разбор/нормализация/дообогащение переиспользуют проверенные чистые ядра. Личный CSV/XLSX справочник требует явные UUID из файла и проходит общую проверку графа; он не становится опубликованным справочником. Строки не размножаются по командам. `GET /api/v1/browser/results/:resultId/original|enriched` отдаёт проверенное вложение только своей личности через локальный session/origin boundary. Исходник сохраняется без изменения; производный CSV нейтрализует формулы. Preview ограничен, выгрузка содержит все строки. Ошибка сохраняет предыдущий результат.
+
+Это завершает личное получение и дообогащение файлов в отдельном интерфейсе; production SourceAdapter, принятие фактов, публикация сценария и общий переход T39 остаются отдельными задачами. Инструкция: [OKO_WORKFLOW](../../../OKO_WORKFLOW.md). Синтетический Edge fixture не подтверждает банковский SSO/СберБраузер.
+
 `PublishingService.preview(context,input)`, `submit(context,input)`, `refreshStatus(context,packageId)`, `checkPublication(context)`, `applyPublication(context,mainCommit)` реализуют payload/result зарегистрированных команд 17 и моделей 18; context имеет тип CommandContext. Конкретные экспортируемые типы закреплены частью 03 плана; эти имена не меняются между задачами.
 
 `MaintenanceService` реализует `backup.create`, `backup.restore.preview`, `backup.restore.apply` и безопасное обновление кода. Регистраторы связывают сервисы с CommandRegistry; второй HTTP API не создаётся.

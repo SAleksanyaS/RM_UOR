@@ -25,6 +25,11 @@ export const sortSchema = z.strictObject({ field: z.string().min(1), direction: 
 export type Sort = z.infer<typeof sortSchema>;
 export const queryRequestSchema = z.strictObject({ context: globalContextSchema, filter: objectSchema, sort: z.array(sortSchema), page: pageRequestSchema.default({ limit: 50, cursor: null }) });
 export type QueryRequest = z.infer<typeof queryRequestSchema>;
+/** Personal settings have no business scope; each descriptor explicitly opts in. */
+export const ownQueryRequestSchema = z.strictObject({ context: z.null(), filter: objectSchema, sort: z.array(sortSchema), page: pageRequestSchema.default({ limit: 50, cursor: null }) });
+export type OwnQueryRequest = z.infer<typeof ownQueryRequestSchema>;
+export type AnyQueryRequest = QueryRequest | OwnQueryRequest;
+export const anyQueryRequestSchema = z.union([queryRequestSchema, ownQueryRequestSchema]);
 export const commandRequestSchema = z.strictObject({ commandId: uuidSchema, name: z.string().min(1), baseRevision: revisionTokenSchema.nullable(), payload: objectSchema });
 export type CommandRequest = z.infer<typeof commandRequestSchema>;
 export const commandResultSchema = z.strictObject({ commandId: uuidSchema, result: objectSchema, changedRefs: z.array(entityRefSchema), editToken: revisionTokenSchema.nullable() });
@@ -35,7 +40,7 @@ export type ApiSuccess<T> = { apiVersion: '1'; requestId: string; data: T; meta:
 export function apiSuccessSchema<T extends z.ZodType>(dataSchema: T) { return z.strictObject({ apiVersion: z.literal('1'), requestId: uuidSchema, data: dataSchema, meta: metaSchema }); }
 export const apiErrorSchema = z.strictObject({ apiVersion: z.literal('1'), requestId: uuidSchema, error: problemSchema, meta: z.strictObject({ generatedAt: utcInstantSchema }) });
 export type ApiError = z.infer<typeof apiErrorSchema>;
-export const sessionViewSchema = z.strictObject({ role: z.enum(['viewer', 'curator', 'chief']), displayName: z.string().nullable(), personId: uuidSchema.nullable(), policyState: z.enum(['verified', 'offline_cached', 'unavailable', 'revoked', 'invalid']), checkedAt: utcInstantSchema.nullable(), allowedCommands: z.array(z.string().min(1)), csrfToken: z.string().min(1), defaultContext: globalContextSchema.nullable() });
+export const sessionViewSchema = z.strictObject({ role: z.enum(['viewer', 'curator', 'chief']), displayName: z.string().nullable(), personId: uuidSchema.nullable(), policyState: z.enum(['verified', 'offline_cached', 'unavailable', 'revoked', 'invalid', 'local_preview']), checkedAt: utcInstantSchema.nullable(), allowedCommands: z.array(z.string().min(1)), csrfToken: z.string().min(1), defaultContext: globalContextSchema.nullable() });
 export type SessionView = z.infer<typeof sessionViewSchema>;
 export const nextActionSchema = z.strictObject({ commandName: z.string().min(1).nullable(), payload: objectSchema.nullable(), route: z.string().min(1).nullable(), label: z.string().min(1), enabled: z.boolean(), disabledReason: z.string().nullable() });
 export type NextAction = z.infer<typeof nextActionSchema>;

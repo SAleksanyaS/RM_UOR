@@ -1,22 +1,24 @@
-import { randomUUID, timingSafeEqual } from 'node:crypto';
+import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { isIP } from 'node:net';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import multipart from '@fastify/multipart';
 import { Transform } from 'node:stream';
-import { defaultFileLimits, fileHandleViewSchema, type FileHandleView, type FileStore } from './files';
+import { assertFileName, defaultFileLimits, fileHandleViewSchema, type FileHandleView, type FileStore } from './files';
 import { withMultipartUpload } from './multipart-upload';
 import { uuidSchema, type UUIDv4 } from '../../domain/workbench/index';
 import type { LocalSessionStore } from './session';
-import { apiSuccessSchema, commandRequestSchema, commandResultSchema, fieldProblems, jobAcceptedSchema, jobSnapshotSchema, metaSchema, problemSchema, queryRequestSchema, sessionViewSchema, WorkbenchHttpError, type ApiSuccess, type CommandRequest, type CommandResult, type JobAccepted, type JobSnapshot, type Meta, type Problem, type QueryRequest, type SessionView } from './protocol';
+import { anyQueryRequestSchema, apiSuccessSchema, commandRequestSchema, commandResultSchema, fieldProblems, jobAcceptedSchema, jobSnapshotSchema, metaSchema, problemSchema, sessionViewSchema, WorkbenchHttpError, type ApiSuccess, type CommandRequest, type CommandResult, type JobAccepted, type JobSnapshot, type Meta, type Problem, type AnyQueryRequest, type SessionView } from './protocol';
 
 export type LocalRequest = { requestId: UUIDv4; sessionId: UUIDv4 };
+export type BrowserResultArtifact = { bytes: Uint8Array; name: string; mimeType: string; sha256: string };
 export interface WorkbenchHttpPort {
   upload(input: Omit<Parameters<FileStore['stage']>[0], 'installationId'>, request: LocalRequest): Promise<ApiSuccess<FileHandleView>>;
   session(request: LocalRequest): Promise<SessionView>;
   refreshSession(request: LocalRequest): Promise<SessionView>;
   meta(request: LocalRequest): Promise<Meta>;
-  query(name: string, input: QueryRequest, request: LocalRequest): Promise<ApiSuccess<unknown>>;
+  query(name: string, input: AnyQueryRequest, request: LocalRequest): Promise<ApiSuccess<unknown>>;
+  browserResult?(resultId: UUIDv4, kind: 'original' | 'enriched', request: LocalRequest): Promise<BrowserResultArtifact>;
   command(input: CommandRequest, request: LocalRequest): Promise<ApiSuccess<CommandResult | JobAccepted>>;
   job(id: UUIDv4, request: LocalRequest): Promise<ApiSuccess<JobSnapshot>>;
 }
@@ -106,7 +108,7 @@ export async function registerWorkbenchRoutes(app: FastifyInstance, application:
       return apiSuccessSchema(sessionViewSchema).parse({ apiVersion: '1', requestId: r.requestId, data: { ...data, csrfToken: sessions.get(r.sessionId)!.csrfToken }, meta: metaSchema.parse(await application.meta(r)) });
     });
     api.post<{ Params: { queryName: string } }>('/queries/:queryName', async request => {
-      const r = local(request); const result = await application.query(request.params.queryName, input(queryRequestSchema, request.body), r);
+      const r = local(request); const result = await application.query(request.params.queryName, input(anyQueryRequestSchema, request.body), r);
       return apiSuccessSchema(z.unknown()).parse({ ...result, requestId: r.requestId });
     });
     api.post('/commands', async (request, reply) => {
@@ -125,6 +127,18 @@ export async function registerWorkbenchRoutes(app: FastifyInstance, application:
       if (!parsed.success) throw new WorkbenchHttpError(404, 'JOB_NOT_FOUND', 'Job not found');
       const result = await application.job(parsed.data, r);
       return apiSuccessSchema(jobSnapshotSchema).parse({ ...result, requestId: r.requestId });
+    });
+    api.get<{ Params: { resultId: string; kind: string } }>('/browser/results/:resultId/:kind', async (request, reply) => {
+      const r = local(request); const id = uuidSchema.safeParse(request.params.resultId);
+      const kind = request.params.kind;
+      if (!id.success || !['original', 'enriched'].includes(kind) || !application.browserResult) throw new WorkbenchHttpError(404, 'RESULT_NOT_FOUND', 'Result not found');
+      const result = await application.browserResult(id.data, kind as 'original' | 'enriched', r);
+      assertFileName(result.name);
+      if (!(result.bytes instanceof Uint8Array) || result.bytes.length > defaultFileLimits.restoreBytes || !/^[a-f0-9]{64}$/.test(result.sha256) || createHash('sha256').update(result.bytes).digest('hex') !== result.sha256) throw new WorkbenchHttpError(422, 'INTEGRITY_MISMATCH', 'Result bytes failed integrity verification');
+      if (!['text/csv', 'text/csv; charset=utf-8', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/octet-stream'].includes(result.mimeType)) throw new WorkbenchHttpError(422, 'INVALID_FILE', 'Unsupported result type');
+      return reply.header('content-type', result.mimeType).header('content-length', result.bytes.length)
+        .header('content-disposition', `attachment; filename="export.${kind === 'enriched' || /\.csv$/i.test(result.name) ? 'csv' : 'xlsx'}"; filename*=UTF-8''${encodeURIComponent(result.name).replace(/['()*]/g, char => '%' + char.charCodeAt(0).toString(16))}`)
+        .header('x-content-sha256', result.sha256).header('x-content-type-options', 'nosniff').send(Buffer.from(result.bytes));
     });
     api.setNotFoundHandler((_request, reply) => { throw new WorkbenchHttpError(404, 'ROUTE_NOT_FOUND', 'Route not found'); });
   }, { prefix: '/api/v1' });

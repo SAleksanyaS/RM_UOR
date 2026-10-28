@@ -38,7 +38,7 @@ it('streams_either_field_order_and_returns_exact_201_envelope_and_owned_handle',
     const result = response.json(); expect(Object.keys(result).sort()).toEqual(['apiVersion', 'data', 'meta', 'requestId']);
     expect(Object.keys(result.data).sort()).toEqual(['bytes', 'fileHandle', 'mediaType', 'name', 'sha256']);
     expect(result.data).toMatchObject({ bytes: 25, mediaType: 'text/csv', name: 'input.csv' });
-    expect(Buffer.from((await f.files.read(result.data.fileHandle, installationId, 'goal-import')).bytesValue).toString()).toBe('product,value\ndemo,92.00\n');
+    expect(Buffer.from((await f.files.read(result.data.fileHandle, installationId, 'goal-import', null)).bytesValue).toString()).toBe('product,value\ndemo,92.00\n');
     expect(response.headers['cache-control']).toBe('no-store'); expect(response.headers['x-request-id']).toBe(result.requestId);
     expect((await f.app.inject({ method: 'GET', url: '/api/v1/files/' + result.data.fileHandle, headers: { host: 'localhost' } })).statusCode).toBe(404);
   }
@@ -57,7 +57,7 @@ it('enforces_session_csrf_origin_loopback_and_role_purpose_guards', async () => 
   expect((await f.post(body([field('purpose', 'evidence'), file()]))).statusCode).toBe(403); expect(await f.stored()).toEqual([]);
   const zip = new JSZip(); zip.file('manifest.json', '{}'); zip.file('records.json', '[]');
   const response = await f.post(body([file(await zip.generateAsync({ type: 'nodebuffer' }), 'backup.zip', 'application/zip'), field('purpose', 'workspace-restore')]));
-  expect(response.statusCode).toBe(201); expect((await f.files.read(response.json().data.fileHandle, installationId, 'workspace-restore')).purpose).toBe('workspace-restore');
+  expect(response.statusCode).toBe(201); expect((await f.files.read(response.json().data.fileHandle, installationId, 'workspace-restore', null)).purpose).toBe('workspace-restore');
 });
 it('accepts_32MiB_evidence_over_real_transport_and_rejects_goal_profile_overflow', async () => {
   const f = await fixture();
