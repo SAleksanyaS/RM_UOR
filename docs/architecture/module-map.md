@@ -157,3 +157,5 @@ T19: execution/workbench-notification-causes.ts derives real work/decision cause
 <!-- Workbench T20: configuration owner contracts -->
 
 `features/knowledge/workbench-fields.ts` owns configurable field commands and schema descriptions. `workbench-dashboards.ts` owns the six strict registered dashboard schemas and exact assignment/method/metric resolution, including trusted saved-basis resolution. DraftService validates owner settings before freezing and again before package readiness. `features/system/workbench-preferences.ts` owns installation-local context/sort/visual choices and backup data; preferences never grant roles or write shared definitions. Query/UI composition consumes these ports in T21 and later tasks.
+
+`features/publishing/workbench` starts the new publication pipeline with exact revision/manifest contracts, canonical byte hashes and an immutable checked physical file store. Semantic preview, expiring owner-bound tokens and async package commands are still T22 work in progress; this foundation does not call the legacy Git provider or publish anything.
