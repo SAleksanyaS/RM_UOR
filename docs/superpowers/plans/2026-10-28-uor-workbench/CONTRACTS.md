@@ -70,6 +70,20 @@ T12 queued recovery is explicit: only an asynchronous local descriptor with `que
 
 `createWorkbenchApplication(deps)` получает repository, clock, accessPolicy, command/query registries, job store и зарегистрированные модули. Необязательный до реализации порт не заменяется фальшивым успешным обработчиком; отсутствующая возможность имеет явный unsupported-сценарий.
 
+### T15: выборочный приём файла и редакции исходных фактов
+
+`createImportService({repository,store:ImportStore,sources:SourceStore,files:FileStore,jobs,clock,recheckGuard})` реализует точные `import.preview` / `import.apply` из17. Обе команды — async/local, capability `uor.prepare`, ownership person. FileHandle проверяется по installation/person/purpose; preview не создаёт Capture/ObservedFact. Mapping и форматы берутся только из опубликованного SourceFieldMapping. Источник цели обязан явно иметь kind=file; ошибка ОКО не открывает файловый fallback.
+
+Непрозрачный previewToken связывает приватный input hash, mapping/directory/context configurationRevision, исходные факты и опубликованные ManualCorrection. Применение перечитывает файл и текущую основу, затем повторяет gate до короткой транзакции. Чужие/повторяющиеся IDs отклоняются; кандидат редакции нельзя принять как обычную новую строку. Невыбранные исправления остаются непринятыми. Повтор того же выбора, в том числе с новым commandId или после перезапуска, возвращает сохранённый результат; другой выбор уже применённого preview даёт конфликт.
+
+Preview row представляет одну неделимую группу исходных строк для конкретного metric/reducer/scope/businessTime/dimensions. `proposedFact.lineage.sourceRowKeys` перечисляет все её исходные строки; координата указывает первую. Для обычного source_provided_value это одна строка. Несколько строк одного такого ключа дают явную неоднозначность; sum/count/ratio используют существующий точный reducer. Выбор группы не пересчитывает формулу по произвольной части её слагаемых. Технические счётчики Capture относятся к уникальным физическим строкам текущего файла; при неизменном факте старая lineage сохраняется, а новый выбор учитывается по своим raw keys.
+
+Ошибочный компонент блокирует всю reducer-группу, а независимые группы остаются доступными для частичного приёма. Приватный журнал групп сохраняет известные raw keys неуспешной части принятой попытки; последующая отправка одного исправленного слагаемого требует всю группу (`IMPORT_GROUP_INCOMPLETE`), не выдаёт обрезанную сумму за полную. Журнал входит в digest предпросмотра и ту же транзакцию. Повтор прежней группы с теми же нормализованными компонентами может сохранить старый факт при изменившихся физических ключах; изменённые компоненты ratio/sum требуют явной редакции даже при том же итоговом числе. Допустимость значения проверяется существующим normalizeMetric, включая неотрицательность/целочисленность, до разрешения выбора.
+
+В расчёте rowKey квалифицируется captureId только в рабочей копии входа reducer. Исходные RawSourceRow, CanonicalSourceRow, lineage и сохранённые основания не переписываются; совпадающие ключи разных файлов больше не смешивают разные строки. Опубликованная поправка к логическому sum-агрегату заменяет весь его вклад ровно один раз, включая агрегат из нескольких raw строк; другие продуктовые вклады сохраняются.
+
+`WorkbenchRepository.readImportFactState({sourceId,metricIds,scopes,businessTime,factKeys})` возвращает текущие fact heads нужного периода/ключей и опубликованные коррекции через существующие индексы и JSON-параметры. SourceStore.commitCapture принимает `retainedFactRefs?` и append-only редакции ObservedFact с CAS. Capture, новая редакция факта, history projection, последний результат/указатель и receipt сохраняются одной транзакцией. Ошибка строки не удаляет старый факт; исправленный файл дополняет тот же период. ManualCorrection не создаётся и не отменяется импортом, расхождение видно отдельно. Partial/latestAttempt остаётся явным входом запрета подтверждения для T17/T21.
+
 ## K04. UI
 
 ### Current implementation rulings: source ingestion and OKO priority

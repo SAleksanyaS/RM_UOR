@@ -130,6 +130,8 @@ flowchart TD
 
 Отдельный личный интерфейс ОКО: `src/app/oko` и `features/connectors/workbench` → существующий workbench v1 transport → `workbench-workflow-module/service/store`. Сборка — `oko-application.ts`, запуск — `scripts/oko.ts`; legacy entry остаётся прежним. Сервис связывает управляемый браузер, чистый tabular parser/normalizer/enrichment и приватные результаты с проверкой ownership/hash. Временный режим reader/editor владеет только local preview, состояние не считается verified registry. См. [пользовательский путь](../OKO_WORKFLOW.md).
 
+Файловый приём новой модели: `features/tabular-import/workbench-import.ts` регистрирует собственные async `import.preview` / `import.apply`; `workbench-import-store.ts` хранит приватный предпросмотр и итог выбора. Он переиспользует lossless parser, source normalizer, directory enrichment и транзакционный SourceStore. Типизированный `WorkbenchRepository.readImportFactState` читает текущие редакции по индексам factKey/scope/time и опубликованные ручные корректировки. Нет обхода namespace SQL, скрытого файлового резерва ОКО или переключения production entry. Общий мастер импорта относится к последующему T34.
+
 | Изменение | Существующие адресные проверки |
 |---|---|
 | Методика/состав/fingerprint | `evaluation/evaluate.test.ts`, `evaluation/measurement.test.ts`, `snapshots/select-facts.test.ts`, `tests/integration/assignment-scope.test.ts`, `tests/integration/goal-history.test.ts` |

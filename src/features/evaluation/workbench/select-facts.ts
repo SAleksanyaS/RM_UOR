@@ -107,6 +107,8 @@ export function selectEvaluationFacts(input: EvaluationInput): FactSelection {
     };
     chosen.forEach(fact => visit(fact, new Set()));
     const freshness: Freshness[] = []; const rows: CanonicalSourceRow[] = []; const overrides = new Map<string, ExactNumber>();
+    const rowOwners = new Map<string, ObservedFact>();
+    const overlappingLeaves = new Set<string>();
     const acceptedCorrection = (fact: ObservedFact) => {
       const matching = corrections.filter(c => c.factKey === fact.factKey);
       const usable: Array<{ correction: ManualCorrection; originals: ObservedFact[] }> = [];
@@ -140,7 +142,13 @@ export function selectEvaluationFacts(input: EvaluationInput): FactSelection {
       if (!capture || capture.sourceId !== leaf.sourceId || capture.id !== leaf.lineage.captureId) { problems.push('lineage_capture_missing'); continue; }
       const selectedRows = leaf.lineage.sourceRowKeys.map(rowKey => capture.canonicalRows.find(row => row.rowKey === rowKey));
       if (!selectedRows.length || selectedRows.some(row => !row)) { problems.push('lineage_row_missing'); continue; }
-      for (const row of selectedRows) if (row) rows.push(row);
+      for (const row of selectedRows) if (row) {
+        // Raw keys identify rows within a capture, not across independent files.
+        const rowKey=JSON.stringify([capture.id,row.rowKey]);
+        const previousOwner=rowOwners.get(rowKey);
+        if(previousOwner&&previousOwner.id!==leaf.id){overlappingLeaves.add(previousOwner.id);overlappingLeaves.add(leaf.id);}
+        rows.push({...row,rowKey}); rowOwners.set(rowKey,leaf);
+      }
     }
     let rootOverride: ExactNumber | null = null;
     for (const root of chosen.filter(f => f.lineage.inputFactRefs.length > 0)) {
@@ -167,13 +175,17 @@ export function selectEvaluationFacts(input: EvaluationInput): FactSelection {
           if (leaves.size === 1 && overrides.size === 1) result.value = [...overrides.values()][0];
           else problems.push('unsupported_correction_reduction');
         } else {
-          const correctedRows = rows.map(row => {
-            if (!overrides.size || (rule.reducer.kind !== 'sum' && rule.reducer.kind !== 'source_provided_value')) return row;
-            const owner = [...leaves.values()].find(leaf => leaf.lineage.sourceRowKeys.includes(row.rowKey));
+          const replaced = new Set<string>();
+          if([...overrides.keys()].some(id=>overlappingLeaves.has(id)))problems.push('unsupported_correction_reduction');
+          const correctedRows = rows.flatMap(row => {
+            if (!overrides.size || (rule.reducer.kind !== 'sum' && rule.reducer.kind !== 'source_provided_value')) return [row];
+            const owner = rowOwners.get(row.rowKey);
             const replacement = owner ? overrides.get(owner.id) : undefined;
-            if (replacement === undefined) return row;
-            if (owner!.lineage.sourceRowKeys.length !== 1 || typeof replacement !== 'string') { problems.push('unsupported_correction_reduction'); return row; }
-            return { ...row, numbers: { ...row.numbers, [rule.reducer.valueField]: replacement } };
+            if (replacement === undefined) return [row];
+            if (typeof replacement !== 'string' || rule.reducer.kind==='source_provided_value'&&owner!.lineage.sourceRowKeys.length!==1) { problems.push('unsupported_correction_reduction'); return [row]; }
+            if (replaced.has(owner!.id)) return [];
+            replaced.add(owner!.id);
+            return [{ ...row, numbers: { ...row.numbers, [rule.reducer.valueField]: replacement } }];
           });
           const reduced = reduceRows({ reducer: rule.reducer, rows: correctedRows, unitCode: metric.unit.code, assignmentRef: version('goal_assignment', input.assignment), methodRef: version('method_version', input.method), metricRef: rule.metricRef });
           result.value = reduced.value; problems.push(...reduced.qualityFlags);

@@ -123,4 +123,15 @@ describe('explicit fact selection', () => {
     expect(selected.correctionRefs).toEqual([ref('manual_correction', i.corrections[0])]);
     expect(selected.factRefs).toContainEqual(ref('observed_fact', root));
   });
+
+  it('does_not_guess_an_aggregate_correction_when_two_leaves_share_a_raw_contribution',()=>{
+    const A={kind:'product' as const,id:fixtureId(101)},B={kind:'product' as const,id:fixtureId(102)};
+    const i=makeNumericFixture({expectedPopulation:[A,B]});rule(i).reducer={kind:'sum',valueField:'demo_value'};
+    i.captures[0].canonicalRows=['10','55','5'].map((value,index)=>({...i.captures[0].canonicalRows[0],rowKey:`r${index+1}`,numbers:{demo_value:value},dimensions:{}}));
+    i.facts[0].value='65';i.facts[0].origin='reducer';i.facts[0].lineage.sourceRowKeys=['r1','r2'];
+    i.facts[1].value='60';i.facts[1].origin='reducer';i.facts[1].lineage.sourceRowKeys=['r2','r3'];
+    expect(selectEvaluationFacts(i).metrics[0].value).toEqual({numerator:'70',denominator:'1'});
+    i.corrections=[{...makeHeader(995,{publicationAnchorId:i.goal.publicationAnchorId}),factKey:i.facts[0].factKey,originalFactRefs:[ref('observed_fact',i.facts[0])],replacement:'72',reason:'Synthetic overlapping aggregate'}];
+    const corrected=selectEvaluationFacts(i);expect(corrected.metrics[0].value).toBeNull();expect(corrected.qualityFlags).toContain('unsupported_correction_reduction');
+  });
 });

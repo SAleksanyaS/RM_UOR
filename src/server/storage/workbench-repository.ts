@@ -6,7 +6,7 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import type { z } from 'zod';
 import type { EntityRef, EvaluationContext, Header, ScopeRef, Sha256, UtcInstant, UUIDv4, VersionRef } from '../../domain/workbench/primitives';
-import { entityRefSchema, headerSchema, moscowDateSchema, scopeRefSchema, utcInstantSchema, versionRefSchema } from '../../domain/workbench/primitives';
+import { businessTimeSchema, entityRefSchema, headerSchema, moscowDateSchema, scopeRefSchema, utcInstantSchema, uuidSchema, versionRefSchema } from '../../domain/workbench/primitives';
 import { moscowEnd } from '../../domain/workbench/time';
 import { WorkbenchError } from '../../domain/workbench/errors';
 import type { Applicability, Capture, EvaluationInput, ManualCorrection, ObservedFact, WorkbenchEntity, WorkbenchEntityType } from '../../domain/workbench/entities';
@@ -25,6 +25,7 @@ export interface WorkbenchSql {
 export type EntityRegistration<T extends Header> = { schema: z.ZodType<T>; references: (value: T) => ReferenceRequirement[] };
 export type EvaluationCandidateQuery = { sourceId: UUIDv4; assignmentId: UUIDv4; metricIds: UUIDv4[]; scopes: ScopeRef[]; businessTime: EvaluationContext['businessTime']; evaluatedAt: UtcInstant };
 export type EvaluationCandidates = Pick<EvaluationInput, 'facts' | 'captures' | 'applicability' | 'corrections'>;
+export type ImportFactQuery = Pick<EvaluationCandidateQuery, 'sourceId' | 'metricIds' | 'scopes' | 'businessTime'> & { factKeys: string[] };
 export interface WorkbenchRepository {
   getHead<T extends Header>(ref: EntityRef): T | null;
   readVersion<T extends Header>(ref: VersionRef): T | null;
@@ -38,6 +39,7 @@ export interface WorkbenchRepository {
   readHistoryRecords(query: HistoryIndexQuery): HistoryIndexPage;
   readPublishedAt<T extends Header>(ref: EntityRef, effectiveAt: UtcInstant): T | null;
   readEvaluationCandidates(query: EvaluationCandidateQuery): EvaluationCandidates;
+  readImportFactState(query: ImportFactQuery): Pick<EvaluationCandidates, 'facts' | 'corrections'>;
   findEvaluationByDigest(digest: Sha256): { basisRef: VersionRef; resultRef: VersionRef | null } | null;
   registerEntityType<T extends Header>(type: string, registration: EntityRegistration<T>): void;
   registerProjection(name: string, project: (entityType: string, value: Header) => void): void;
@@ -269,6 +271,26 @@ export function createWorkbenchRepository(options: { filename: string; artifactR
       const keys = [...new Set([...factMap.values()].map(f => f.factKey))];
       const correctionRows = keys.length ? db.prepare(`SELECT id FROM wb_correction_index INDEXED BY wb_correction_fact_key WHERE fact_key IN (${keys.map(() => '?').join(',')})`).all(...keys) as Array<{ id: string }> : [];
       return { facts: [...factMap.values()], captures: [...captures.values()], applicability: published<Applicability>(applicabilityRows, 'applicability'), corrections: published<ManualCorrection>(correctionRows, 'manual_correction') };
+    },
+    readImportFactState(query) {
+      assertOpen(); uuidSchema.parse(query.sourceId); query.metricIds.forEach(id => uuidSchema.parse(id)); query.scopes.forEach(scope => scopeRefSchema.parse(scope));
+      if (businessTimeSchema.parse(query.businessTime).kind === 'unknown' || query.factKeys.some(key => typeof key !== 'string' || !key)) throw new WorkbenchError('INVALID_IMPORT_QUERY');
+      const time = query.businessTime;
+      const timeSql = time.kind === 'as_of' ? "f.business_kind='as_of' AND f.business_start=?" : "f.business_kind='period' AND f.business_start=? AND f.business_end=?";
+      const rows = db.prepare(`SELECT v.payload_json FROM (
+        SELECT f.entity_type,f.id,f.revision FROM wb_fact_index f INDEXED BY wb_fact_key WHERE f.source_id=? AND f.fact_key IN (SELECT value FROM json_each(?))
+        UNION SELECT f.entity_type,f.id,f.revision FROM wb_fact_index f INDEXED BY wb_fact_scope_time WHERE f.source_id=?
+        AND f.metric_id IN (SELECT value FROM json_each(?)) AND (f.scope_kind,f.scope_id) IN
+        (SELECT json_extract(value,'$.kind'),json_extract(value,'$.id') FROM json_each(?)) AND ${timeSql}
+        ) selected JOIN wb_entity_heads h ON h.entity_type=selected.entity_type AND h.id=selected.id AND h.revision=selected.revision
+        JOIN wb_entity_versions v ON v.entity_type=selected.entity_type AND v.id=selected.id AND v.revision=selected.revision ORDER BY selected.id`).all(
+        query.sourceId, JSON.stringify(query.factKeys), query.sourceId, JSON.stringify(query.metricIds), JSON.stringify(query.scopes), ...(time.kind === 'as_of' ? [time.date] : [time.startInclusive, time.endExclusive]),
+      ) as PayloadRow[];
+      const facts = rows.map(row => JSON.parse(row.payload_json) as ObservedFact);
+      const keys = [...new Set([...query.factKeys, ...facts.map(f => f.factKey)])];
+      const ids = keys.length ? db.prepare('SELECT DISTINCT id FROM wb_correction_index INDEXED BY wb_correction_fact_key WHERE fact_key IN (SELECT value FROM json_each(?))').all(JSON.stringify(keys)) as Array<{ id: string }> : [];
+      const corrections = ids.flatMap(({ id }) => { const value = repository.readPublishedHead<ManualCorrection>({ entityType: 'manual_correction', id }); return value ? [value] : []; });
+      return { facts, corrections };
     },
     findEvaluationByDigest(digest) {
       assertOpen();

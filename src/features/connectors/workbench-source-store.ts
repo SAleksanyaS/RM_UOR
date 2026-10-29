@@ -25,7 +25,7 @@ export interface SourceStore {
   resolveCapture(input: { installationId: string; goalId: string }): ResolvedCaptureBinding;
   assertUnchanged(binding: ResolvedCaptureBinding, installationId: string): void;
   findOperation(installationId: string, operationId: string, goalId?: string): CaptureResult | null;
-  commitCapture(input: { installationId: string; binding: ResolvedCaptureBinding; request: CaptureRequest; raw: RawBatch; capture: Capture; facts: ObservedFact[]; issues: SourceIssue[] }): CaptureResult;
+  commitCapture(input: { installationId: string; binding: ResolvedCaptureBinding; request: CaptureRequest; raw: RawBatch; capture: Capture; facts: ObservedFact[]; retainedFactRefs?: VersionRef[]; issues: SourceIssue[] }): CaptureResult;
   readCapture(ref: VersionRef, installationId: string): SourceCaptureView | null;
   /** Read-only current owner+goal+saved-context+source evidence, including partial captures with no facts. */
   readLatestAttempt(input: { installationId: string; goalId: string }): SourceLatestAttempt | null;
@@ -128,12 +128,13 @@ export function createSourceStore({ repository }: { repository: WorkbenchReposit
     resolveCapture({ installationId, goalId }) { return resolve(installationId, goalId); },
     assertUnchanged(binding, installationId) { let current: ResolvedCaptureBinding; try { current = resolve(installationId, binding.goal.id); } catch { return fail('SOURCE_CONFIGURATION_CHANGED'); } if (current.configurationRevision !== binding.configurationRevision) return fail('SOURCE_CONFIGURATION_CHANGED'); },
     findOperation(installationId, operationId, goalId) { const row = sql.get<{ value_json: string }>('SELECT value_json FROM wb_sources_captures WHERE installation_id=? AND operation_id=?', [uuidSchema.parse(installationId), uuidSchema.parse(operationId)]); if (!row) return null; const evidence: CaptureEvidence = JSON.parse(row.value_json); if (goalId !== undefined && evidence.request.goalRef.id !== uuidSchema.parse(goalId)) return fail('IDEMPOTENCY_CONFLICT'); return captureResultSchema.parse(evidence.result); },
-    commitCapture({ installationId, binding, request, raw, capture, facts, issues }) {
+    commitCapture({ installationId, binding, request, raw, capture, facts, retainedFactRefs = [], issues }) {
       // Caller wraps this entire method in commitCommandEffect, including the durable receipt.
       store.assertUnchanged(binding, installationId);
       const existing = store.findOperation(installationId, request.operationId, binding.goal.id); if (existing) return { ...existing, duplicate: true };
       if (raw.artifact) store.assertArtifact(installationId, raw.artifact);
-      const captureRef = repository.append('capture', capture, null); const factRefs = facts.map(f => repository.append('observed_fact', f, null));
+      for (const ref of retainedFactRefs) { const fact = repository.readVersion<ObservedFact>(ref); if (ref.entityType !== 'observed_fact' || !fact || fact.sourceId !== binding.source.id) return fail('SOURCE_FACT_MISMATCH'); }
+      const captureRef = repository.append('capture', capture, null); const factRefs = [...retainedFactRefs, ...facts.map(f => repository.append('observed_fact', f, f.revision === 1 ? null : f.revision - 1))];
       const result = captureResultSchema.parse({ captureRef, acceptedRows: capture.acceptedRows, rejectedRows: capture.rejectedRows, duplicate: false });
       const evidence: CaptureEvidence = { request, raw: rawBatchSchema.parse(raw), issues: z.array(sourceIssueSchema).parse(issues), factRefs, result, contextKey: contextKey(binding.context) };
       sql.run('INSERT INTO wb_sources_captures VALUES(?,?,?,?)', [installationId, request.operationId, capture.id, stableJson(evidence)]);
