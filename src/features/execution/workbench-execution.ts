@@ -39,7 +39,7 @@ function assertAcyclic(dependencies: WorkDependency[]): void {
   for (let index = 0; index < queue.length; index++) { visited++; for (const id of outgoing.get(queue[index]) ?? []) { const count = indegree.get(id)! - 1; indegree.set(id, count); if (!count) queue.push(id); } }
   if (visited !== indegree.size) fail('DEPENDENCY_CYCLE');
 }
-function validateGraph(graph: ExecutionGraph): void {
+export function validateGraph(graph: ExecutionGraph): void {
   assertAcyclic(graph.dependencies); const works = new Map(graph.works.map(v => [v.id, v]));
   for (const dependency of graph.dependencies) {
     if (!works.has(dependency.predecessorWorkId) || !works.has(dependency.successorWorkId)) fail('REFERENCE_NOT_FOUND');
@@ -50,7 +50,7 @@ function validateGraph(graph: ExecutionGraph): void {
   }
   for (const decision of graph.decisions) if (!works.has(decision.workId)) fail('REFERENCE_NOT_FOUND');
 }
-function validateWorkChange(previous: Work | null, value: Work): void {
+export function validateWorkChange(previous: Work | null, value: Work): void {
   if (previous?.state === 'completed' && value.state !== 'completed') {
     if (value.state !== 'in_progress') fail('INVALID_WORK_TRANSITION');
     if (!value.reason?.trim()) fail('WORK_REASON_REQUIRED');

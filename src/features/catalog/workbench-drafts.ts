@@ -276,7 +276,30 @@ export function createDraftService({ repository, store, clock, prepareEvaluation
       return store.frozenVersions(packageId);
     },
     readPreparedForPackage(packageId: string, ref: VersionRef) { const found = store.readDerived(ref); if (!store.getPackage(packageId) || found?.packageId !== packageId) return fail('REFERENCE_NOT_FOUND', 404); return found.value; },
-    validateDraftPackage(packageId: string): DraftValidation {
+    readPackageBasisContexts(context: Pick<CommandContext,'repository'|'installationId'|'ownAccess'>, packageId: string) { if(context.repository!==repository) return fail('COMMAND_CONTEXT_MISMATCH',409); ownPackage(context,packageId); return store.readBasisContexts(packageId); },
+    readPackageProofReferences(context: Pick<CommandContext,'repository'|'installationId'|'ownAccess'>, packageId: string): VersionRef[] {
+      if(context.repository!==repository) return fail('COMMAND_CONTEXT_MISMATCH',409); const pkg=ownPackage(context,packageId); const refs:VersionRef[]=[];
+      for(const entry of pkg.entries) {
+        if(entry.entityRef.entityType==='attestation') {const proof=store.readProof<{resultRef:VersionRef}>(entry.draftId,'result-confirmation');if(proof) refs.push(proof.resultRef);}
+        if(entry.entityRef.entityType==='agreed_snapshot') {const proof=store.readProof<{basisRef:VersionRef;resultRef:VersionRef|null;manualStatusRef:VersionRef|null;attestationRef:VersionRef|null}>(entry.draftId,'snapshot');if(proof) refs.push(...[proof.basisRef,proof.resultRef,proof.manualStatusRef,proof.attestationRef].filter((ref):ref is VersionRef=>ref!==null));}
+        if(entry.entityRef.entityType==='manual_status_event') {
+          const versions=store.frozenVersions(packageId).filter(v=>v.entityRef.entityType===entry.entityRef.entityType && v.value.id===entry.entityRef.id);
+          for(const version of versions) refs.push({entityType:entry.entityRef.entityType,id:version.value.id,revision:version.value.revision});
+        }
+      }
+      return [...new Map(refs.map(ref=>[`${ref.entityType}/${ref.id}/${ref.revision}`,ref])).values()];
+    },
+    readOwnEvidenceArtifact(context: CommandContext, packageId: string, artifactId: string) { assertContext(context,false); ownPackage(context,packageId); return evidence.readArtifactForContext(context,artifactId); },
+    validateMaterializedForPackage(context: CommandContext, packageId: string, entityType: string, value: WorkbenchEntity, read: (ref: EntityRef | VersionRef) => Header | null, previous: Header | null) {
+      assertContext(context); const pkg=ownPackage(context,packageId); const original=pkg.entries.find(e=>e.entityRef.entityType===entityType && e.entityRef.id===value.id) as StoredDraft | undefined;
+      const checked=validatedEntity(entityType,value) as WorkbenchEntity;
+      validateReferences(entityReferences(entityType as WorkbenchEntityType,checked).filter(r=>r.ref.entityType!=='publication_anchor'),read);
+      const policy=ownerPolicies.get(entityType);
+      if(['work','work_dependency','decision','dashboard_def','custom_field_def','custom_field_value'].includes(entityType) && !policy) fail('DRAFT_OWNER_REQUIRED');
+      policy?.validateMaterialization?.({entityType,value:checked,resolve:read});
+      if(original) policy?.validatePackage?.({context,entry:{...original,definition:businessDefinition(checked),header:checked},value:checked,previous,resolve:read});
+    },
+    validateDraftPackage(packageId: string, options?: { allowRebase?: boolean }): DraftValidation {
       const pkg = store.getPackage(packageId); if (!pkg) return fail('DRAFT_NOT_FOUND', 404);
       const problems: FieldProblem[] = []; const candidates = new Map<string, WorkbenchEntity>();
       const context: CommandContext = { repository, clock, installationId: pkg.installationId, commandId: newUuid(), requestId: newUuid(), actor: { hostname: 'package-validation', installationId: pkg.installationId, profilePersonId: pkg.ownerPersonId }, ownAccess: { role: 'curator', personId: pkg.ownerPersonId, displayName: null, policyState: 'local_preview', checkedAt: null } };
@@ -301,7 +324,7 @@ export function createDraftService({ repository, store, clock, prepareEvaluation
           if (['work','work_dependency','decision','dashboard_def','custom_field_def','custom_field_value'].includes(entry.entityRef.entityType) && !ownerPolicies.has(entry.entityRef.entityType)) fail('DRAFT_OWNER_REQUIRED');
           validateReferences(entityReferences(entry.entityRef.entityType as WorkbenchEntityType, value), target);
           ownerPolicies.get(entry.entityRef.entityType)?.validateMaterialization?.({ entityType: entry.entityRef.entityType, value, resolve: target });
-          if (entry.baseRef) { const published = repository.readPublishedHead(entry.entityRef); if (!published || published.revision !== entry.baseRef.revision) fail('REVISION_CONFLICT', 409); }
+          if (entry.baseRef && !options?.allowRebase) { const published = repository.readPublishedHead(entry.entityRef); if (!published || published.revision !== entry.baseRef.revision) fail('REVISION_CONFLICT', 409); }
           if (entry.entityRef.entityType === 'goal_assignment') {
             const assignment = value as GoalAssignment; const goal = target({ entityType: 'core_goal_definition', id: assignment.goalId }) as CoreGoalDefinition;
             const binding = assignment.methodBinding; const methodRef = binding.kind === 'standalone' ? binding.methodRef : (target({ entityType: 'template', id: binding.templateId }) as Template).methodRef;

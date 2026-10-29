@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { Header } from '../../../domain/workbench/primitives';
-import { entityRefSchema, positiveIntSchema, sha256Schema, utcInstantSchema, uuidSchema, versionRefSchema } from '../../../domain/workbench/primitives';
+import { entityRefSchema, headerShape, positiveIntSchema, sha256Schema, utcInstantSchema, uuidSchema, versionRefSchema } from '../../../domain/workbench/primitives';
 import { problemSchema } from '../../../server/workbench/protocol';
 
 export const gitOidSchema = z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/);
@@ -14,6 +14,7 @@ export type PackageManifest = z.infer<typeof packageManifestSchema>;
 export const packageStateSchema = z.enum(['draft','validating','preview_ready','publishing','open_pr','needs_rework','merged','declined']);
 export type PackageState = z.infer<typeof packageStateSchema>;
 export type PublicationPackageRecord = Header & {cycleId:string;curatorPersonId:string;state:PackageState;current:PackageRevision|null;sent:PackageRevision|null;draftRefs:Array<z.infer<typeof versionRefSchema>>;proposal:null|{provider:'bitbucket';repositoryId:string;id:string;url:string}};
+export const publicationPackageRecordSchema = z.strictObject({...headerShape,cycleId:uuidSchema,curatorPersonId:uuidSchema,state:packageStateSchema,current:packageRevisionSchema.nullable(),sent:packageRevisionSchema.nullable(),draftRefs:z.array(versionRefSchema),proposal:z.strictObject({provider:z.literal('bitbucket'),repositoryId:z.string().min(1),id:z.string().min(1),url:z.string().url()}).nullable()});
 export const packagePreviewInputSchema = z.strictObject({packageId:uuidSchema});
 export type PackagePreviewInput = z.infer<typeof packagePreviewInputSchema>;
 export type PackageSubmitInput = {packageId:string;previewToken:string};

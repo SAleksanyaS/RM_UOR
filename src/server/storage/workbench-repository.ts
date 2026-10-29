@@ -47,7 +47,7 @@ export interface WorkbenchRepository {
   readPublishedDirectoryLinks(): DirectoryLink[];
   registerEntityType<T extends Header>(type: string, registration: EntityRegistration<T>): void;
   registerProjection(name: string, project: (entityType: string, value: Header) => void): void;
-  sqlForModule(moduleId: string): WorkbenchSql;
+  sqlForModule(moduleId: string, options?: { trackStateRevision?: boolean }): WorkbenchSql;
 }
 type PayloadRow = { payload_json: string };
 type Frame = { dirty: boolean; staged: Array<{ type: string; value: Header }> };
@@ -337,7 +337,7 @@ export function createWorkbenchRepository(options: { filename: string; artifactR
       if (project.constructor.name === 'AsyncFunction') throw new WorkbenchError('ASYNC_TRANSACTION_FORBIDDEN');
       projections.set(name, project);
     },
-    sqlForModule(moduleId) {
+    sqlForModule(moduleId, options) {
       assertOpen();
       if (!/^[a-z][a-z0-9_]*$/.test(moduleId) || ['entity', 'publication', 'fact', 'capture', 'applicability', 'correction', 'schema'].includes(moduleId)) throw new WorkbenchError('INVALID_MODULE_ID');
       const prefix = `wb_${moduleId}_`;
@@ -362,7 +362,7 @@ export function createWorkbenchRepository(options: { filename: string; artifactR
       return {
         get<T>(sql: string, params: SqlValue[] = []): T | null { assertOpen(); guard(sql); if (!/^\s*(SELECT|EXPLAIN)\b/i.test(sql)) throw new WorkbenchError('MODULE_SQL_READ_ONLY'); return db.prepare(sql).get(...params) as T | undefined ?? null; },
         all<T>(sql: string, params: SqlValue[] = []): T[] { assertOpen(); guard(sql); if (!/^\s*(SELECT|EXPLAIN)\b/i.test(sql)) throw new WorkbenchError('MODULE_SQL_READ_ONLY'); return db.prepare(sql).all(...params) as T[]; },
-        run(sql: string, params: SqlValue[] = []) { assertWritable(); guard(sql); return atomic(() => { const result = db.prepare(sql).run(...params); if (result.changes) currentFrame().dirty = true; return { changes: Number(result.changes) }; }); },
+        run(sql: string, params: SqlValue[] = []) { assertWritable(); guard(sql); return atomic(() => { const result = db.prepare(sql).run(...params); if (result.changes && options?.trackStateRevision !== false) currentFrame().dirty = true; return { changes: Number(result.changes) }; }); },
         execMigration(id: string, ddl: string) {
           assertWritable(); guard(ddl, true); if (!/^[a-zA-Z0-9_.-]+$/.test(id)) throw new WorkbenchError('INVALID_MIGRATION_ID');
           atomic(() => { const key = `${moduleId}:${id}`; if (db.prepare('SELECT id FROM wb_schema_migrations WHERE id=?').get(key)) return;

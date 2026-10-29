@@ -9,7 +9,7 @@ import type { EvaluationMaterializationStore } from '../evaluation/workbench/pre
 import { stableJson } from '../../server/workbench/command-store';
 
 export type StoredDraft = DraftEntry & { packageId: string; header: Header; localRevision: number };
-export type StoredPackage = DraftPackageView & { installationId: string };
+export type StoredPackage = Omit<DraftPackageView,'entries'> & { installationId: string; entries: StoredDraft[] };
 export function createDraftStore({ repository, artifactDirectory }: { repository: WorkbenchRepository; artifactDirectory: string }) {
   const sql = repository.sqlForModule('drafts');
   sql.execMigration('v1', `CREATE TABLE wb_drafts_packages(package_id TEXT PRIMARY KEY,installation_id TEXT NOT NULL,owner_person_id TEXT NOT NULL,revision INTEGER NOT NULL,base_commit TEXT);
@@ -49,6 +49,9 @@ export function createDraftStore({ repository, artifactDirectory }: { repository
     readDerived(ref: VersionRef): { packageId: string; value: Header } | null {
       const row = sql.get<{ package_id: string; payload_json: string }>('SELECT package_id,payload_json FROM wb_drafts_derived WHERE entity_type=? AND object_id=? AND revision=?', [ref.entityType, ref.id, ref.revision]);
       return row ? { packageId: row.package_id, value: JSON.parse(row.payload_json) } : null;
+    },
+    readBasisContexts(packageId: string) {
+      return sql.all<{payload_json:string}>('SELECT payload_json FROM wb_drafts_derived WHERE package_id=? AND entity_type=? ORDER BY object_id,revision',[packageId,'evaluation_basis']).map(row=>JSON.parse(row.payload_json) as import('../../domain/workbench/entities').EvaluationBasis);
     },
     evaluationStore(packageId: string): EvaluationMaterializationStore {
       return { transaction: repository.transaction,
