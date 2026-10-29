@@ -5,7 +5,7 @@ import type { WorkbenchRepository } from '../storage/workbench-repository';
 import { canUseCapability } from '../../features/identity/workbench-access-policy';
 import type { AccessPolicyService, Capability, OwnAccessProfile } from '../../features/identity/workbench-access-policy';
 import { commandRequestSchema, commandResultSchema, fieldProblems, WorkbenchHttpError } from './protocol';
-import type { CommandRequest, CommandResult, JobAccepted, Problem, RevisionToken } from './protocol';
+import type { CommandReconciliation, CommandRequest, CommandResult, JobAccepted, Problem, RevisionToken } from './protocol';
 import type { JobStore } from './jobs';
 import type { QueryContext } from './query-registry';
 import type { CommandOwnership } from './command-store';
@@ -13,10 +13,10 @@ import { commandDigest, createCommandStore, validateCommandOutcome, withCommandE
 
 export type CommandContext = { requestId: string; commandId: string; installationId: string; actor: ActorRef; repository: WorkbenchRepository; clock: Clock; ownAccess: OwnAccessProfile };
 export type CommandOutcome<R> = { result: R; changedRefs: EntityRef[]; editToken: RevisionToken | null };
-export type CommandDescriptor<P, R> = { name: string; inputSchema: z.ZodType<P>; outputSchema: z.ZodType<R>; capability: Capability; effect: 'local' | 'sharedDraft' | 'external'; execution: 'sync' | 'async'; handler: (context: CommandContext, payload: P) => Promise<CommandOutcome<R>>; resourceKey?: (payload: P) => string; queuedRecovery?: 'restart-safe-local'; ownership?: 'person' };
-type ErasedDescriptor = { capability: Capability; ownership?: 'person'; effect: CommandDescriptor<unknown, unknown>['effect']; execution: 'sync' | 'async'; input: z.ZodType; output: z.ZodType; run: (context: CommandContext, payload: unknown) => Promise<CommandOutcome<unknown>>; resourceKey: (payload: unknown) => string; queuedRecovery?: 'restart-safe-local' };
+export type CommandDescriptor<P, R> = { name: string; inputSchema: z.ZodType<P>; outputSchema: z.ZodType<R>; capability: Capability; effect: 'local' | 'sharedDraft' | 'external'; execution: 'sync' | 'async'; handler: (context: CommandContext, payload: P) => Promise<CommandOutcome<R>>; resourceKey?: (payload: P) => string; queuedRecovery?: 'restart-safe-local'; ownership?: 'person'; manualAuthRecovery?: true };
+type ErasedDescriptor = { capability: Capability; ownership?: 'person'; manualAuthRecovery?: true; effect: CommandDescriptor<unknown, unknown>['effect']; execution: 'sync' | 'async'; input: z.ZodType; output: z.ZodType; run: (context: CommandContext, payload: unknown) => Promise<CommandOutcome<unknown>>; resourceKey: (payload: unknown) => string; queuedRecovery?: 'restart-safe-local' };
 export type CommandRecoveryIdentity = { commandId: string; installationId: string; jobId: string; name: string };
-export interface CommandRegistry { register<P, R>(descriptor: CommandDescriptor<P, R>): void; execute(request: CommandRequest, context: CommandContext): Promise<CommandResult | JobAccepted>; recoverPending(installationId: string, resolveContext: (identity: CommandRecoveryIdentity) => Promise<CommandContext>): Promise<void>; getCapability(name: string): Capability | null; listNames(): string[]; idle(): Promise<void>; assertJobAccess?(jobId: string, context: QueryContext): void }
+export interface CommandRegistry { register<P, R>(descriptor: CommandDescriptor<P, R>): void; execute(request: CommandRequest, context: CommandContext): Promise<CommandResult | JobAccepted>; recoverPending(installationId: string, resolveContext: (identity: CommandRecoveryIdentity) => Promise<CommandContext>): Promise<void>; getCapability(name: string): Capability | null; listNames(): string[]; idle(): Promise<void>; assertJobAccess?(jobId: string, context: QueryContext): void; reconcileCommand?(commandId: string, context: QueryContext): CommandReconciliation }
 
 export function createCommandRegistry({ repository, jobs, accessPolicy, maxConcurrent = 2 }: { repository: WorkbenchRepository; jobs: JobStore; accessPolicy: AccessPolicyService; maxConcurrent?: number }): CommandRegistry {
   if (!Number.isSafeInteger(maxConcurrent) || maxConcurrent < 1) throw Error('Invalid concurrency');
@@ -78,8 +78,19 @@ export function createCommandRegistry({ repository, jobs, accessPolicy, maxConcu
   };
   let recoveryStarted = false;
   const registry: CommandRegistry = {
-    register(descriptor) { if (!/^[a-z][a-zA-Z0-9-]*(?:\.[a-zA-Z0-9_-]+)+$/.test(descriptor.name) || descriptors.has(descriptor.name) || ['job.cancel', 'job.retry', 'job.openAuth'].includes(descriptor.name)) throw new WorkbenchHttpError(409, 'COMMAND_ALREADY_REGISTERED', 'Duplicate or invalid command'); if (descriptor.queuedRecovery && (descriptor.effect !== 'local' || descriptor.execution !== 'async')) throw new WorkbenchHttpError(422, 'INVALID_RECOVERY_POLICY', 'Only asynchronous local commands can opt into queued recovery'); descriptors.set(descriptor.name, { ownership: descriptor.ownership, capability: descriptor.capability, effect: descriptor.effect, execution: descriptor.execution, input: descriptor.inputSchema, output: descriptor.outputSchema, run: (ctx, payload) => descriptor.handler(ctx, descriptor.inputSchema.parse(payload)), resourceKey: payload => descriptor.resourceKey ? descriptor.resourceKey(descriptor.inputSchema.parse(payload)) : descriptor.name, queuedRecovery: descriptor.queuedRecovery }); },
+    register(descriptor) { if (!/^[a-z][a-zA-Z0-9-]*(?:\.[a-zA-Z0-9_-]+)+$/.test(descriptor.name) || descriptors.has(descriptor.name) || ['job.cancel', 'job.retry', 'job.openAuth'].includes(descriptor.name)) throw new WorkbenchHttpError(409, 'COMMAND_ALREADY_REGISTERED', 'Duplicate or invalid command'); if (descriptor.manualAuthRecovery && (descriptor.effect !== 'local' || descriptor.execution !== 'async')) throw new WorkbenchHttpError(422, 'INVALID_RECOVERY_POLICY', 'Manual auth recovery requires an asynchronous local command'); if (descriptor.queuedRecovery && (descriptor.effect !== 'local' || descriptor.execution !== 'async')) throw new WorkbenchHttpError(422, 'INVALID_RECOVERY_POLICY', 'Only asynchronous local commands can opt into queued recovery'); descriptors.set(descriptor.name, { ownership: descriptor.ownership, manualAuthRecovery: descriptor.manualAuthRecovery, capability: descriptor.capability, effect: descriptor.effect, execution: descriptor.execution, input: descriptor.inputSchema, output: descriptor.outputSchema, run: (ctx, payload) => descriptor.handler(ctx, descriptor.inputSchema.parse(payload)), resourceKey: payload => descriptor.resourceKey ? descriptor.resourceKey(descriptor.inputSchema.parse(payload)) : descriptor.name, queuedRecovery: descriptor.queuedRecovery }); },
     assertJobAccess,
+    reconcileCommand(commandId, context) {
+      uuidSchema.parse(commandId);
+      const intent = store.assertAccess(context.installationId, commandId, context.ownAccess.personId);
+      if (!intent) return { commandId, name: null, status: 'not_found', job: null, result: null };
+      if (intent.owner_scope !== 'person') throw new WorkbenchHttpError(404, 'COMMAND_NOT_FOUND', 'Own command not found');
+      const name = commandRequestSchema.parse(JSON.parse(intent.request_json)).name;
+      if (intent.receipt_json) return { commandId, name, status: 'completed', job: null, result: (JSON.parse(intent.receipt_json) as CommandOutcome<unknown>).result };
+      if (intent.accepted_json) return { commandId, name, status: 'accepted', job: JSON.parse(intent.accepted_json) as JobAccepted, result: null };
+      const active = inflight.has(context.installationId + '/' + commandId + '/' + context.ownAccess.personId);
+      return { commandId, name, status: intent.phase === 'interrupted' || !active ? 'interrupted' : 'pending', job: null, result: null };
+    },
     getCapability(name) { return name.startsWith('job.') && ['job.cancel', 'job.retry', 'job.openAuth'].includes(name) ? 'personal.write' : descriptors.get(name)?.capability ?? null; },
     listNames() { return [...descriptors.keys(), 'job.cancel', 'job.retry', 'job.openAuth'].sort(); },
     idle() { return !queue.length && !running ? Promise.resolve() : new Promise<void>(resolve => { idleWaiters.push(resolve); }); },
@@ -155,6 +166,7 @@ export function createCommandRegistry({ repository, jobs, accessPolicy, maxConcu
         }
         const resource = desc.resourceKey(request.payload);
         const accepted = repository.transaction(() => { const result = jobs.create(request.commandId, ctx.installationId, request.name); store.accept(ctx.installationId, request.commandId, result, { effect: desc.effect, queuedRecovery: desc.queuedRecovery ?? null }); jobs.setResourceKey(result.jobId, resource); return result; });
+        if (desc.manualAuthRecovery) jobs.registerControl(accepted.jobId, { retry: () => runAccepted({ commandId: request.commandId, installationId: ctx.installationId, jobId: accepted.jobId, name: request.name }, () => invoke(request, ctx, desc)) });
         void schedule(resource, () => runAccepted({ commandId: request.commandId, installationId: ctx.installationId, jobId: accepted.jobId, name: request.name }, () => invoke(request, ctx, desc))).catch(() => undefined); return accepted;
       };
       const promise = action(); inflight.set(key, { digest, promise }); try { return await promise; } finally { inflight.delete(key); }

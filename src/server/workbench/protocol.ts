@@ -46,6 +46,9 @@ export const nextActionSchema = z.strictObject({ commandName: z.string().min(1).
 export type NextAction = z.infer<typeof nextActionSchema>;
 export const jobAcceptedSchema = z.strictObject({ jobId: uuidSchema, status: z.enum(['queued', 'running']), pollAfterMs: z.literal(1000) });
 export type JobAccepted = z.infer<typeof jobAcceptedSchema>;
+/** Own receipts can be reconciled without returning the original private payload. */
+export const commandReconciliationSchema = z.strictObject({ commandId: uuidSchema, name: z.string().nullable(), status: z.enum(['not_found', 'pending', 'accepted', 'completed', 'interrupted']), job: jobAcceptedSchema.nullable(), result: z.unknown().nullable() });
+export type CommandReconciliation = z.infer<typeof commandReconciliationSchema>;
 export const jobStatusSchema = z.enum(['queued', 'running', 'waiting_user', 'retry_wait', 'succeeded', 'partial', 'failed', 'cancelled', 'interrupted']);
 export type JobStatus = z.infer<typeof jobStatusSchema>;
 export const jobSnapshotSchema = z.strictObject({

@@ -1,0 +1,37 @@
+<!doctype html><meta charset="utf-8"><title>Synthetic OKO report owned by launcher test</title>
+<div data-authentication><input type="password"><button id="login">Login</button></div>
+<main style="margin-top:100px"><h1 id="ready" hidden>Report</h1><label for="period">Period</label><input id="period">
+<label for="scope">Scope</label><select id="scope"><option value="all">All</option><option value="dit">DIT</option></select>
+<button id="open-export" onclick="document.querySelector('#export-panel').hidden=false">Visualization menu</button>
+<section id="export-panel" hidden><button id="download-data">Download as Data</button><a id="export" href="/export" hidden>Download ready file</a></section></main>
+<script>
+// Test-only report controls let the harness drive the production-owned browser
+// without a launcher hook, remote-debugging flag or an application fixture import.
+function showReport() { document.querySelector('[data-authentication]')?.remove(); document.querySelector('#ready').hidden = false; }
+document.querySelector('#login').onclick = async () => { await fetch('/login'); showReport(); };
+document.querySelector('#download-data').onclick = async () => { await fetch('/prepare-export'); document.querySelector('#export').hidden = false; };
+document.querySelector('#export').onclick = event => { event.currentTarget.href = '/export?period=' + encodeURIComponent(document.querySelector('#period').value) + '&scope=' + encodeURIComponent(document.querySelector('#scope').value); };
+window.addEventListener('error', event => fetch('/telemetry', { method: 'POST', body: JSON.stringify({ error: event.message }) }));
+(async () => {
+  if (await (await fetch('/auth')).json()) showReport();
+  let last = 0, previousMode = '';
+  setInterval(async () => {
+    const mode = document.querySelector('[data-uor-marker-picker]') ? 'picker' : typeof window.__uorRecorderDrain === 'function' ? 'recorder' : 'login';
+    if (mode !== previousMode) { previousMode = mode; await fetch('/telemetry', { method: 'POST', body: JSON.stringify({ mode }) }); }
+    const command = await (await fetch('/control')).json();
+    if (!command || command.id <= last) return;
+    if (command.action === 'marker' && mode !== 'picker' || command.action === 'record' && mode !== 'recorder') return;
+    last = command.id;
+    if (command.action === 'login') { document.querySelector('#login').click(); await fetch('/ack/' + command.id); }
+    if (command.action === 'marker') { await fetch('/ack/' + command.id); document.querySelector('#ready').click(); }
+    if (command.action === 'record') {
+      const field = document.querySelector('#period'); field.value = 'October'; field.dispatchEvent(new Event('change', { bubbles: true }));
+      const scope = document.querySelector('#scope'); scope.value = 'dit'; scope.dispatchEvent(new Event('change', { bubbles: true }));
+      await window.__uorRecorderDrain(); document.querySelector('#open-export').click(); await window.__uorRecorderDrain();
+      const ready = new Promise(resolve => { const observer = new MutationObserver(() => { if (!document.querySelector('#export').hidden) { observer.disconnect(); resolve(); } }); observer.observe(document.querySelector('#export'), { attributes: true }); });
+      document.querySelector('#download-data').click(); await ready; await window.__uorRecorderDrain();
+      await fetch('/ack/' + command.id); document.querySelector('#export').click();
+    }
+  }, 75);
+})();
+</script>

@@ -52,16 +52,21 @@ export function previewOkoTable({ table, mapping, directory }: { table: ParsedSo
   for (const issue of enriched.issues) { const match = /^\/canonicalRows\/(\d+)/.exec(issue.path); if (match) failed.add(Number(match[1])); }
   const byId = new Map(directory.entities.map(entity => [entity.id, entity]));
   const dates = new Set<string>();
+  let allDated = true;
   const rows = enriched.rows.map((canonical, index) => {
-    const raw = normalized.rawRows[index]; const row: OkoPreviewRow = Object.fromEntries(table.columns.map(column => [column, raw.cells[column]?.original ?? null]));
+    const raw = normalized.rawRows[index]; const original: OkoPreviewRow = Object.fromEntries(table.columns.map(column => [column, raw.cells[column]?.original ?? null]));
+    const row: OkoPreviewRow = {};
+    // Source headers retain their exact names. Prefix derived collisions repeatedly,
+    // including source headers that already use the escape prefix.
+    const retain = () => { for (const [field, value] of Object.entries(row)) { let name = field; while (Object.hasOwn(original, name)) name = 'derived.' + name; original[name] = value; } return original; };
     row.rowKey = canonical.rowKey;
     for (const [field, value] of Object.entries(canonical.dimensions)) row['dimension.' + field] = value;
     for (const [field, value] of Object.entries(canonical.numbers)) { row['number.' + field] = value; if (value === null) { failed.add(index); if (!normalized.issues.some(issue => issue.code === 'INVALID_NUMBER' && issue.rowKeys.includes(canonical.rowKey))) issues.push(problem(`/rows/${index}/${field}`, 'MISSING_NUMBER', 'Числовое значение отсутствует.')); } }
     row.unitCode = canonical.unitCode; row.sourceDate = canonical.businessTime.kind === 'as_of' ? canonical.businessTime.date : null;
     if (row.sourceDate !== null) dates.add(row.sourceDate);
-    else if (mapping.dateField !== null) { failed.add(index); if (!normalized.issues.some(issue => issue.code === 'INVALID_BUSINESS_DATE' && issue.rowKeys.includes(canonical.rowKey))) issues.push(problem(`/rows/${index}/sourceDate`, 'MISSING_BUSINESS_DATE', 'Дата источника отсутствует.')); }
-    if (directory.issues.length) { failed.add(index); return row; }
-    if (canonical.scope === null) { failed.add(index); return row; }
+    else { allDated = false; if (mapping.dateField !== null) { failed.add(index); if (!normalized.issues.some(issue => issue.code === 'INVALID_BUSINESS_DATE' && issue.rowKeys.includes(canonical.rowKey))) issues.push(problem(`/rows/${index}/sourceDate`, 'MISSING_BUSINESS_DATE', 'Дата источника отсутствует.')); } }
+    if (directory.issues.length) { failed.add(index); return retain(); }
+    if (canonical.scope === null) { failed.add(index); return retain(); }
     const related = canonical.directoryEntityRefs.map(ref => byId.get(ref.id)!).filter(Boolean);
     for (const kind of ['dit', 'cluster', 'product'] as const) { const entity = related.find(value => value.kind === kind); if (entity) { row[`directory.${kind}Id`] = entity.id; row[`directory.${kind}Name`] = entity.name; } }
     for (const kind of ['cluster', 'product'] as const) { const scope = related.find(value => value.kind === kind); const link = directory.links.find(link => link.kind === 'leader' && link.scope.id === scope?.id); if (link?.kind === 'leader') { row[`directory.${kind}LeaderId`] = link.personId; row[`directory.${kind}LeaderName`] = byId.get(link.personId)?.name ?? null; } }
@@ -69,9 +74,9 @@ export function previewOkoTable({ table, mapping, directory }: { table: ParsedSo
     row['directory.teamIds'] = teams.length ? teams.map(team => team.id).join(' | ') : null;
     row['directory.teamNames'] = teams.length ? teams.map(team => team.name).join(' | ') : null;
     if (teams.length === 1) { row['directory.teamId'] = teams[0].id; row['directory.teamName'] = teams[0].name; }
-    return row;
+    return retain();
   });
-  return { rows, issues, unresolvedRows: failed.size, sourceDate: dates.size === 1 && rows.every(row => row.sourceDate !== null) ? [...dates][0] : null };
+  return { rows, issues, unresolvedRows: failed.size, sourceDate: dates.size === 1 && allDated ? [...dates][0] : null };
 }
 
 const safeCsvText = (value: string): string => /^[\t\r\n]/.test(value) || /^\s*[=+@]/.test(value) || /^\s*-/.test(value) && !/^-\d+(?:[.,]\d+)?$/.test(value) ? "'" + value : value;

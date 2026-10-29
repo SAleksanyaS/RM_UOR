@@ -8,7 +8,7 @@ import { assertFileName, defaultFileLimits, fileHandleViewSchema, type FileHandl
 import { withMultipartUpload } from './multipart-upload';
 import { uuidSchema, type UUIDv4 } from '../../domain/workbench/index';
 import type { LocalSessionStore } from './session';
-import { anyQueryRequestSchema, apiSuccessSchema, commandRequestSchema, commandResultSchema, fieldProblems, jobAcceptedSchema, jobSnapshotSchema, metaSchema, problemSchema, sessionViewSchema, WorkbenchHttpError, type ApiSuccess, type CommandRequest, type CommandResult, type JobAccepted, type JobSnapshot, type Meta, type Problem, type AnyQueryRequest, type SessionView } from './protocol';
+import { anyQueryRequestSchema, apiSuccessSchema, commandReconciliationSchema, commandRequestSchema, commandResultSchema, fieldProblems, jobAcceptedSchema, jobSnapshotSchema, metaSchema, problemSchema, sessionViewSchema, WorkbenchHttpError, type ApiSuccess, type CommandReconciliation, type CommandRequest, type CommandResult, type JobAccepted, type JobSnapshot, type Meta, type Problem, type AnyQueryRequest, type SessionView } from './protocol';
 
 export type LocalRequest = { requestId: UUIDv4; sessionId: UUIDv4 };
 export type BrowserResultArtifact = { bytes: Uint8Array; name: string; mimeType: string; sha256: string };
@@ -20,6 +20,7 @@ export interface WorkbenchHttpPort {
   query(name: string, input: AnyQueryRequest, request: LocalRequest): Promise<ApiSuccess<unknown>>;
   browserResult?(resultId: UUIDv4, kind: 'original' | 'enriched', request: LocalRequest): Promise<BrowserResultArtifact>;
   command(input: CommandRequest, request: LocalRequest): Promise<ApiSuccess<CommandResult | JobAccepted>>;
+  reconcileCommand?(id: UUIDv4, request: LocalRequest): Promise<ApiSuccess<CommandReconciliation>>;
   job(id: UUIDv4, request: LocalRequest): Promise<ApiSuccess<JobSnapshot>>;
 }
 declare module 'fastify' {
@@ -127,6 +128,12 @@ export async function registerWorkbenchRoutes(app: FastifyInstance, application:
       if (!parsed.success) throw new WorkbenchHttpError(404, 'JOB_NOT_FOUND', 'Job not found');
       const result = await application.job(parsed.data, r);
       return apiSuccessSchema(jobSnapshotSchema).parse({ ...result, requestId: r.requestId });
+    });
+    api.get<{ Params: { commandId: string } }>('/commands/:commandId', async request => {
+      const r = local(request), id = uuidSchema.safeParse(request.params.commandId);
+      if (!id.success || !application.reconcileCommand) throw new WorkbenchHttpError(404, 'COMMAND_NOT_FOUND', 'Own command not found');
+      const result = await application.reconcileCommand(id.data, r);
+      return apiSuccessSchema(commandReconciliationSchema).parse({ ...result, requestId: r.requestId });
     });
     api.get<{ Params: { resultId: string; kind: string } }>('/browser/results/:resultId/:kind', async (request, reply) => {
       const r = local(request); const id = uuidSchema.safeParse(request.params.resultId);

@@ -35,6 +35,24 @@ it('validates stages, terminal results, cancellation and checkpoint retention', 
   f.jobs.complete(a.jobId, { rows: 2 }, []); expect(f.jobs.get(a.jobId, fixtureId(1))).toMatchObject({ status: 'succeeded', result: { rows: 2 }, error: null });
   expect(() => f.jobs.update(a.jobId, { status: 'running' })).toThrow();
 });
+it('retains a registered continuation while replacing per-attempt cancel and auth controls', async () => {
+  const f = fixture(), installation = fixtureId(1), accepted = f.jobs.create(fixtureId(400), installation, 'source.browser.record.test');
+  let cancelled = '', authenticated = 0;
+  f.jobs.setScheduler(async (_resource, run) => { await run(); });
+  f.jobs.registerControl(accepted.jobId, { retry: async () => { f.jobs.complete(accepted.jobId, { resumed: true }, []); }, cancel: async () => { cancelled = 'old'; } });
+  f.jobs.registerControl(accepted.jobId, { cancel: async () => { cancelled = 'latest'; }, openAuth: async () => { authenticated++; } });
+  f.jobs.update(accepted.jobId, { status: 'running' }); f.jobs.update(accepted.jobId, { status: 'waiting_user' });
+  expect(f.jobs.get(accepted.jobId, installation)).toMatchObject({ retryAvailable: true, cancelAvailable: true });
+  await f.jobs.openAuth(accepted.jobId, installation); expect(authenticated).toBe(1);
+  f.jobs.registerControl(accepted.jobId, { openAuth: undefined });
+  await expect(f.jobs.openAuth(accepted.jobId, installation)).rejects.toMatchObject({ code: 'AUTH_NOT_AVAILABLE' });
+  await f.jobs.retry(accepted.jobId, installation); await Promise.resolve();
+  expect(f.jobs.get(accepted.jobId, installation)).toMatchObject({ status: 'succeeded', result: { resumed: true } }); expect(cancelled).toBe('');
+  const cancelledJob = f.jobs.create(fixtureId(401), installation, 'source.browser.record.test');
+  f.jobs.registerControl(cancelledJob.jobId, { cancel: async () => { cancelled = 'old'; } });
+  f.jobs.registerControl(cancelledJob.jobId, { cancel: async () => { cancelled = 'latest'; } });
+  await f.jobs.cancel(cancelledJob.jobId, installation); expect(cancelled).toBe('latest');
+});
 
 it('uses an indexed checkpoint lookup after reopening retained job history', () => {
   const f = fixture();

@@ -39,7 +39,8 @@ export async function selectBrowserReportMarker(input: { runtimeRoot: string; ow
       });
       await context.addInitScript(({ reportOrigin }) => {
         if (window.top !== window) return;
-        const install = () => {
+        // Object methods stay self-contained when tsx/esbuild preserves function names.
+        const picker = { install() {
           const hint = document.createElement('div'); hint.setAttribute('data-uor-marker-picker', '');
           hint.textContent = 'УОР: войдите вручную, затем нажмите устойчивый элемент отчёта (заголовок или панель). Поля входа не записываются. Маркер внутри фрейма не поддерживается.';
           Object.assign(hint.style, { pointerEvents: 'none', position: 'fixed', top: '0', left: '0', right: '0', zIndex: '2147483647', padding: '14px', background: '#123c36', color: '#fff', font: '16px sans-serif' }); document.body.append(hint);
@@ -54,8 +55,8 @@ export async function selectBrowserReportMarker(input: { runtimeRoot: string; ow
             event.preventDefault(); event.stopImmediatePropagation();
             void (window as unknown as { __uorPickMarker(value: {selector: string}): Promise<{ accepted: boolean; message?: string }> }).__uorPickMarker({ selector }).then(result => { if (!result?.accepted) hint.textContent = result?.message ?? 'Выберите другой элемент отчёта.'; }).catch(() => { hint.textContent = 'Выберите другой элемент: поля входа и чувствительные элементы не поддерживаются.'; });
           }, true);
-        };
-        if (document.body) install(); else document.addEventListener('DOMContentLoaded', install, { once: true });
+        } };
+        if (document.body) picker.install(); else document.addEventListener('DOMContentLoaded', () => picker.install(), { once: true });
       }, { reportOrigin: origin });
       const page: Page = context.pages()[0] ?? await context.newPage(); signal.throwIfAborted();
       signal.throwIfAborted(); await Promise.race([page.goto(input.startUrl), result]); return await result;

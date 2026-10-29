@@ -73,6 +73,11 @@ export function createWorkbenchApplication(deps: WorkbenchApplicationDeps): Work
       const actor = { hostname, installationId: deps.installationId, profilePersonId: ctx.ownAccess.personId };
       return envelope(await deps.commands.execute(request, { ...ctx, commandId: request.commandId, actor }), local);
     },
+    async reconcileCommand(id, request) {
+      const ctx = await context(request);
+      if (!deps.commands.reconcileCommand) throw new WorkbenchHttpError(404, 'COMMAND_NOT_FOUND', 'Own command not found');
+      return envelope(deps.commands.reconcileCommand(id, ctx), request);
+    },
     async job(id, request) { const ctx = await context(request); await deps.commands.assertJobAccess?.(id, ctx); const job = deps.jobs.get(id, deps.installationId); if (!job) throw new WorkbenchHttpError(404, 'JOB_NOT_FOUND', 'Job not found'); return envelope(job, request); },
   };
 }

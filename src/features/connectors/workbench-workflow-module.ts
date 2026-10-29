@@ -11,7 +11,7 @@ export function createOkoWorkflowModule({ service }: {
 }): PlatformModule {
     const command = <P, R>(name: string, inputSchema: z.ZodType<P>, outputSchema: z.ZodType<R>, handler: (context: Parameters<OkoWorkflowService['open']>[0], payload: P) => Promise<R>, capability: 'personal.write' | 'uor.prepare' = 'uor.prepare', execution: 'sync' | 'async' = 'sync'): CommandDescriptor<P, R> => ({ name, inputSchema, outputSchema, capability, execution, ownership: 'person', effect: 'local', resourceKey: payload => 'oko:' + String((payload as {
             workflowId?: string;
-        }).workflowId ?? 'new'), handler: async (context, payload) => ({ result: await handler(context, payload), changedRefs: [], editToken: null }) });
+        }).workflowId ?? 'new'), ...(execution === 'async' ? { manualAuthRecovery: true as const } : {}), handler: async (context, payload) => ({ result: await handler(context, payload), changedRefs: [], editToken: null }) });
     return { id: 'oko-workflow', version: '1.0.0', platformContractVersion: 1, dependsOn: [], owns: { entityTypes: [], namespaces: ['oko-workflow'] }, schemas: [], hooks: {}, queries: [{ name: 'source.browser.workspace', inputSchema: okoWorkspaceQuerySchema, outputSchema: okoWorkspaceViewSchema, handler: (context, input) => service.workspace(context, input.filter.workflowId) }], commands: [
             command('source.browser.workflow.open', z.strictObject({ workflowId: uuidSchema.optional(), title: z.string().trim().min(1).max(200).optional() }), okoWorkflowViewSchema, service.open),
             command('source.browser.profile.set', okoWorkflowCasSchema.extend({ profile: privateProfileSchema, reportUrl: z.string().url().max(4000) }), okoWorkflowViewSchema, service.setProfile, 'personal.write'),

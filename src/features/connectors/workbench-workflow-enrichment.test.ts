@@ -7,6 +7,21 @@ import { buildOkoPreviewDirectory, previewOkoTable, serializeOkoEnrichedCsv } fr
 const sourceId = randomUUID(), header: Header = { schemaVersion: 1, id: randomUUID(), revision: 1, recordedAt: '2026-10-28T10:00:00Z', actor: { hostname: 'test', installationId: randomUUID(), profilePersonId: randomUUID() }, publicationAnchorId: null };
 const row = () => ({ key: 'P1', productId: randomUUID(), productName: 'Продукт', clusterId: randomUUID(), clusterName: 'Кластер', ditId: randomUUID(), ditName: 'ДИТ', clusterLeaderId: randomUUID(), clusterLeaderName: 'Руководитель кластера', productLeaderId: randomUUID(), productLeaderName: 'Руководитель продукта', teamId: randomUUID(), teamName: 'Команда А' });
 const mapping: SourceFieldMapping = { ...header, sourceId, rowKeyFields: ['Key'], productKeyField: 'Key', fixedScope: null, dimensionFields: { label: 'Label' }, metricFields: [{ metricId: randomUUID(), fields: { value: 'Amount' } }], dateField: 'Date', periodStartField: null, periodEndField: null, unitField: null, fixedUnitCode: 'units', parsingProfile: { sheetName: null, csvDelimiter: ';', csvEncoding: 'utf8', dateFormat: 'dd.mm.yyyy', decimalSeparator: '.', groupSeparator: 'none' } };
+it('retains every raw and derived value when source headers collide with canonical, directory and escaped names', async () => {
+  const first = row(), directory = buildOkoPreviewDirectory({ rows: [first], sourceId, header, newId: randomUUID });
+  const collisions = ['rowKey', 'sourceDate', 'unitCode', 'number.value', 'dimension.label', 'directory.productId', 'directory.productName', 'derived.rowKey', 'derived.derived.rowKey'];
+  const columns = ['Key', 'Amount', 'Date', 'Label', ...collisions];
+  const originals = ['P1', '12345678901234567890.001', '28.10.2026', 'Original label', ...collisions.map((_, i) => 'original-' + i)];
+  const table = await parseWorkbenchTable({ bytes: Buffer.from([columns.join(';'), originals.join(';')].join('\r\n')), name: 'report.csv', parsingProfile: mapping.parsingProfile! });
+  const preview = previewOkoTable({ table, mapping, directory }), actual = preview.rows[0];
+  expect(preview.rows).toHaveLength(1); expect(preview.unresolvedRows).toBe(0); expect(preview.sourceDate).toBe('2026-10-28');
+  for (const [index, column] of columns.entries()) expect(actual[column], column).toBe(originals[index]);
+  expect(actual).toMatchObject({ 'derived.derived.derived.rowKey': expect.any(String), 'derived.sourceDate': '2026-10-28', 'derived.unitCode': 'units', 'derived.number.value': '12345678901234567890.001', 'derived.dimension.label': 'Original label', 'derived.directory.productId': first.productId, 'derived.directory.productName': first.productName });
+  expect(Object.keys(actual)).toHaveLength(columns.length + 19);
+  const csv = serializeOkoEnrichedCsv(preview.rows, Object.keys(actual)).toString('utf8');
+  for (const value of originals) expect(csv).toContain(value);
+  expect(csv).toContain(first.productId);
+});
 it('deduplicates a repeated product across multiple teams and enriches once through exact core refs', async () => {
   const first = row(), second = { ...first, teamId: randomUUID(), teamName: 'Команда Б' };
   const directory = buildOkoPreviewDirectory({ rows: [first, second], sourceId, header, newId: randomUUID });

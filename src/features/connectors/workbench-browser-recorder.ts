@@ -148,23 +148,25 @@ export async function startWorkbenchRecording(runtime: string, owner: string, pr
       }));
       await context.addInitScript(({ authenticatedSelector }) => {
         const pending = new Set<Promise<void>>();
-        const send = (event: unknown) => { const task = (window as unknown as { __uorRecord: (event: unknown) => Promise<void> }).__uorRecord(event).catch(() => {}); pending.add(task); void task.finally(() => pending.delete(task)); };
-        (window as unknown as { __uorRecorderDrain: () => Promise<void> }).__uorRecorderDrain = async () => { await Promise.all([...pending]); };
-        const authenticated = () => { try { const doc = window.top!.document, markers = doc.querySelectorAll(authenticatedSelector); return markers.length === 1 && markers[0].getClientRects().length > 0 && ![...doc.querySelectorAll('input[type="password"],input[autocomplete="one-time-code"],[data-authentication],[data-login]')].some(node => node.getClientRects().length > 0); } catch { return false; } };
-        const safe = (el: Element) => authenticated() && el.getClientRects().length > 0 && !/login|sign.?in|sso|oauth|saml|authorize/i.test(location.pathname) && !el.closest('[data-authentication],[data-login]') && !el.closest('form')?.querySelector('input[type="password"],input[autocomplete="one-time-code"],[data-authentication],[data-login]') && !/password|token|secret|otp|saml|authorization|credential|one.time/i.test([el.getAttribute('type'), el.id, el.getAttribute('name'), el.getAttribute('autocomplete'), el.getAttribute('aria-label')].join(' '));
-        const locator = (el: Element) => {
+        // Object methods avoid free esbuild name helpers in the serialized browser callback.
+        const recorder = { send(event: unknown) { const task = (window as unknown as { __uorRecord: (event: unknown) => Promise<void> }).__uorRecord(event).catch(() => {}); pending.add(task); void task.finally(() => pending.delete(task)); },
+
+        authenticated() { try { const doc = window.top!.document, markers = doc.querySelectorAll(authenticatedSelector); return markers.length === 1 && markers[0].getClientRects().length > 0 && ![...doc.querySelectorAll('input[type="password"],input[autocomplete="one-time-code"],[data-authentication],[data-login]')].some(node => node.getClientRects().length > 0); } catch { return false; } },
+        safe(el: Element) { return recorder.authenticated() && el.getClientRects().length > 0 && !/login|sign.?in|sso|oauth|saml|authorize/i.test(location.pathname) && !el.closest('[data-authentication],[data-login]') && !el.closest('form')?.querySelector('input[type="password"],input[autocomplete="one-time-code"],[data-authentication],[data-login]') && !/password|token|secret|otp|saml|authorization|credential|one.time/i.test([el.getAttribute('type'), el.id, el.getAttribute('name'), el.getAttribute('autocomplete'), el.getAttribute('aria-label')].join(' ')); },
+        locator(el: Element) {
           const name = el.getAttribute('aria-label'); const role = el.getAttribute('role') ?? (el.tagName === 'BUTTON' ? 'button' : el.tagName === 'A' ? 'link' : null);
           if (name && role) return { kind: 'role', role, name, exact: true };
           const labels = (el as HTMLInputElement).labels; if (labels?.length === 1 && labels[0].textContent?.trim()) return { kind: 'label', text: labels[0].textContent.trim(), exact: true };
           const selector = el.getAttribute('data-testid') ? `[data-testid="${CSS.escape(el.getAttribute('data-testid')!)}"]` : el.id ? `#${CSS.escape(el.id)}` : el.getAttribute('name') ? `${el.tagName.toLowerCase()}[name="${CSS.escape(el.getAttribute('name')!)}"]` : null;
           return selector ? { kind: 'css', selector } : null;
-        };
-        document.addEventListener('click', event => { const el = (event.target as Element)?.closest('button,a,[role="button"],input[type="checkbox"]'); if (!el || !safe(el)) return;
-          const target = locator(el); if (!target) { send({ action: 'unsupported' }); return; }
-          send((el as HTMLInputElement).type === 'checkbox' ? { action: 'check', locator: target, checked: (el as HTMLInputElement).checked } : { action: 'click', locator: target }); }, true);
-        document.addEventListener('change', event => { const el = event.target as HTMLInputElement; if (!safe(el) || !['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName) || ['password', 'file', 'checkbox', 'radio', 'hidden'].includes(el.type)) return;
-          const target = locator(el); if (!target) { send({ action: 'unsupported' }); return; }
-          send({ action: el.tagName === 'SELECT' ? 'select' : 'fill', locator: target, parameter: `field_${el.id || el.name}` }); }, true);
+        } };
+        (window as unknown as { __uorRecorderDrain: () => Promise<void> }).__uorRecorderDrain = async () => { await Promise.all([...pending]); };
+        document.addEventListener('click', event => { const el = (event.target as Element)?.closest('button,a,[role="button"],input[type="checkbox"]'); if (!el || !recorder.safe(el)) return;
+          const target = recorder.locator(el); if (!target) { recorder.send({ action: 'unsupported' }); return; }
+          recorder.send((el as HTMLInputElement).type === 'checkbox' ? { action: 'check', locator: target, checked: (el as HTMLInputElement).checked } : { action: 'click', locator: target }); }, true);
+        document.addEventListener('change', event => { const el = event.target as HTMLInputElement; if (!recorder.safe(el) || !['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName) || ['password', 'file', 'checkbox', 'radio', 'hidden'].includes(el.type)) return;
+          const target = recorder.locator(el); if (!target) { recorder.send({ action: 'unsupported' }); return; }
+          recorder.send({ action: el.tagName === 'SELECT' ? 'select' : 'fill', locator: target, parameter: `field_${el.id || el.name}` }); }, true);
       }, { authenticatedSelector: selector });
       const attach = (page: Page) => page.on('download', file => {
         const task = (async () => {
