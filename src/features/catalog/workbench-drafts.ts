@@ -29,6 +29,12 @@ export type DraftOpenInput = { entityType: string; ref: EntityRef | null; packag
 export type DraftOpenResult = { draftId: string; objectId: string; entityRef: EntityRef; editToken: RevisionToken };
 export type DraftSaveInput = { draftId: string; definition: PartialDraftInput<WorkbenchEntity> };
 export type DraftSaveResult = { draftId: string; entityRef: EntityRef; versionRef: VersionRef; complete: boolean; problems: FieldProblem[] };
+export type DraftOwnerSave = { context: CommandContext; entry: StoredDraft; definition: Record<string, unknown>; previous: Header | null };
+export type DraftOwnerPolicy = {
+  validateSave?(input: DraftOwnerSave): void;
+  afterSave?(input: DraftOwnerSave): void;
+  validatePackage?(input: { context: CommandContext; entry: StoredDraft; value: WorkbenchEntity; previous: Header | null; resolve: (ref: EntityRef | VersionRef) => Header | null }): void;
+};
 const headerKeys = new Set(['schemaVersion','id','revision','recordedAt','actor','publicationAnchorId']);
 export const draftEntityTypes = ['core_goal_definition','goal_assignment','method_version','metric_definition','template','source_definition','source_field_mapping','applicability','directory_entity','directory_link','manual_status_event','manual_correction','attestation','agreed_snapshot','commentary','evidence','work','work_dependency','decision','dashboard_def','custom_field_def','custom_field_value','business_calendar','reminder_settings'] as const;
 const definitionTypes = new Set<string>(['core_goal_definition','goal_assignment','method_version','metric_definition','template','source_definition','source_field_mapping','applicability','directory_entity','directory_link','work','work_dependency','decision','dashboard_def','custom_field_def','custom_field_value','business_calendar','reminder_settings']);
@@ -61,6 +67,8 @@ export function createDraftService({ repository, store, clock, prepareEvaluation
   directoryRefs?: () => DirectorySnapshotRefs | null;
   assignmentInventory?: () => { assignments: GoalAssignment[]; templates: Template[] } | null;
 }) {
+  const ownerPolicies = new Map<string, DraftOwnerPolicy>();
+  const previousFrozen = (entry: StoredDraft, excludeCurrent = false): Header | null => store.frozenVersions(entry.packageId).filter(v => v.entityRef.entityType === entry.entityRef.entityType && v.entityRef.id === entry.entityRef.id && (!excludeCurrent || v.value.revision < entry.header.revision)).at(-1)?.value ?? (entry.baseRef ? repository.readVersion(entry.baseRef) : null);
   const assertContext = (context: CommandContext, edit = true) => {
     if (context.repository !== repository || context.actor.installationId !== context.installationId || context.actor.profilePersonId !== context.ownAccess.personId) return fail('COMMAND_CONTEXT_MISMATCH', 409);
     if (edit && (!context.ownAccess.personId || !canUseCapability(context.ownAccess, 'uor.prepare'))) return fail('COMMAND_FORBIDDEN', 403);
@@ -131,9 +139,12 @@ export function createDraftService({ repository, store, clock, prepareEvaluation
       const partial = draftDefinitionSchema(entry.entityRef.entityType).safeParse(definition);
       if (!partial.success) throw new WorkbenchHttpError(422, 'VALIDATION_FAILED', 'Invalid form values', fieldProblems(partial.error));
       const body = partial.data as Record<string, unknown>; const state = assess(entry, body);
+      const policy = ownerPolicies.get(entry.entityRef.entityType); const previous = previousFrozen(entry);
+      policy?.validateSave?.({ context, entry, definition: body, previous });
       const editToken = store.save(draftId, body, state.complete, state.problems, context.actor, clock.now());
       before?.(store.getEntry(draftId)!);
       freezeReadyForms(context, entry.packageId);
+      policy?.afterSave?.({ context, entry: store.getEntry(draftId)!, definition: body, previous });
       return { result: { draftId, entityRef: entry.entityRef, versionRef: store.getEntry(draftId)!.versionRef, ...state }, changedRefs: [entry.entityRef], editToken };
     }).result;
   };
@@ -217,6 +228,14 @@ export function createDraftService({ repository, store, clock, prepareEvaluation
   };
 
   const service = {
+    registerOwnerPolicy(types: string[], policy: DraftOwnerPolicy) {
+      for (const type of types) if (!definitionTypes.has(type) || ownerPolicies.has(type)) fail('DRAFT_OWNER_ALREADY_REGISTERED', 409);
+      for (const type of types) ownerPolicies.set(type, policy);
+    },
+    readOwnEntry(context: CommandContext, draftId: string, types?: string[]) { return own(context, draftId, types); },
+    readOwnFormHistory(context: CommandContext, draftId: string) { own(context, draftId); return store.history(draftId); },
+    readOwnPackage(context: CommandContext, packageId: string) { assertContext(context, false); return ownPackage(context, packageId); },
+    resolveOwnReference(context: CommandContext, packageId: string, ref: EntityRef | VersionRef): Header { assertContext(context, false); return resolve(context, ref, ownPackage(context, packageId)); },
     async open(context: CommandContext, input: DraftOpenInput): Promise<DraftOpenResult> {
       assertContext(context); draftDefinitionSchema(input.entityType);
       return commitCommandEffect(context, () => {
@@ -274,6 +293,7 @@ export function createDraftService({ repository, store, clock, prepareEvaluation
       for (const entry of pkg.entries as StoredDraft[]) {
         const value = candidates.get(`${entry.entityRef.entityType}/${entry.entityRef.id}`); if (!value) continue;
         try {
+          if (['work','work_dependency','decision'].includes(entry.entityRef.entityType) && !ownerPolicies.has(entry.entityRef.entityType)) fail('DRAFT_OWNER_REQUIRED');
           validateReferences(entityReferences(entry.entityRef.entityType as WorkbenchEntityType, value), target);
           if (entry.baseRef) { const published = repository.readPublishedHead(entry.entityRef); if (!published || published.revision !== entry.baseRef.revision) fail('REVISION_CONFLICT', 409); }
           if (entry.entityRef.entityType === 'goal_assignment') {
@@ -298,6 +318,7 @@ export function createDraftService({ repository, store, clock, prepareEvaluation
               manualChain(context, pkg, entry.versionRef, event.assignmentId);
             }
           }
+          ownerPolicies.get(entry.entityRef.entityType)?.validatePackage?.({ context, entry, value, previous: previousFrozen(entry, true), resolve: target });
         }
         catch (error) { problems.push(issue((error as { code?: string }).code ?? 'DRAFT_REFERENCE_INVALID', `/entries/${entry.draftId}`, entry.entityRef)); }
       }
