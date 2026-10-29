@@ -9,7 +9,7 @@ import type { EntityRef, EvaluationContext, Header, ScopeRef, Sha256, UtcInstant
 import { businessTimeSchema, entityRefSchema, headerSchema, moscowDateSchema, scopeRefSchema, utcInstantSchema, uuidSchema, versionRefSchema } from '../../domain/workbench/primitives';
 import { moscowEnd } from '../../domain/workbench/time';
 import { WorkbenchError } from '../../domain/workbench/errors';
-import type { Applicability, Capture, Decision, Evidence, EvaluationInput, ManualCorrection, ManualStatusEvent, ObservedFact, Work, WorkDependency, WorkbenchEntity, WorkbenchEntityType } from '../../domain/workbench/entities';
+import type { Applicability, Capture, Decision, DirectoryLink, Evidence, EvaluationInput, ManualCorrection, ManualStatusEvent, ObservedFact, Work, WorkDependency, WorkbenchEntity, WorkbenchEntityType } from '../../domain/workbench/entities';
 import type { PublicationAnchor } from '../../domain/workbench/publication';
 import { entityReferences, entitySchemas, publicationAnchorSchema } from '../../domain/workbench/schemas';
 import type { ReferenceRequirement } from '../../domain/workbench/schemas';
@@ -44,6 +44,7 @@ export interface WorkbenchRepository {
   readLatestManualStatus(assignmentId: UUIDv4): ManualStatusEvent | null;
   readPublishedEvidenceForArtifact(artifactId: UUIDv4): Evidence | null;
   readPublishedExecutionGraph(): { works: Work[]; dependencies: WorkDependency[]; decisions: Decision[] };
+  readPublishedDirectoryLinks(): DirectoryLink[];
   registerEntityType<T extends Header>(type: string, registration: EntityRegistration<T>): void;
   registerProjection(name: string, project: (entityType: string, value: Header) => void): void;
   sqlForModule(moduleId: string): WorkbenchSql;
@@ -114,6 +115,14 @@ export function createWorkbenchRepository(options: { filename: string; artifactR
   const atomic = <T>(action: () => T): T => frames.length ? action() : repository.transaction(action);
 
   const repository: WorkbenchRepository = {
+    readPublishedDirectoryLinks() {
+      assertOpen();
+      const rows = db.prepare(`SELECT v.payload_json FROM wb_entity_versions v WHERE v.entity_type='directory_link' AND v.revision=(
+        SELECT MAX(v2.revision) FROM wb_entity_versions v2 WHERE v2.entity_type=v.entity_type AND v2.id=v.id
+        AND EXISTS(SELECT 1 FROM wb_publication_anchors a WHERE a.id=v2.publication_anchor_id AND a.publication_state='confirmed'
+          AND a.revision=(SELECT MAX(a2.revision) FROM wb_publication_anchors a2 WHERE a2.id=a.id))) ORDER BY v.id`).all() as PayloadRow[];
+      return rows.map(row => JSON.parse(row.payload_json));
+    },
     readPublishedExecutionGraph() {
       assertOpen();
       const rows = db.prepare(`SELECT v.entity_type,v.payload_json FROM wb_entity_heads h JOIN wb_entity_versions v ON v.entity_type=h.entity_type AND v.id=h.id AND v.revision=(

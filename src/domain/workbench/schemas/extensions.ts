@@ -9,8 +9,11 @@ export const customFieldValueSchema = z.strictObject({ ...headerShape, objectRef
 export function validateCustomFieldValue(value: CustomFieldValue, definition: CustomFieldDef): void {
   const v = customFieldValueSchema.parse(value); const field = customFieldDefSchema.parse(definition);
   if (v.fieldRef.id !== field.id || v.fieldRef.revision !== field.revision || !field.entityTypes.includes(v.objectRef.entityType)) throw new WorkbenchError('CUSTOM_FIELD_DEFINITION_MISMATCH');
-  if (v.value === null) return;
-  const candidate = v.value;
+  validateCustomFieldScalar(field, v.value);
+}
+export function validateCustomFieldScalar(definition: CustomFieldDef, candidate: CustomFieldValue['value']): void {
+  const field = customFieldDefSchema.parse(definition);
+  if (candidate === null) return;
   const valid = (() => {
     switch (field.valueType) {
       case 'text': case 'long_text': return typeof candidate === 'string';

@@ -32,7 +32,8 @@ export type DraftSaveResult = { draftId: string; entityRef: EntityRef; versionRe
 export type DraftOwnerSave = { context: CommandContext; entry: StoredDraft; definition: Record<string, unknown>; previous: Header | null };
 export type DraftOwnerPolicy = {
   initialDefinition?(entityType: string): Record<string, unknown>;
-  validateSave?(input: DraftOwnerSave): void;
+  validateSave?(input: DraftOwnerSave): void | FieldProblem[];
+  validateMaterialization?(input: { entityType: string; value: WorkbenchEntity; resolve: (ref: EntityRef | VersionRef) => Header | null }): void;
   afterSave?(input: DraftOwnerSave): void;
   validatePackage?(input: { context: CommandContext; entry: StoredDraft; value: WorkbenchEntity; previous: Header | null; resolve: (ref: EntityRef | VersionRef) => Header | null }): void;
 };
@@ -47,7 +48,7 @@ const validatedEntity = (type: string, value: unknown) => { const parsed = schem
 
 /** Structural partial forms retain strict present scalar values. Full object/array cross-field
  * invariants run at completion and package validation, never by inventing absent values. */
-function partialSchema(schema: z.ZodType, top = false): z.ZodType {
+export function partialSchema(schema: z.ZodType, top = false): z.ZodType {
   if (schema instanceof z.ZodObject) return z.strictObject(Object.fromEntries(Object.entries(schema.shape).filter(([key]) => !top || !headerKeys.has(key)).map(([key, value]) => [key, partialSchema(value as z.ZodType).optional()])));
   if (schema instanceof z.ZodNullable) return partialSchema(schema.unwrap() as z.ZodType).nullable();
   if (schema instanceof z.ZodOptional) return partialSchema(schema.unwrap() as z.ZodType).optional();
@@ -74,7 +75,7 @@ export function createDraftService({ repository, store, clock, prepareEvaluation
     if (context.repository !== repository || context.actor.installationId !== context.installationId || context.actor.profilePersonId !== context.ownAccess.personId) return fail('COMMAND_CONTEXT_MISMATCH', 409);
     if (edit && (!context.ownAccess.personId || !canUseCapability(context.ownAccess, 'uor.prepare'))) return fail('COMMAND_FORBIDDEN', 403);
   };
-  const ownPackage = (context: CommandContext, packageId: string): StoredPackage => {
+  const ownPackage = (context: Pick<CommandContext,'installationId'|'ownAccess'>, packageId: string): StoredPackage => {
     const pkg = store.getPackage(packageId); if (!pkg || pkg.installationId !== context.installationId || pkg.ownerPersonId !== context.ownAccess.personId) return fail('DRAFT_NOT_FOUND', 404); return pkg;
   };
   const own = (context: CommandContext, draftId: string, types?: string[]) => {
@@ -120,7 +121,9 @@ export function createDraftService({ repository, store, clock, prepareEvaluation
         const key = `${ref.entityType}/${value.id}/${value.revision}`;
         if (!closure.has(key)) {
           closure.set(key, { type: ref.entityType, value });
+          if (['dashboard_def','custom_field_def','custom_field_value'].includes(ref.entityType) && !ownerPolicies.has(ref.entityType)) fail('DRAFT_OWNER_REQUIRED');
           validateReferences(entityReferences(ref.entityType as WorkbenchEntityType, value), visit);
+          ownerPolicies.get(ref.entityType)?.validateMaterialization?.({ entityType: ref.entityType, value, resolve: visit });
           if (ref.entityType === 'goal_assignment') {
             const assignment = value as GoalAssignment; const goal = visit({ entityType: 'core_goal_definition', id: assignment.goalId }) as CoreGoalDefinition;
             const methodRef = assignment.methodBinding.kind === 'standalone' ? assignment.methodBinding.methodRef : (visit({ entityType: 'template', id: assignment.methodBinding.templateId }) as Template).methodRef;
@@ -141,7 +144,8 @@ export function createDraftService({ repository, store, clock, prepareEvaluation
       if (!partial.success) throw new WorkbenchHttpError(422, 'VALIDATION_FAILED', 'Invalid form values', fieldProblems(partial.error));
       const body = partial.data as Record<string, unknown>; const state = assess(entry, body);
       const policy = ownerPolicies.get(entry.entityRef.entityType); const previous = previousFrozen(entry);
-      policy?.validateSave?.({ context, entry, definition: body, previous });
+      const ownerProblems = policy?.validateSave?.({ context, entry, definition: body, previous });
+      if (ownerProblems?.length) { state.complete = false; state.problems.push(...ownerProblems); }
       const editToken = store.save(draftId, body, state.complete, state.problems, context.actor, clock.now());
       before?.(store.getEntry(draftId)!);
       freezeReadyForms(context, entry.packageId);
@@ -235,7 +239,7 @@ export function createDraftService({ repository, store, clock, prepareEvaluation
     },
     readOwnEntry(context: CommandContext, draftId: string, types?: string[]) { return own(context, draftId, types); },
     readOwnFormHistory(context: CommandContext, draftId: string) { own(context, draftId); return store.history(draftId); },
-    readOwnPackage(context: CommandContext, packageId: string) { assertContext(context, false); return ownPackage(context, packageId); },
+    readOwnPackage(context: Pick<CommandContext,'installationId'|'ownAccess'|'repository'>, packageId: string) { if (context.repository !== repository) return fail('COMMAND_CONTEXT_MISMATCH',409); return ownPackage(context, packageId); },
     resolveOwnReference(context: CommandContext, packageId: string, ref: EntityRef | VersionRef): Header { assertContext(context, false); return resolve(context, ref, ownPackage(context, packageId)); },
     async open(context: CommandContext, input: DraftOpenInput): Promise<DraftOpenResult> {
       assertContext(context); draftDefinitionSchema(input.entityType);
@@ -294,8 +298,9 @@ export function createDraftService({ repository, store, clock, prepareEvaluation
       for (const entry of pkg.entries as StoredDraft[]) {
         const value = candidates.get(`${entry.entityRef.entityType}/${entry.entityRef.id}`); if (!value) continue;
         try {
-          if (['work','work_dependency','decision'].includes(entry.entityRef.entityType) && !ownerPolicies.has(entry.entityRef.entityType)) fail('DRAFT_OWNER_REQUIRED');
+          if (['work','work_dependency','decision','dashboard_def','custom_field_def','custom_field_value'].includes(entry.entityRef.entityType) && !ownerPolicies.has(entry.entityRef.entityType)) fail('DRAFT_OWNER_REQUIRED');
           validateReferences(entityReferences(entry.entityRef.entityType as WorkbenchEntityType, value), target);
+          ownerPolicies.get(entry.entityRef.entityType)?.validateMaterialization?.({ entityType: entry.entityRef.entityType, value, resolve: target });
           if (entry.baseRef) { const published = repository.readPublishedHead(entry.entityRef); if (!published || published.revision !== entry.baseRef.revision) fail('REVISION_CONFLICT', 409); }
           if (entry.entityRef.entityType === 'goal_assignment') {
             const assignment = value as GoalAssignment; const goal = target({ entityType: 'core_goal_definition', id: assignment.goalId }) as CoreGoalDefinition;

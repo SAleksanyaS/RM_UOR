@@ -27,3 +27,4 @@ export type WorkbenchEntityMap = {
 };
 export type WorkbenchEntityType = keyof WorkbenchEntityMap;
 export type WorkbenchEntity = WorkbenchEntityMap[WorkbenchEntityType];
+export type { PersonalPreferences } from './entities/preferences';
