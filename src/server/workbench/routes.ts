@@ -4,6 +4,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import multipart from '@fastify/multipart';
 import { Transform } from 'node:stream';
+import type { ArtifactReadResult } from '../../features/evidence/workbench-evidence';
 import { assertFileName, defaultFileLimits, fileHandleViewSchema, type FileHandleView, type FileStore } from './files';
 import { withMultipartUpload } from './multipart-upload';
 import { uuidSchema, type UUIDv4 } from '../../domain/workbench/index';
@@ -13,6 +14,7 @@ import { anyQueryRequestSchema, apiSuccessSchema, commandReconciliationSchema, c
 export type LocalRequest = { requestId: UUIDv4; sessionId: UUIDv4 };
 export type BrowserResultArtifact = { bytes: Uint8Array; name: string; mimeType: string; sha256: string };
 export interface WorkbenchHttpPort {
+  artifact?(artifactId: UUIDv4, request: LocalRequest): Promise<ArtifactReadResult>;
   upload(input: Omit<Parameters<FileStore['stage']>[0], 'installationId'>, request: LocalRequest): Promise<ApiSuccess<FileHandleView>>;
   session(request: LocalRequest): Promise<SessionView>;
   refreshSession(request: LocalRequest): Promise<SessionView>;
@@ -134,6 +136,17 @@ export async function registerWorkbenchRoutes(app: FastifyInstance, application:
       if (!id.success || !application.reconcileCommand) throw new WorkbenchHttpError(404, 'COMMAND_NOT_FOUND', 'Own command not found');
       const result = await application.reconcileCommand(id.data, r);
       return apiSuccessSchema(commandReconciliationSchema).parse({ ...result, requestId: r.requestId });
+    });
+    api.get<{ Params: { artifactId: string } }>('/artifacts/:artifactId', async (request, reply) => {
+      const r = local(request); const id = uuidSchema.safeParse(request.params.artifactId);
+      if (!id.success || !application.artifact) throw new WorkbenchHttpError(404, 'ARTIFACT_NOT_FOUND', 'Evidence artifact not found');
+      input(z.strictObject({}), request.query);
+      const artifact = await application.artifact(id.data, r);
+      assertFileName(artifact.name);
+      if (!Number.isSafeInteger(artifact.bytes) || artifact.bytes < 1 || artifact.bytes > defaultFileLimits.evidenceBytes || !/^[a-f0-9]{64}$/.test(artifact.sha256) || !/^[a-zA-Z0-9.+-]+\/[a-zA-Z0-9.+-]+(?:; charset=[a-zA-Z0-9-]+)?$/.test(artifact.mimeType)) throw new WorkbenchHttpError(422, 'INTEGRITY_MISMATCH', 'Invalid artifact metadata');
+      return reply.header('content-type', artifact.mimeType).header('content-length', artifact.bytes)
+        .header('content-disposition', `attachment; filename="evidence"; filename*=UTF-8''${encodeURIComponent(artifact.name).replace(/['()*]/g, char => '%' + char.charCodeAt(0).toString(16))}`)
+        .header('x-content-sha256', artifact.sha256).header('cache-control', 'no-store').header('x-content-type-options', 'nosniff').send(artifact.stream);
     });
     api.get<{ Params: { resultId: string; kind: string } }>('/browser/results/:resultId/:kind', async (request, reply) => {
       const r = local(request); const id = uuidSchema.safeParse(request.params.resultId);

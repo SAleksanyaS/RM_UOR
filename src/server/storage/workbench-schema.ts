@@ -35,6 +35,8 @@ export function migrateWorkbench(db: DatabaseSync): void {
       CREATE INDEX IF NOT EXISTS wb_applicability_assignment ON wb_applicability_index(assignment_id,metric_id,start_date);
       CREATE INDEX IF NOT EXISTS wb_correction_fact_key ON wb_correction_index(fact_key);
       CREATE INDEX IF NOT EXISTS wb_versions_anchor ON wb_entity_versions(publication_anchor_id,entity_type,id,revision);
+      CREATE INDEX IF NOT EXISTS wb_manual_assignment_current ON wb_entity_versions(json_extract(payload_json,'$.assignmentId'),recorded_at) WHERE entity_type='manual_status_event';
+      CREATE INDEX IF NOT EXISTS wb_evidence_artifact ON wb_entity_versions(json_extract(payload_json,'$.file.artifactId')) WHERE entity_type='evidence';
     `);
     db.prepare('INSERT OR IGNORE INTO wb_schema_migrations(id,applied_at) VALUES(?,?)').run('workbench-core-v1', new Date().toISOString());
     db.prepare('INSERT OR IGNORE INTO wb_schema_migrations(id,applied_at) VALUES(?,?)').run('workbench-evaluation-digest-v1', new Date().toISOString());

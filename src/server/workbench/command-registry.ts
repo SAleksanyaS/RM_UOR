@@ -13,8 +13,8 @@ import { commandDigest, createCommandStore, validateCommandOutcome, withCommandE
 
 export type CommandContext = { requestId: string; commandId: string; installationId: string; actor: ActorRef; repository: WorkbenchRepository; clock: Clock; ownAccess: OwnAccessProfile };
 export type CommandOutcome<R> = { result: R; changedRefs: EntityRef[]; editToken: RevisionToken | null };
-export type CommandDescriptor<P, R> = { name: string; inputSchema: z.ZodType<P>; outputSchema: z.ZodType<R>; capability: Capability; effect: 'local' | 'sharedDraft' | 'external'; execution: 'sync' | 'async'; handler: (context: CommandContext, payload: P) => Promise<CommandOutcome<R>>; resourceKey?: (payload: P) => string; queuedRecovery?: 'restart-safe-local'; ownership?: 'person'; manualAuthRecovery?: true };
-type ErasedDescriptor = { capability: Capability; ownership?: 'person'; manualAuthRecovery?: true; effect: CommandDescriptor<unknown, unknown>['effect']; execution: 'sync' | 'async'; input: z.ZodType; output: z.ZodType; run: (context: CommandContext, payload: unknown) => Promise<CommandOutcome<unknown>>; resourceKey: (payload: unknown) => string; queuedRecovery?: 'restart-safe-local' };
+export type CommandDescriptor<P, R> = { name: string; inputSchema: z.ZodType<P>; outputSchema: z.ZodType<R>; capability: Capability; effect: 'local' | 'sharedDraft' | 'external'; execution: 'sync' | 'async'; handler: (context: CommandContext, payload: P) => Promise<CommandOutcome<R>>; resourceKey?: (payload: P) => string; queuedRecovery?: 'restart-safe-local'; ownership?: 'person' | 'person-if-present'; manualAuthRecovery?: true };
+type ErasedDescriptor = { capability: Capability; ownership?: CommandDescriptor<unknown, unknown>['ownership']; manualAuthRecovery?: true; effect: CommandDescriptor<unknown, unknown>['effect']; execution: 'sync' | 'async'; input: z.ZodType; output: z.ZodType; run: (context: CommandContext, payload: unknown) => Promise<CommandOutcome<unknown>>; resourceKey: (payload: unknown) => string; queuedRecovery?: 'restart-safe-local' };
 export type CommandRecoveryIdentity = { commandId: string; installationId: string; jobId: string; name: string };
 export interface CommandRegistry { register<P, R>(descriptor: CommandDescriptor<P, R>): void; execute(request: CommandRequest, context: CommandContext): Promise<CommandResult | JobAccepted>; recoverPending(installationId: string, resolveContext: (identity: CommandRecoveryIdentity) => Promise<CommandContext>): Promise<void>; getCapability(name: string): Capability | null; listNames(): string[]; idle(): Promise<void>; assertJobAccess?(jobId: string, context: QueryContext): void; reconcileCommand?(commandId: string, context: QueryContext): CommandReconciliation }
 
@@ -39,6 +39,7 @@ export function createCommandRegistry({ repository, jobs, accessPolicy, maxConcu
   const invoke = async (request: CommandRequest, context: CommandContext, descriptor: ErasedDescriptor) => {
     parseInput(descriptor.input, request.payload);
     const liveAccess = await authorize(request.name, descriptor);
+    if (descriptor.ownership === 'person-if-present' && liveAccess.personId !== context.ownAccess.personId) throw new WorkbenchHttpError(409, 'COMMAND_CONTEXT_MISMATCH', 'Command identity changed before execution');
     store.assertAccess(context.installationId, request.commandId, liveAccess.personId);
     if (descriptor.effect === 'external') await accessPolicy.assertFreshPublishAllowed(jobs.findByCommand(request.commandId, context.installationId)?.jobId ?? request.commandId);
     const liveContext = { ...context, ownAccess: liveAccess, actor: { ...context.actor, profilePersonId: liveAccess.personId } };
@@ -139,7 +140,8 @@ export function createCommandRegistry({ repository, jobs, accessPolicy, maxConcu
       const access = descriptor ? await authorize(request.name, descriptor) : await accessPolicy.assertCommandAllowed(request.name);
       const acceptedContext = { ...context, ownAccess: access, actor: { ...context.actor, profilePersonId: access.personId } };
       const originalIntent = control ? assertJobAccess(request.payload.jobId as string, acceptedContext) : null;
-      const ownership: CommandOwnership = { scope: (control ? originalIntent?.owner_scope : descriptor?.ownership) ?? 'installation', personId: access.personId };
+      const ownershipPolicy = control ? originalIntent?.owner_scope : descriptor?.ownership;
+      const ownership: CommandOwnership = { scope: ownershipPolicy === 'person-if-present' ? access.personId ? 'person' : 'installation' : ownershipPolicy ?? 'installation', personId: access.personId };
       if (ownership.scope === 'person' && !access.personId) throw new WorkbenchHttpError(403, 'PERSON_ID_REQUIRED', 'A person identity is required for this command');
       store.assertAccess(context.installationId, request.commandId, access.personId);
       const digest = commandDigest(request); const key = context.installationId + '/' + request.commandId + (ownership.scope === 'person' ? '/' + (access.personId ?? 'unassigned') : ''); const pending = inflight.get(key);

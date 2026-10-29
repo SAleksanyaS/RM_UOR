@@ -10,9 +10,11 @@ import { validateModules, type PlatformModule } from './modules';
 import type { QueryContext, QueryRegistry } from './query-registry';
 import type { BrowserResultArtifact, LocalRequest, WorkbenchHttpPort } from './routes';
 import type { LocalSessionStore } from './session';
+import type { EvidenceService } from '../../features/evidence/workbench-evidence';
 import { globalContextSchema, WorkbenchHttpError, type ApiSuccess, type GlobalContext, type Meta } from './protocol';
 
 export type WorkbenchApplicationDeps = {
+  evidence?: Pick<EvidenceService, 'readArtifactForContext'>;
   hostname: () => string; repository: WorkbenchRepository; clock: Clock; accessPolicy: AccessPolicyService;
   commands: CommandRegistry; queries: QueryRegistry; jobs: JobStore; modules: PlatformModule[];
   sessions: LocalSessionStore; allowedOrigins: string[]; installationId: UUIDv4; files: FileStore;
@@ -54,6 +56,7 @@ export function createWorkbenchApplication(deps: WorkbenchApplicationDeps): Work
     return { ...own, allowedCommands: deps.commands.listNames().filter(name => { const capability = deps.commands.getCapability(name); return capability !== null && canUseCapability(own, capability); }), csrfToken: local.csrfToken, defaultContext: defaultContext === null ? null : globalContextSchema.parse(defaultContext) };
   };
   return {
+    async artifact(artifactId, local) { const ctx = await context(local); if (!deps.evidence) throw new WorkbenchHttpError(404, 'ARTIFACT_NOT_FOUND', 'Evidence artifact not found'); return deps.evidence.readArtifactForContext(ctx, artifactId); },
     session, refreshSession: session, meta,
     async upload(input, request) {
       const ctx = await context(request);

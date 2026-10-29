@@ -16,3 +16,4 @@ config/*.local.json
 playwright/.auth/
 test-results/
 playwright-report/
+.superpowers/

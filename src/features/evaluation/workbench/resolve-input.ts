@@ -6,7 +6,8 @@ import type { PublicationAnchor } from '../../../domain/workbench/publication';
 import type { WorkbenchRepository } from '../../../server/storage/workbench-repository';
 import { selectEvaluationFacts } from './select-facts';
 
-export function resolveEvaluationInput(request: PrepareEvaluationRequest, repository: WorkbenchRepository, clock: Clock, actor: ActorRef): EvaluationInput {
+export type OwnEvaluationDefinitions = { read(ref: EntityRef | VersionRef): Header | null; accepts(value: Header, ref: EntityRef): boolean };
+export function resolveEvaluationInput(request: PrepareEvaluationRequest, repository: WorkbenchRepository, clock: Clock, actor: ActorRef, own?: OwnEvaluationDefinitions): EvaluationInput {
   const evaluatedAt = clock.now();
   evaluationContextSchema.parse({ evaluatedAt, businessTime: request.businessTime }); actorRefSchema.parse(actor); versionRefSchema.parse(request.assignmentRef);
   if (request.assignmentRef.entityType !== 'goal_assignment') throw new WorkbenchError('BROKEN_REFERENCE', { ref: request.assignmentRef });
@@ -14,11 +15,11 @@ export function resolveEvaluationInput(request: PrepareEvaluationRequest, reposi
   const published = <T extends Header>(value: T | null, ref: EntityRef): T => {
     if (!value) throw new WorkbenchError('BROKEN_REFERENCE', { ref });
     const anchor = value.publicationAnchorId === null ? null : repository.readPublicationAnchor({ entityType: 'publication_anchor', id: value.publicationAnchorId });
-    if (!anchor || anchor.publicationState !== 'confirmed') throw new WorkbenchError('REFERENCE_NOT_PUBLISHED', { ref });
+    if (!anchor || anchor.publicationState !== 'confirmed') { if (own?.accepts(value, ref)) return value; throw new WorkbenchError('REFERENCE_NOT_PUBLISHED', { ref }); }
     anchors.set(anchor.id, anchor); return value;
   };
-  const exact = <T extends Header>(ref: VersionRef): T => published(repository.readVersion<T>(ref), ref);
-  const head = <T extends Header>(ref: EntityRef): T => published(repository.readPublishedHead<T>(ref), ref);
+  const exact = <T extends Header>(ref: VersionRef): T => published((own?.read(ref) as T | null) ?? repository.readVersion<T>(ref), ref);
+  const head = <T extends Header>(ref: EntityRef): T => published((own?.read(ref) as T | null) ?? repository.readPublishedHead<T>(ref), ref);
   const assignment = exact<GoalAssignment>(request.assignmentRef);
   const goal = head<CoreGoalDefinition>({ entityType: 'core_goal_definition', id: assignment.goalId });
   const source = head<SourceDefinition>({ entityType: 'source_definition', id: goal.sourceId });

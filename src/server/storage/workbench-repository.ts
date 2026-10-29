@@ -9,7 +9,7 @@ import type { EntityRef, EvaluationContext, Header, ScopeRef, Sha256, UtcInstant
 import { businessTimeSchema, entityRefSchema, headerSchema, moscowDateSchema, scopeRefSchema, utcInstantSchema, uuidSchema, versionRefSchema } from '../../domain/workbench/primitives';
 import { moscowEnd } from '../../domain/workbench/time';
 import { WorkbenchError } from '../../domain/workbench/errors';
-import type { Applicability, Capture, EvaluationInput, ManualCorrection, ObservedFact, WorkbenchEntity, WorkbenchEntityType } from '../../domain/workbench/entities';
+import type { Applicability, Capture, Evidence, EvaluationInput, ManualCorrection, ManualStatusEvent, ObservedFact, WorkbenchEntity, WorkbenchEntityType } from '../../domain/workbench/entities';
 import type { PublicationAnchor } from '../../domain/workbench/publication';
 import { entityReferences, entitySchemas, publicationAnchorSchema } from '../../domain/workbench/schemas';
 import type { ReferenceRequirement } from '../../domain/workbench/schemas';
@@ -41,6 +41,8 @@ export interface WorkbenchRepository {
   readEvaluationCandidates(query: EvaluationCandidateQuery): EvaluationCandidates;
   readImportFactState(query: ImportFactQuery): Pick<EvaluationCandidates, 'facts' | 'corrections'>;
   findEvaluationByDigest(digest: Sha256): { basisRef: VersionRef; resultRef: VersionRef | null } | null;
+  readLatestManualStatus(assignmentId: UUIDv4): ManualStatusEvent | null;
+  readPublishedEvidenceForArtifact(artifactId: UUIDv4): Evidence | null;
   registerEntityType<T extends Header>(type: string, registration: EntityRegistration<T>): void;
   registerProjection(name: string, project: (entityType: string, value: Header) => void): void;
   sqlForModule(moduleId: string): WorkbenchSql;
@@ -111,6 +113,16 @@ export function createWorkbenchRepository(options: { filename: string; artifactR
   const atomic = <T>(action: () => T): T => frames.length ? action() : repository.transaction(action);
 
   const repository: WorkbenchRepository = {
+    readLatestManualStatus(assignmentId) {
+      assertOpen(); uuidSchema.parse(assignmentId);
+      return read<ManualStatusEvent>(db.prepare(`SELECT v.payload_json FROM wb_entity_versions v WHERE v.entity_type='manual_status_event' AND json_extract(v.payload_json,'$.assignmentId')=?
+        AND EXISTS(SELECT 1 FROM wb_publication_anchors a WHERE a.id=v.publication_anchor_id AND a.publication_state='confirmed' AND a.revision=(SELECT MAX(a2.revision) FROM wb_publication_anchors a2 WHERE a2.id=a.id)) ORDER BY julianday(v.recorded_at) DESC,v.rowid DESC LIMIT 1`).get(assignmentId) as PayloadRow | undefined);
+    },
+    readPublishedEvidenceForArtifact(artifactId) {
+      assertOpen(); uuidSchema.parse(artifactId);
+      return read<Evidence>(db.prepare(`SELECT v.payload_json FROM wb_entity_versions v WHERE v.entity_type='evidence' AND json_extract(v.payload_json,'$.file.artifactId')=?
+        AND EXISTS(SELECT 1 FROM wb_publication_anchors a WHERE a.id=v.publication_anchor_id AND a.publication_state='confirmed' AND a.revision=(SELECT MAX(a2.revision) FROM wb_publication_anchors a2 WHERE a2.id=a.id)) ORDER BY v.rowid DESC LIMIT 1`).get(artifactId) as PayloadRow | undefined);
+    },
     getHead<T extends Header>(ref: EntityRef): T | null {
       assertOpen(); entityRefSchema.parse(ref);
       return read<T>(db.prepare('SELECT v.payload_json FROM wb_entity_versions v JOIN wb_entity_heads h ON h.entity_type=v.entity_type AND h.id=v.id AND h.revision=v.revision WHERE h.entity_type=? AND h.id=?').get(ref.entityType, ref.id) as PayloadRow | undefined);
