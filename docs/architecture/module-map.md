@@ -146,3 +146,5 @@ flowchart TD
 | Новая страница/роли | Тест компонента feature, `app/App.roles.test.tsx`, `app/Sidebar.test.tsx`, `identity/role-policy.test.ts`, интеграционный вызов маршрута reader/curator |
 
 Пути feature tests в таблице относительно `src/features/`; пути `tests/` и `app/` — относительно корня и `src/` соответственно. Команды и критерии передачи — в [START_HERE](../agents/START_HERE.md). Сам документ не означает новый прогон всех тестов; доказательства конкретной ревизии записываются отдельно.
+
+T16 proposal continuation: `src/features/catalog/workbench-directory.ts` owns explicit goal→team-template draft reservations and pending cluster-team links. T17 owns their persistence, numeric-population completion and retry identity; T26 owns activation after confirmed main. The pure function neither publishes nor inherits neighboring assignment populations/deadlines.

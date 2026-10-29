@@ -1,7 +1,8 @@
-import type { Capture, DirectoryEntity, DirectoryLink, SourceFieldMapping } from '../../domain/workbench/entities';
+import { z } from 'zod';
+import type { Capture, DirectoryEntity, DirectoryLink, GoalAssignment, SourceFieldMapping } from '../../domain/workbench/entities';
 import type { EntityRef, ScopeRef, VersionRef } from '../../domain/workbench/primitives';
-import { uuidSchema } from '../../domain/workbench/primitives';
-import { captureSchema, directoryEntitySchema, directoryLinkSchema, sourceFieldMappingSchema } from '../../domain/workbench/schemas';
+import { newUuid, uuidSchema, versionRefSchema } from '../../domain/workbench/primitives';
+import { captureSchema, directoryEntitySchema, directoryLinkSchema, goalAssignmentSchema, sourceFieldMappingSchema, templateSchema } from '../../domain/workbench/schemas';
 import { WorkbenchError } from '../../domain/workbench/errors';
 import type { FieldProblem } from '../../server/workbench/protocol';
 import type { EnrichedRow, EnrichmentResult } from '../connectors/workbench-source-contracts';
@@ -13,6 +14,69 @@ const edgeKinds = { dit_cluster: ['dit', 'cluster'], cluster_product: ['cluster'
 const problem = (path: string, code: string, ref: EntityRef | null): FieldProblem => ({ path, code, message: code, ref });
 export type SourceRowsForEnrichment = Pick<Capture, 'sourceId' | 'mappingRef' | 'rawRows' | 'canonicalRows'>;
 const sourceRowsSchema = captureSchema.pick({ sourceId: true, mappingRef: true, rawRows: true, canonicalRows: true });
+
+export const teamAssignmentProposalInputSchema = z.strictObject({
+  team: directoryEntitySchema.refine(entity => entity.kind === 'team'),
+  clusterRef: z.strictObject({ entityType: z.literal('directory_entity'), id: uuidSchema }),
+  links: z.array(directoryLinkSchema), assignments: z.array(goalAssignmentSchema), templates: z.array(templateSchema),
+  teamTemplateBindings: z.array(z.strictObject({ goalId: uuidSchema, templateId: uuidSchema })),
+  confirmedLinkRefs: z.array(versionRefSchema.extend({ entityType: z.literal('directory_link') })).default([]),
+});
+export type TeamAssignmentProposalInput = Omit<z.input<typeof teamAssignmentProposalInputSchema>, 'clusterRef' | 'confirmedLinkRefs'> & { clusterRef: EntityRef; confirmedLinkRefs?: VersionRef[] };
+export type TeamClusterLinkProposal = { id: string; kind: 'cluster_team'; from: EntityRef; to: EntityRef };
+export type GoalAssignmentProposal = Pick<GoalAssignment, 'id' | 'goalId' | 'scope' | 'methodBinding'> & {
+  officialDueOn: null; expectedPopulation: null; publicationPending: true; pendingLinks: TeamClusterLinkProposal[];
+};
+
+/** Pure draft reservations from a caller-verified current inventory, never active entities.
+ * Explicit goal→team-template bindings are required: templates have no goal/level metadata.
+ * T17 must persist/reuse this graph on retries and complete numeric population before publication.
+ * Deadlines/populations are not inherited from a neighboring assignment (contract16 §4). */
+export function proposeTeamAssignments(unparsed: TeamAssignmentProposalInput): GoalAssignmentProposal[] {
+  const input = teamAssignmentProposalInputSchema.parse(unparsed);
+  if (input.team.id === input.clusterRef.id) throw new WorkbenchError('TEAM_CLUSTER_MOVE_UNSUPPORTED');
+  const teamLinks = input.links.filter((link): link is Extract<DirectoryLink, { from: EntityRef }> => link.kind === 'cluster_team' && link.to.id === input.team.id);
+  if (teamLinks.some(link => link.from.id !== input.clusterRef.id)) throw new WorkbenchError('TEAM_CLUSTER_MOVE_UNSUPPORTED');
+  if (teamLinks.length > 1) throw new WorkbenchError('TEAM_CLUSTER_LINK_AMBIGUOUS');
+  // Only exact refs obtained by the trusted caller from a verified current DirectoryStore
+  // count as confirmation. A non-null anchor may still be an unconfirmed local package.
+  const confirmedLinks = new Set<string>();
+  for (const ref of input.confirmedLinkRefs) {
+    const link = input.links.find(value => value.id === ref.id);
+    if (!link?.publicationAnchorId || link.revision !== ref.revision || confirmedLinks.has(ref.id)) throw new WorkbenchError('TEAM_LINK_CONFIRMATION_INVALID', { ref });
+    confirmedLinks.add(ref.id);
+  }
+
+  const templates = new Map(input.templates.map(template => [template.id, template]));
+  if (templates.size !== input.templates.length) throw new WorkbenchError('TEAM_TEMPLATE_AMBIGUOUS');
+  const bindings = new Map<string, string>();
+  for (const binding of input.teamTemplateBindings) {
+    if (bindings.has(binding.goalId)) throw new WorkbenchError('TEAM_TEMPLATE_AMBIGUOUS');
+    bindings.set(binding.goalId, binding.templateId);
+  }
+  const scopeGoals = new Set<string>(); const assignmentIds = new Set<string>();
+  for (const assignment of input.assignments) {
+    const key = JSON.stringify([assignment.goalId, assignment.scope]);
+    if (scopeGoals.has(key) || assignmentIds.has(assignment.id)) throw new WorkbenchError('TEAM_ASSIGNMENT_AMBIGUOUS');
+    scopeGoals.add(key); assignmentIds.add(assignment.id);
+  }
+  const existing = new Set(input.assignments.filter(a => a.scope.kind === 'team' && a.scope.id === input.team.id).map(a => a.goalId));
+  const missing = input.assignments.filter(a => a.scope.kind === 'cluster' && a.scope.id === input.clusterRef.id && !existing.has(a.goalId)).sort((a, b) => a.goalId.localeCompare(b.goalId));
+  for (const assignment of missing) {
+    const templateId = bindings.get(assignment.goalId);
+    if (!templateId) throw new WorkbenchError('TEAM_TEMPLATE_REQUIRED', { ref: { entityType: 'core_goal_definition', id: assignment.goalId } });
+    if (!templates.has(templateId)) throw new WorkbenchError('TEAM_TEMPLATE_MISSING', { ref: { entityType: 'template', id: templateId } });
+  }
+  if (!missing.length) return [];
+  const pendingLinks: TeamClusterLinkProposal[] = teamLinks[0] && confirmedLinks.has(teamLinks[0].id) ? [] : [{
+    id: teamLinks[0]?.id ?? newUuid(), kind: 'cluster_team', from: { ...input.clusterRef }, to: entityRef(input.team.id),
+  }];
+  return missing.map(assignment => ({
+    id: newUuid(), goalId: assignment.goalId, scope: { kind: 'team', id: input.team.id },
+    methodBinding: { kind: 'template', templateId: bindings.get(assignment.goalId)! },
+    officialDueOn: null, expectedPopulation: null, publicationPending: true, pendingLinks: structuredClone(pendingLinks),
+  }));
+}
 
 /** Complete proposed graph. previousLinks is required to detect a move whose old edge was removed.
  * Values are never published, assigned IDs or modified by this validator. */

@@ -2,18 +2,129 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, expect, it } from 'vitest';
-import type { DirectoryEntity, DirectoryLink, EvaluationBasis, SourceFieldMapping } from '../../domain/workbench/entities';
+import type { DirectoryEntity, DirectoryLink, EvaluationBasis, GoalAssignment, SourceFieldMapping, Template } from '../../domain/workbench/entities';
 import { fixtureId, makeEntityGraph, makeHeader, makeNumericFixture, makePublicationAnchor } from '../../../tests/fixtures/workbench/factories';
 import { seedGraph } from '../../../tests/fixtures/workbench/repository';
 import { createWorkbenchRepository } from '../../server/storage/workbench-repository';
 import { canonicalBasis, digestBasis } from '../evaluation/workbench/basis';
-import { enrichSourceRows, validateDirectoryChanges } from './workbench-directory';
+import { enrichSourceRows, proposeTeamAssignments, validateDirectoryChanges } from './workbench-directory';
 import { createDirectoryStore } from './workbench-directory-store';
 
 const ref = (entityType: string, value: { id: string; revision: number }) => ({ entityType, id: value.id, revision: value.revision });
 const entityRef = (seed: number) => ({ entityType: 'directory_entity', id: fixtureId(seed) });
 const cleanups: Array<() => void> = [];
 afterEach(() => { while (cleanups.length) cleanups.pop()!(); });
+
+function teamProposalFixture() {
+  const team: DirectoryEntity = { ...makeHeader(700), kind: 'team', name: 'New team', externalKeys: [] };
+  const assignments: GoalAssignment[] = [
+    { ...makeHeader(701), goalId: fixtureId(710), scope: { kind: 'cluster', id: fixtureId(103) }, methodBinding: { kind: 'standalone', methodRef: { entityType: 'method_version', id: fixtureId(720), revision: 1 } }, officialDueOn: '2026-12-31', expectedPopulation: [{ kind: 'product', id: fixtureId(101) }] },
+    { ...makeHeader(702), goalId: fixtureId(711), scope: { kind: 'cluster', id: fixtureId(103) }, methodBinding: { kind: 'template', templateId: fixtureId(721) }, officialDueOn: '2026-11-30', expectedPopulation: [{ kind: 'team', id: fixtureId(104) }] },
+  ];
+  const templates: Template[] = [730, 731].map(seed => ({ ...makeHeader(seed), name: `Team template ${seed}`, methodRef: { entityType: 'method_version', id: fixtureId(seed + 10), revision: 1 } }));
+  return { team, clusterRef: entityRef(103), links: [] as DirectoryLink[], assignments, templates, teamTemplateBindings: assignments.map((assignment, i) => ({ goalId: assignment.goalId, templateId: templates[i].id })) };
+}
+
+it('new_team_does_not_expand_other_population_and_uses_each_explicit_team_template', () => {
+  const f = teamProposalFixture(); const before = structuredClone(f);
+  const proposed = proposeTeamAssignments(f);
+  expect(proposed).toHaveLength(2); expect(f).toEqual(before);
+  expect(proposed.map(p => p.goalId).sort()).toEqual(f.assignments.map(a => a.goalId).sort());
+  for (const proposal of proposed) {
+    expect(proposal).toMatchObject({ scope: { kind: 'team', id: f.team.id }, methodBinding: { kind: 'template', templateId: f.teamTemplateBindings.find(b => b.goalId === proposal.goalId)!.templateId }, officialDueOn: null, expectedPopulation: null, publicationPending: true });
+    for (const key of ['revision', 'recordedAt', 'actor', 'publicationAnchorId', 'effectiveAt']) expect(proposal).not.toHaveProperty(key);
+    expect(proposal.pendingLinks).toEqual([expect.objectContaining({ kind: 'cluster_team', from: f.clusterRef, to: { entityType: 'directory_entity', id: f.team.id } })]);
+    expect(proposal.pendingLinks[0]).not.toHaveProperty('revision');
+  }
+  expect(proposed[0].pendingLinks[0].id).toBe(proposed[1].pendingLinks[0].id);
+  expect(new Set([...proposed.map(p => p.id), proposed[0].pendingLinks[0].id]).size).toBe(3);
+  proposed[0].pendingLinks[0].from.id = fixtureId(799);
+  expect(proposed[1].pendingLinks[0].from).toEqual(f.clusterRef); expect(f).toEqual(before);
+});
+
+it('proposes_only_missing_team_goals_of_the_selected_cluster_without_replacing_an_existing_method', () => {
+  const f = teamProposalFixture(); const existing = { ...f.assignments[0], id: fixtureId(750), scope: { kind: 'team' as const, id: f.team.id } };
+  f.assignments.push(existing, { ...f.assignments[1], id: fixtureId(751), goalId: fixtureId(752), scope: { kind: 'cluster', id: fixtureId(753) } });
+  f.teamTemplateBindings = f.teamTemplateBindings.slice(1);
+  const proposed = proposeTeamAssignments(f);
+  expect(proposed.map(p => p.goalId)).toEqual([fixtureId(711)]); expect(f.assignments[2]).toEqual(existing);
+  expect(proposeTeamAssignments({ ...f, assignments: [] })).toEqual([]);
+});
+
+it('never_guesses_a_team_template_from_name_order_or_cluster_method', () => {
+  const f = teamProposalFixture();
+  expect(() => proposeTeamAssignments({ ...f, teamTemplateBindings: [] })).toThrowError(expect.objectContaining({ code: 'TEAM_TEMPLATE_REQUIRED' }));
+  expect(() => proposeTeamAssignments({ ...f, templates: [] })).toThrowError(expect.objectContaining({ code: 'TEAM_TEMPLATE_MISSING' }));
+  expect(() => proposeTeamAssignments({ ...f, teamTemplateBindings: [...f.teamTemplateBindings, f.teamTemplateBindings[0]] })).toThrowError(expect.objectContaining({ code: 'TEAM_TEMPLATE_AMBIGUOUS' }));
+  expect(() => proposeTeamAssignments({ ...f, templates: [...f.templates, f.templates[0]] })).toThrowError(expect.objectContaining({ code: 'TEAM_TEMPLATE_AMBIGUOUS' }));
+  expect(() => proposeTeamAssignments({ ...f, assignments: [...f.assignments, { ...f.assignments[0], id: fixtureId(754) }] })).toThrowError(expect.objectContaining({ code: 'TEAM_ASSIGNMENT_AMBIGUOUS' }));
+});
+
+it('never_moves_a_team_to_another_cluster_or_creates_product_service_relationships', () => {
+  const f = teamProposalFixture(); const link: DirectoryLink = { ...makeHeader(760), kind: 'cluster_team', from: f.clusterRef, to: { entityType: 'directory_entity', id: f.team.id } };
+  expect(() => proposeTeamAssignments({ ...f, links: [{ ...link, from: entityRef(761) }] })).toThrowError(expect.objectContaining({ code: 'TEAM_CLUSTER_MOVE_UNSUPPORTED' }));
+  expect(() => proposeTeamAssignments({ ...f, links: [link, { ...link, id: fixtureId(762) }] })).toThrowError(expect.objectContaining({ code: 'TEAM_CLUSTER_LINK_AMBIGUOUS' }));
+  expect(proposeTeamAssignments({ ...f, links: [{ ...link, publicationAnchorId: fixtureId(2) }], confirmedLinkRefs: [{ entityType: 'directory_link', id: link.id, revision: link.revision }] }).every(p => p.pendingLinks.length === 0)).toBe(true);
+  expect(proposeTeamAssignments({ ...f, links: [{ ...link, publicationAnchorId: null }] })[0].pendingLinks).toEqual([{ id: link.id, kind: link.kind, from: link.from, to: link.to }]);
+  expect(() => proposeTeamAssignments({ ...f, team: { ...f.team, kind: 'product' } })).toThrow();
+  expect(() => proposeTeamAssignments({ ...f, clusterRef: { ...f.clusterRef, entityType: 'template' } })).toThrow();
+  expect(() => proposeTeamAssignments({ ...f, effectiveAt: '2026-01-01' } as unknown as Parameters<typeof proposeTeamAssignments>[0])).toThrow();
+});
+
+it('a_reserved_package_anchor_does_not_remove_the_pending_cluster_link', () => {
+  const f = teamProposalFixture();
+  const link: DirectoryLink = { ...makeHeader(763), kind: 'cluster_team', from: f.clusterRef, to: { entityType: 'directory_entity', id: f.team.id }, publicationAnchorId: fixtureId(764) };
+  expect(proposeTeamAssignments({ ...f, links: [link] })[0].pendingLinks).toEqual([{ id: link.id, kind: link.kind, from: link.from, to: link.to }]);
+});
+
+it('only_caller_verified_exact_link_revisions_can_remove_pending_dependencies', () => {
+  const f = teamProposalFixture();
+  const link: DirectoryLink = { ...makeHeader(763), kind: 'cluster_team', from: f.clusterRef, to: { entityType: 'directory_entity', id: f.team.id }, publicationAnchorId: fixtureId(2) };
+  const confirmed = { entityType: 'directory_link', id: link.id, revision: link.revision };
+  for (const confirmedLinkRefs of [[{ ...confirmed, revision: 2 }], [{ ...confirmed, id: fixtureId(765) }], [confirmed, confirmed]]) {
+    expect(() => proposeTeamAssignments({ ...f, links: [link], confirmedLinkRefs })).toThrowError(expect.objectContaining({ code: 'TEAM_LINK_CONFIRMATION_INVALID' }));
+  }
+  expect(() => proposeTeamAssignments({ ...f, links: [{ ...link, publicationAnchorId: null }], confirmedLinkRefs: [confirmed] })).toThrowError(expect.objectContaining({ code: 'TEAM_LINK_CONFIRMATION_INVALID' }));
+  expect(proposeTeamAssignments({ ...f, links: [link], confirmedLinkRefs: [confirmed] }).every(p => p.pendingLinks.length === 0)).toBe(true);
+});
+
+it('pending_team_proposals_are_not_current_until_confirmed_publication_and_keep_old_basis', () => {
+  const f = repositoryFixture(); const input = teamProposalFixture();
+  input.assignments = [{ ...f.input.assignment, scope: { kind: 'cluster', id: fixtureId(103) } }];
+  input.templates = [{ ...input.templates[0], methodRef: { entityType: 'method_version', id: f.input.method.id, revision: f.input.method.revision } }];
+  input.teamTemplateBindings = [{ goalId: f.input.goal.id, templateId: input.templates[0].id }];
+  const proposals = proposeTeamAssignments(input);
+  const oldBasis = canonicalBasis(f.input); const oldDigest = digestBasis(oldBasis);
+  const savedBasis: EvaluationBasis = { ...makeHeader(774), ...oldBasis, evaluatedAt: f.input.context.evaluatedAt, digest: oldDigest };
+  const savedBasisRef = f.repository.append('evaluation_basis', savedBasis, null);
+  const originalAssignment = f.repository.readVersion<GoalAssignment>({ entityType: 'goal_assignment', id: f.input.assignment.id, revision: f.input.assignment.revision });
+  const assignmentRef = { entityType: 'goal_assignment', id: proposals[0].id };
+  const pendingLink = proposals[0].pendingLinks[0]; const linkRef = { entityType: 'directory_link', id: pendingLink.id };
+  expect(f.repository.readPublishedHead(assignmentRef)).toBeNull(); expect(f.repository.readPublishedHead(linkRef)).toBeNull();
+  const { pendingLinks: _links, publicationPending: _pending, ...definition } = proposals[0];
+  const completedDefinition = { ...definition, expectedPopulation: [{ kind: 'team' as const, id: input.team.id }] };
+  f.repository.transaction(() => {
+    f.repository.append('template', input.templates[0], null);
+    f.repository.append('directory_entity', input.team, null);
+    f.repository.append('directory_link', { ...makeHeader(771), ...pendingLink, publicationAnchorId: null }, null);
+  });
+  expect(() => f.repository.append('goal_assignment', { ...makeHeader(770), ...definition, publicationAnchorId: null }, null)).toThrowError(expect.objectContaining({ code: 'ASSIGNMENT_POPULATION_MISMATCH' }));
+  f.repository.append('goal_assignment', { ...makeHeader(770), ...completedDefinition, publicationAnchorId: null }, null);
+  expect(f.repository.readPublishedHead(assignmentRef)).toBeNull();
+  const anchor = makePublicationAnchor({ id: fixtureId(772), packageId: fixtureId(773), timeVerification: 'unknown', mergedAt: null });
+  f.repository.transaction(() => {
+    f.repository.appendPublicationAnchor(anchor, null);
+    f.repository.append('template', { ...input.templates[0], revision: 2, publicationAnchorId: anchor.id }, 1);
+    f.repository.append('goal_assignment', { ...makeHeader(770), ...definition, revision: 2, publicationAnchorId: anchor.id, expectedPopulation: [{ kind: 'team', id: input.team.id }] }, 1);
+    f.repository.append('directory_entity', { ...input.team, revision: 2, publicationAnchorId: anchor.id }, 1);
+    f.repository.append('directory_link', { ...makeHeader(771), ...pendingLink, revision: 2, publicationAnchorId: anchor.id }, 1);
+  });
+  expect(f.repository.readPublishedHead(assignmentRef)).toMatchObject({ id: proposals[0].id, revision: 2 });
+  const current = createDirectoryStore({ repository: f.repository }).read({ refs: { entityRefs: [{ entityType: 'directory_entity', id: input.team.id, revision: 2 }], linkRefs: [{ ...linkRef, revision: 2 }] }, mode: { kind: 'current' } });
+  expect(current.directoryLinks).toHaveLength(1);
+  expect(f.repository.readVersion(savedBasisRef)).toEqual(savedBasis);
+  expect(f.repository.readVersion({ entityType: 'goal_assignment', id: f.input.assignment.id, revision: f.input.assignment.revision })).toEqual(originalAssignment);
+});
 function fixture() {
   const input = makeNumericFixture({ values: ['92'], scope: { kind: 'dit', id: fixtureId(100) }, expectedPopulation: [{ kind: 'product', id: fixtureId(101) }, { kind: 'product', id: fixtureId(102) }] });
   const graph = makeEntityGraph(input);
