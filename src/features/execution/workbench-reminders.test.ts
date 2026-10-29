@@ -32,4 +32,7 @@ describe('Moscow reminders', () => {
     expect(() => planReminder({ ...input, settings: { ...settings, calendarId: '22222222-2222-4222-8222-222222222222' } })).toThrow();
     expect(() => planReminder({ ...input, cause: { ...cause, route: 'javascript:alert(1)' } })).toThrow();
   });
+  it('one_off_causes_have_no_planned_daily_reminder', () => {
+    expect(planReminder({ calendar, settings, cause: { ...cause, recurring: false }, now: '2026-11-02T06:00:00Z', lastSentAt: '2026-10-23T06:00:00Z' })).toBeNull();
+  });
 });

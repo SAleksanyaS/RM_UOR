@@ -7,6 +7,7 @@ import { registerWorkbenchRoutes } from './routes';
 export async function createWorkbenchApp(deps: WorkbenchApplicationDeps, options: { configure?: (app: FastifyInstance) => Promise<void> } = {}): Promise<FastifyInstance> {
   const application = createWorkbenchApplication(deps);
   const app = Fastify({ logger: false, trustProxy: false });
+  app.addHook('onClose', async () => { await deps.notifications?.stop(); });
   try {
     await app.register(cookie);
     app.decorate('workbenchTransport', { sessions: deps.sessions, allowedOrigins: deps.allowedOrigins });
@@ -14,6 +15,7 @@ export async function createWorkbenchApp(deps: WorkbenchApplicationDeps, options
     await options.configure?.(app);
     await app.ready();
     await recoverWorkbenchCommands(deps);
+    deps.notifications?.start();
     return app;
   } catch (error) { await app.close(); throw error; }
 }

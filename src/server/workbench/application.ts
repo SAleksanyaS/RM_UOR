@@ -11,9 +11,11 @@ import type { QueryContext, QueryRegistry } from './query-registry';
 import type { BrowserResultArtifact, LocalRequest, WorkbenchHttpPort } from './routes';
 import type { LocalSessionStore } from './session';
 import type { EvidenceService } from '../../features/evidence/workbench-evidence';
+import type { NotificationRuntime } from '../../features/execution/workbench-notification-runtime';
 import { globalContextSchema, WorkbenchHttpError, type ApiSuccess, type GlobalContext, type Meta } from './protocol';
 
 export type WorkbenchApplicationDeps = {
+  notifications?: Pick<NotificationRuntime, 'start' | 'stop'>;
   evidence?: Pick<EvidenceService, 'readArtifactForContext'>;
   hostname: () => string; repository: WorkbenchRepository; clock: Clock; accessPolicy: AccessPolicyService;
   commands: CommandRegistry; queries: QueryRegistry; jobs: JobStore; modules: PlatformModule[];

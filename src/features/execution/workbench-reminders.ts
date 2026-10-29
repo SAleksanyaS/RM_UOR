@@ -4,10 +4,11 @@ import { entityRefSchema, moscowDateSchema, utcInstantSchema, uuidSchema, type E
 import { businessCalendarSchema, reminderSettingsSchema } from '../../domain/workbench/schemas/extensions';
 import { moscowEnd } from '../../domain/workbench/time';
 
-export type NotificationCause = { provider: string; objectRef: EntityRef; sourceVersion: string; kind: string; recipientPersonIds: UUIDv4[]; route: string };
+export type NotificationCause = { provider: string; objectRef: EntityRef; sourceVersion: string; kind: string; recipientPersonIds: UUIDv4[]; route: string; goalIds?: UUIDv4[]; recurring?: boolean };
 export type ReminderPlan = { localDate: MoscowDate; cause: NotificationCause };
 export const notificationCauseSchema = z.strictObject({
   provider: z.string().min(1), objectRef: entityRefSchema, sourceVersion: z.string().min(1), kind: z.string().min(1), recipientPersonIds: z.array(uuidSchema),
+  goalIds: z.array(uuidSchema).optional(), recurring: z.boolean().optional(),
   route: z.string().refine(route => {
     if (route.startsWith('/') && !route.startsWith('//') && !route.includes('\\')) return true;
     try { const url = new URL(route); return url.protocol === 'https:' && !url.username && !url.password; } catch { return false; }
@@ -40,6 +41,7 @@ export function planReminder(input: { now: UtcInstant; calendar: BusinessCalenda
   const settings = reminderSettingsSchema.parse(input.settings);
   const cause = notificationCauseSchema.parse(input.cause);
   if (settings.calendarId !== calendar.id) throw new Error('Reminder settings reference another calendar');
+  if (cause.recurring === false) return null;
   const localDate = moscowLocalDate(input.now);
   const localTime = new Date(Date.parse(input.now) + 10_800_000).toISOString().slice(11, 16);
   if (!isWorkingDate(localDate, calendar) || localTime < settings.dailyAt) return null;

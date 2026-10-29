@@ -31,6 +31,7 @@ export type DraftSaveInput = { draftId: string; definition: PartialDraftInput<Wo
 export type DraftSaveResult = { draftId: string; entityRef: EntityRef; versionRef: VersionRef; complete: boolean; problems: FieldProblem[] };
 export type DraftOwnerSave = { context: CommandContext; entry: StoredDraft; definition: Record<string, unknown>; previous: Header | null };
 export type DraftOwnerPolicy = {
+  initialDefinition?(entityType: string): Record<string, unknown>;
   validateSave?(input: DraftOwnerSave): void;
   afterSave?(input: DraftOwnerSave): void;
   validatePackage?(input: { context: CommandContext; entry: StoredDraft; value: WorkbenchEntity; previous: Header | null; resolve: (ref: EntityRef | VersionRef) => Header | null }): void;
@@ -249,7 +250,7 @@ export function createDraftService({ repository, store, clock, prepareEvaluation
         const packageId = pkg?.packageId ?? newUuid(); if (!pkg) store.createPackage({ packageId, installationId: context.installationId, ownerPersonId: context.ownAccess.personId!, baseCommit: null });
         const entityRef = { entityType: input.entityType, id: input.ref?.id ?? newUuid() }; const draftId = newUuid();
         const header: Header = { schemaVersion: 1, id: entityRef.id, revision: (base?.revision ?? 0) + 1, actor: context.actor, recordedAt: clock.now(), publicationAnchorId: null };
-        const definition = base ? businessDefinition(base) : {};
+        const definition = base ? businessDefinition(base) : draftDefinitionSchema(input.entityType).parse(ownerPolicies.get(input.entityType)?.initialDefinition?.(input.entityType) ?? {}) as Record<string, unknown>;
         const temp = { entityRef, header } as StoredDraft; const state = assess(temp, definition);
         const editToken = store.add({ draftId, packageId, entityRef, baseRef: base ? refOf(input.entityType, base) : null, definition, ...state, header });
         freezeReadyForms(context, packageId);
