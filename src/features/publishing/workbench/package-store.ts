@@ -5,7 +5,9 @@ import type { QueryContext } from '../../../server/workbench/query-registry';
 import type { WorkbenchRepository } from '../../../server/storage/workbench-repository';
 import { WorkbenchHttpError } from '../../../server/workbench/protocol';
 import type { DraftService } from '../../catalog/workbench-drafts';
-import { publicationPackageRecordSchema, packagePreviewResultSchema, type PackagePreviewResult, type PublicationPackageRecord } from './contracts';
+import { publicationPackageRecordSchema, packagePreviewResultSchema, type PackagePreviewResult, type PublicationPackageRecord, type PackageRevision } from './contracts';
+import type { PreparedProposal } from './git-port';
+import { canonicalBytes,hashBytes } from './package-manifest';
 
 type Identity = Pick<QueryContext,'repository'|'installationId'|'ownAccess'>;
 export type PreviewBinding = {repositoryId:string;mainCommit:string;draftRevision:number;fingerprint:string};
@@ -26,6 +28,7 @@ export function createPackageStore(repository:WorkbenchRepository,drafts:DraftSe
     CREATE TABLE wb_publishing_tokens(token TEXT PRIMARY KEY,package_id TEXT NOT NULL,installation_id TEXT NOT NULL,person_id TEXT NOT NULL,payload TEXT NOT NULL);
     CREATE INDEX wb_publishing_own_tokens ON wb_publishing_tokens(package_id,installation_id,person_id);
   `);
+  technical.execMigration('submission-001','CREATE TABLE wb_publishing_prepared(package_id TEXT NOT NULL,revision INTEGER NOT NULL,installation_id TEXT NOT NULL,person_id TEXT NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(package_id,revision));');
   const own=(context:Identity,packageId:string)=>drafts.readOwnPackage(context,packageId);
   const latest=(context:Identity,packageId:string):PublicationPackageRecord|null=>{
     own(context,packageId);
@@ -33,6 +36,32 @@ export function createPackageStore(repository:WorkbenchRepository,drafts:DraftSe
     return row?publicationPackageRecordSchema.parse(JSON.parse(row.payload)):null;
   };
   return {
+    hasPreparation(context:Identity,packageId:string):boolean {
+      own(context,packageId);return !!technical.get('SELECT revision FROM wb_publishing_prepared WHERE package_id=? AND installation_id=? AND person_id=? LIMIT 1',[packageId,context.installationId,context.ownAccess.personId]);
+    },
+    preparationByCommit(context:Identity,packageId:string,commit:string):PreparedProposal|null {
+      own(context,packageId);
+      const rows=technical.all<Row>('SELECT payload FROM wb_publishing_prepared WHERE package_id=? AND installation_id=? AND person_id=? ORDER BY revision DESC',[packageId,context.installationId,context.ownAccess.personId]);
+      return rows.map(row=>JSON.parse(row.payload) as PreparedProposal).find(value=>value.commit===commit)??null;
+    },
+    preparation(context:Identity,revision:PackageRevision):PreparedProposal|null {
+      own(context,revision.packageId);
+      const row=technical.get<Row>('SELECT payload FROM wb_publishing_prepared WHERE package_id=? AND revision=? AND installation_id=? AND person_id=?',[revision.packageId,revision.revision,context.installationId,context.ownAccess.personId]);
+      if(!row) return null;const value=JSON.parse(row.payload) as PreparedProposal;
+      if(hashBytes(canonicalBytes(value.packageRevision))!==hashBytes(canonicalBytes(revision))) throw new WorkbenchHttpError(409,'PREVIEW_STALE','Prepared revision differs');return value;
+    },
+    savePreparation(context:Identity,value:PreparedProposal) {
+      own(context,value.packageRevision.packageId);
+      technical.run('INSERT OR IGNORE INTO wb_publishing_prepared(package_id,revision,installation_id,person_id,payload) VALUES(?,?,?,?,?)',[value.packageRevision.packageId,value.packageRevision.revision,context.installationId,context.ownAccess.personId,JSON.stringify(value)]);
+    },
+    transition(context:CommandContext,packageId:string,patch:Pick<PublicationPackageRecord,'state'> & Partial<Pick<PublicationPackageRecord,'sent'|'proposal'>>) {
+      return repository.transaction(()=>{
+        const previous=latest(context,packageId);if(!previous) throw new WorkbenchHttpError(404,'PACKAGE_NOT_FOUND','Package preview is required');
+        const value=publicationPackageRecordSchema.parse({...previous,...patch,revision:previous.revision+1,recordedAt:context.clock.now(),actor:context.actor});
+        sql.run('INSERT INTO wb_publishing_packages(package_id,installation_id,person_id,revision,payload) VALUES(?,?,?,?,?)',[packageId,context.installationId,context.ownAccess.personId,value.revision,JSON.stringify(value)]);
+        return {entityType:'publication_package',id:packageId} satisfies EntityRef;
+      });
+    },
     readPort:{
       readOwnPackage:latest,
       listOwnPackages(context:Identity) {

@@ -61,7 +61,7 @@ export function createJobStore({ repository, clock }: { repository: WorkbenchRep
       if (JSON.stringify(previous) !== JSON.stringify(next)) save(next);
       if (terminal.has(next.status)) controls.delete(jobId);
     }); },
-    registerStage(stage) { if (!/^[a-z][a-z0-9_.:-]*$/.test(stage)) throw new WorkbenchHttpError(422, 'INVALID_STAGE', 'Invalid stage'); stages.add(stage); },
+    registerStage(stage) { if (stage!=='PR.auth'&&!/^[a-z][a-z0-9_.:-]*$/.test(stage)) throw new WorkbenchHttpError(422, 'INVALID_STAGE', 'Invalid stage'); stages.add(stage); },
     stage(jobId, stage, progress) { store.update(jobId, { stage, progress }); },
     checkpoint(jobId, value) { if (!raw(jobId)) throw new WorkbenchHttpError(404, 'JOB_NOT_FOUND', 'Job not found'); sql.run('INSERT INTO wb_jobs_checkpoints(job_id,value_json) VALUES(?,?)', [jobId, JSON.stringify(value)]); },
     checkpoints(jobId, installationId) { owned(jobId, installationId); return sql.all<{ value_json: string }>('SELECT value_json FROM wb_jobs_checkpoints WHERE job_id=? ORDER BY sequence', [jobId]).map(row => JSON.parse(row.value_json)); },

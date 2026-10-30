@@ -7,7 +7,7 @@ import type { CommandContext, CommandOutcome } from './command-registry';
 import { WorkbenchHttpError } from './protocol';
 import type { CommandRequest, JobAccepted } from './protocol';
 
-export type CommandRecoveryPolicy = { effect: 'local' | 'sharedDraft' | 'external'; queuedRecovery: 'restart-safe-local' | null };
+export type CommandRecoveryPolicy = { effect: 'local' | 'sharedDraft' | 'external'; queuedRecovery: 'restart-safe-local' | null; explicitRecovery?:'reconcile-on-user-retry' };
 export type CommandOwnership = { scope: 'installation' | 'person'; personId: string | null };
 type Intent = { digest: string; phase: string; request_json: string; accepted_json: string | null; receipt_json: string | null; recovery_json: string | null; owner_scope: 'installation' | 'person'; owner_person_id: string | null };
 const execution = new AsyncLocalStorage<{ context: CommandContext; output: z.ZodType }>();

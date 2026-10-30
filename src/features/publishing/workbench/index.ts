@@ -7,3 +7,7 @@ export { registerPublishingCommands } from './register-commands';
 export type { PublicationReadPort } from './package-store';
 export { createGitStagingProvider, type GitStagingOptions } from './git-staging-provider';
 export type { PublicationGitPort, PreparedProposal } from './git-port';
+export { createUnavailableBitbucketPort } from './bitbucket-port';
+export type { BitbucketPort,BitbucketCapabilities,ProposalLink,ProposalSnapshot,ProposalComment,ProposalWrite,MergeEvidence } from './bitbucket-port';
+export { reconcileProposal } from './proposal-reconciliation';
+export type { TerminalRunner,TerminalRunResult,PreTransferGate } from './terminal-runner';
