@@ -31,6 +31,7 @@ export interface NotificationService {
   markRead(context: CommandContext, input: { notificationIds: UUIDv4[] }): Promise<{ notificationIds: UUIDv4[] }>;
   subscribe(context: CommandContext, input: { goalId: UUIDv4; subscribed: boolean }): Promise<{ goalId: UUIDv4; subscribed: boolean }>;
   list(context: NotificationContext): LocalNotification[];
+  readPage(context:NotificationContext,input:{unreadOnly:boolean;offset:number;limit:number;sort?:import('../../server/workbench/protocol').Sort[]}):LocalNotification[];
 }
 const own = (context: NotificationContext): PersonalOwner => ({ installationId: context.installationId, profilePersonId: context.ownAccess.personId });
 const dedup = (cause: NotificationCause, recipient: UUIDv4 | null): string => createHash('sha256').update(JSON.stringify([cause.provider, cause.objectRef.entityType, cause.objectRef.id, cause.sourceVersion, cause.kind, recipient])).digest('hex');
@@ -89,6 +90,7 @@ export function createNotificationService(options: { repository: WorkbenchReposi
       }).result;
     },
     list(context) { return store.list(own(context)); },
+    readPage(context,input) {return store.readPage(own(context),input);},
   };
 }
 

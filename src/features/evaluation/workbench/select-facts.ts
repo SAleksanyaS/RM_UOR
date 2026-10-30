@@ -37,6 +37,20 @@ export function selectEvaluationFacts(input: EvaluationInput): FactSelection {
     const id = key(version('observed_fact', fact)); const old = byRef.get(id);
     if (old && JSON.stringify(old) !== JSON.stringify(fact)) conflictingRefs.add(id); else byRef.set(id, fact);
   }
+  // Build ephemeral lookup buckets once. Scanning all historical revisions for
+  // every expected population member made read-only quality projection quadratic.
+  const factBucketKey=(sourceId:string,metricId:string,kind:string,id:string)=>JSON.stringify([sourceId,metricId,kind,id]);
+  const factBuckets=new Map<string,ObservedFact[]>();
+  for(const fact of byRef.values()) {
+    const bucket=factBucketKey(fact.sourceId,fact.metricId,fact.scope.kind,fact.scope.id);
+    const values=factBuckets.get(bucket)??[];values.push(fact);factBuckets.set(bucket,values);
+  }
+  const captureRows=new Map<string,Map<string,CanonicalSourceRow>>();
+  for(const capture of captures.values()) {
+    const rows=new Map<string,CanonicalSourceRow>();
+    for(const row of capture.canonicalRows) if(!rows.has(row.rowKey)) rows.set(row.rowKey,row);
+    captureRows.set(capture.id,rows);
+  }
   const confirmed = new Set(input.resolution.publicationAnchors.filter(a => a.publicationState === 'confirmed').map(a => a.id));
   const verifiedDirectoryRefs = new Set(input.resolution.directoryLinkRefs.map(key));
   const isPublished = (entity: Header) => entity.publicationAnchorId !== null && confirmed.has(entity.publicationAnchorId);
@@ -71,7 +85,7 @@ export function selectEvaluationFacts(input: EvaluationInput): FactSelection {
     if (!metric) { result.qualityFlags = ['metric_version_missing']; return result; }
     const chosen: ObservedFact[] = [];
     for (const scope of population) {
-      const candidates = [...byRef.values()].filter(f => f.sourceId === input.goal.sourceId && f.metricId === metric.id && f.scope.kind === scope.kind && f.scope.id === scope.id && eligible(f));
+      const candidates = (factBuckets.get(factBucketKey(input.goal.sourceId,metric.id,scope.kind,scope.id))??[]).filter(eligible);
       candidates.sort((a, b) => {
         if (business.kind === 'as_of' && a.businessTime.kind === 'as_of' && b.businessTime.kind === 'as_of' && a.businessTime.date !== b.businessTime.date) return a.businessTime.date < b.businessTime.date ? 1 : -1;
         return Date.parse(captures.get(b.captureId)!.capturedAt) - Date.parse(captures.get(a.captureId)!.capturedAt);
@@ -140,7 +154,7 @@ export function selectEvaluationFacts(input: EvaluationInput): FactSelection {
       for (const original of accepted?.originals ?? [leaf]) originalQuality(original);
       const capture = captures.get(leaf.captureId);
       if (!capture || capture.sourceId !== leaf.sourceId || capture.id !== leaf.lineage.captureId) { problems.push('lineage_capture_missing'); continue; }
-      const selectedRows = leaf.lineage.sourceRowKeys.map(rowKey => capture.canonicalRows.find(row => row.rowKey === rowKey));
+      const selectedRows = leaf.lineage.sourceRowKeys.map(rowKey => captureRows.get(capture.id)?.get(rowKey));
       if (!selectedRows.length || selectedRows.some(row => !row)) { problems.push('lineage_row_missing'); continue; }
       for (const row of selectedRows) if (row) {
         // Raw keys identify rows within a capture, not across independent files.

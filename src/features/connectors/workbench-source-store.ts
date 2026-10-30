@@ -27,6 +27,7 @@ export interface SourceStore {
   findOperation(installationId: string, operationId: string, goalId?: string): CaptureResult | null;
   commitCapture(input: { installationId: string; binding: ResolvedCaptureBinding; request: CaptureRequest; raw: RawBatch; capture: Capture; facts: ObservedFact[]; retainedFactRefs?: VersionRef[]; issues: SourceIssue[] }): CaptureResult;
   readCapture(ref: VersionRef, installationId: string): SourceCaptureView | null;
+  listOwnCaptures(owner:{installationId:string;profilePersonId:string|null}):SourceCaptureView[];
   /** Read-only current owner+goal+saved-context+source evidence, including partial captures with no facts. */
   readLatestAttempt(input: { installationId: string; goalId: string }): SourceLatestAttempt | null;
   readFallback(input: { installationId: string; goalId: string }): SourceFallback;
@@ -143,6 +144,14 @@ export function createSourceStore({ repository }: { repository: WorkbenchReposit
       return result;
     },
     readCapture(ref, installationId) { const evidence = evidenceFor(ref, installationId); if (!evidence) return null; const capture = repository.readVersion<Capture>(ref); if (!capture) return null; return { capture, facts: evidence.factRefs.map(r => repository.readVersion<ObservedFact>(r) ?? fail()), issues: evidence.issues, coverage: evidence.raw.coverage, artifact: evidence.raw.artifact }; },
+    listOwnCaptures(owner) {
+      return sql.all<{capture_id:string}>('SELECT capture_id FROM wb_sources_captures WHERE installation_id=? ORDER BY capture_id',[owner.installationId]).flatMap(row=>{
+        const ref={entityType:'capture',id:row.capture_id,revision:1};
+        const capture=repository.readVersion<Capture>(ref);
+        if(!capture || capture.actor.installationId!==owner.installationId || capture.actor.profilePersonId!==owner.profilePersonId) return [];
+        const view=store.readCapture(ref,owner.installationId); return view?[view]:[];
+      });
+    },
     readLatestAttempt({ installationId, goalId }) { return latestAttemptFor(installationId, resolve(installationId, goalId)); },
     readFallback({ installationId, goalId }) {
       const binding = resolve(installationId, goalId); const context = contextKey(binding.context);

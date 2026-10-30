@@ -48,6 +48,7 @@ export type HistoryIndexQuery = {
     limit: number;
     sourceId?: UUIDv4;
     predecessorBefore?: UtcInstant;
+    visibility?:{installationId:UUIDv4;profilePersonId:UUIDv4|null};
 };
 export type HistoryIndexPage = {
     facts: ObservedFact[];

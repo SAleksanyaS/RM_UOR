@@ -1,6 +1,6 @@
 import type { z } from 'zod';
 import type { Clock, UUIDv4 } from '../../domain/workbench/index';
-import type { OwnAccessProfile } from '../../features/identity/workbench-access-policy';
+import { canUseCapability, type OwnAccessProfile } from '../../features/identity/workbench-access-policy';
 import type { WorkbenchRepository } from '../storage/workbench-repository';
 import { fieldProblems, WorkbenchHttpError, type AnyQueryRequest } from './protocol';
 
@@ -17,7 +17,7 @@ export class QueryRegistry {
   async execute(name: string, request: AnyQueryRequest, context: QueryContext): Promise<unknown> {
     const descriptor = this.descriptors.get(name);
     if (!descriptor) throw new WorkbenchHttpError(404, 'QUERY_NOT_FOUND', 'Query is not registered');
-    if (name.startsWith('uor.') && context.ownAccess.role === 'viewer') throw new WorkbenchHttpError(403, 'ACCESS_DENIED', 'The preparation panel requires a curator profile');
+    if (name.startsWith('uor.') && !canUseCapability(context.ownAccess,'uor.prepare')) throw new WorkbenchHttpError(403, 'ACCESS_DENIED', 'The preparation panel requires an active curator profile');
     const input = descriptor.inputSchema.safeParse(request);
     if (!input.success) throw new WorkbenchHttpError(422, 'VALIDATION_FAILED', 'Query validation failed', fieldProblems(input.error));
     return descriptor.outputSchema.parse(await descriptor.handler(context, input.data));

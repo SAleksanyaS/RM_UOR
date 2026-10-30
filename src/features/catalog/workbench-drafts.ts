@@ -240,6 +240,11 @@ export function createDraftService({ repository, store, clock, prepareEvaluation
     readOwnEntry(context: CommandContext, draftId: string, types?: string[]) { return own(context, draftId, types); },
     readOwnFormHistory(context: CommandContext, draftId: string) { own(context, draftId); return store.history(draftId); },
     readOwnPackage(context: Pick<CommandContext,'installationId'|'ownAccess'|'repository'>, packageId: string) { if (context.repository !== repository) return fail('COMMAND_CONTEXT_MISMATCH',409); return ownPackage(context, packageId); },
+    listOwnPackages(context:Pick<CommandContext,'installationId'|'ownAccess'|'repository'>) {
+      if(context.repository!==repository) return fail('COMMAND_CONTEXT_MISMATCH',409);
+      if(!context.ownAccess.personId) return [];
+      return store.listOwnPackages(context.installationId,context.ownAccess.personId);
+    },
     resolveOwnReference(context: CommandContext, packageId: string, ref: EntityRef | VersionRef): Header { assertContext(context, false); return resolve(context, ref, ownPackage(context, packageId)); },
     async open(context: CommandContext, input: DraftOpenInput): Promise<DraftOpenResult> {
       assertContext(context); draftDefinitionSchema(input.entityType);

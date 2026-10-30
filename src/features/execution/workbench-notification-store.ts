@@ -1,7 +1,7 @@
 import { newUuid, utcInstantSchema, uuidSchema, type UtcInstant, type UUIDv4 } from '../../domain/workbench/primitives';
 import type { PersonalOwner } from '../../domain/workbench/entities';
 import type { WorkbenchRepository } from '../../server/storage/workbench-repository';
-import { WorkbenchHttpError } from '../../server/workbench/protocol';
+import { WorkbenchHttpError, type Sort } from '../../server/workbench/protocol';
 import type { NotificationCause } from './workbench-reminders';
 
 export type LocalNotification = { id: UUIDv4; cause: NotificationCause; category: 'new' | 'reminder' | 'error'; createdAt: UtcInstant; emittedAt: UtcInstant; readAt: UtcInstant | null };
@@ -26,6 +26,14 @@ export function createNotificationStore(options: { repository: WorkbenchReposito
     },
     list(owner: PersonalOwner): LocalNotification[] {
       return sql.all<EventRow>('SELECT id,payload,read_at FROM wb_notifications_events WHERE owner_key=? ORDER BY emitted_at DESC,id LIMIT 200', [ownerKey(owner)]).map(decode);
+    },
+    readPage(owner:PersonalOwner,input:{unreadOnly:boolean;offset:number;limit:number;sort?:Sort[]}):LocalNotification[] {
+      if(!Number.isSafeInteger(input.offset) || input.offset<0 || !Number.isInteger(input.limit) || input.limit<1 || input.limit>201) throw new WorkbenchHttpError(422,'VALIDATION_FAILED','Invalid page');
+      const columns:Record<string,string>={emittedAt:'emitted_at',category:"json_extract(payload,'$.category')",readAt:'read_at'};
+      const sorts=input.sort?.length?input.sort:[{field:'emittedAt',direction:'desc' as const}];
+      if(sorts.some(s=>!Object.hasOwn(columns,s.field)||!['asc','desc'].includes(s.direction))) throw new WorkbenchHttpError(422,'VALIDATION_FAILED','Invalid sort');
+      const order=sorts.map(s=>columns[s.field]+' '+s.direction.toUpperCase()).join(',');
+      return sql.all<EventRow>('SELECT id,payload,read_at FROM wb_notifications_events WHERE owner_key=?'+(input.unreadOnly?' AND read_at IS NULL':'')+' ORDER BY '+order+',id LIMIT ? OFFSET ?',[ownerKey(owner),input.limit,input.offset]).map(decode);
     },
     record(owner: PersonalOwner, dedupKey: string, cause: NotificationCause, category: LocalNotification['category'], now: UtcInstant): void {
       utcInstantSchema.parse(now);

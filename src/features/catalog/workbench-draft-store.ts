@@ -35,6 +35,9 @@ export function createDraftStore({ repository, artifactDirectory }: { repository
     return row ? JSON.parse(row.payload_json) : null;
   };
   return {
+    listOwnPackages(installationId:string,personId:string):StoredPackage[] {
+      return sql.all<{package_id:string}>('SELECT package_id FROM wb_drafts_packages WHERE installation_id=? AND owner_person_id=? ORDER BY package_id',[installationId,personId]).map(row=>getPackage(row.package_id)!);
+    },
     artifactDirectory: path.resolve(artifactDirectory), getEntry, getPackage, token,
     setProof(draftId: string, kind: string, value: object) { const updated = sql.run('UPDATE wb_drafts_proofs SET payload_json=? WHERE draft_id=? AND kind=?', [JSON.stringify(value), draftId, kind]); if (!updated.changes) sql.run('INSERT INTO wb_drafts_proofs VALUES(?,?,?)', [draftId, kind, JSON.stringify(value)]); },
     readProof<T>(draftId: string, kind: string): T | null { const row = sql.get<{ payload_json: string }>('SELECT payload_json FROM wb_drafts_proofs WHERE draft_id=? AND kind=?', [draftId, kind]); return row ? JSON.parse(row.payload_json) as T : null; },

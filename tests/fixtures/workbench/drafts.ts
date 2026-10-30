@@ -14,14 +14,16 @@ import { createEvidenceService } from '../../../src/features/evidence/workbench-
 import { prepareEvaluation } from '../../../src/features/evaluation/workbench/prepare-evaluation';
 import { fixtureId, makeEntityGraph, makeNumericFixture } from './factories';
 import { seedGraph } from './repository';
+import { installHistoryIndex } from '../../../src/features/history/workbench-history-index';
 
 export const draftCleanups: Array<() => Promise<void> | void> = [];
 export const business = (value: object) => Object.fromEntries(Object.entries(value).filter(([key]) => !['schemaVersion','id','revision','recordedAt','actor','publicationAnchorId'].includes(key)));
-export function draftFixture() {
+export function draftFixture(options:{history?:boolean;input?:ReturnType<typeof makeNumericFixture>}={}) {
   const root = mkdtempSync(path.join(tmpdir(), 'uor-t17-'));
   const config = { filename: path.join(root, 'data.sqlite'), artifactRoot: path.join(root, 'core-artifacts') };
   const repository = createWorkbenchRepository(config);
-  const input = makeNumericFixture({ values: ['92'], targets: ['90'] }); seedGraph(repository, makeEntityGraph(input));
+  if(options.history) installHistoryIndex(repository);
+  const input = options.input??makeNumericFixture({ values: ['92'], targets: ['90'] }); seedGraph(repository, makeEntityGraph(input));
   let now = input.context.evaluatedAt;
   const clock = { now: () => now };
   const context: CommandContext = { repository, clock, requestId: fixtureId(801), commandId: fixtureId(802), installationId: fixtureId(1), ownAccess: { role: 'curator', displayName: 'Synthetic curator', personId: fixtureId(17), policyState: 'local_preview', checkedAt: clock.now() }, actor: { hostname: 'demo-host', installationId: fixtureId(1), profilePersonId: fixtureId(17) } };

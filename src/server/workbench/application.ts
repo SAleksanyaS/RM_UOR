@@ -13,6 +13,11 @@ import type { LocalSessionStore } from './session';
 import type { EvidenceService } from '../../features/evidence/workbench-evidence';
 import type { NotificationRuntime } from '../../features/execution/workbench-notification-runtime';
 import { globalContextSchema, WorkbenchHttpError, type ApiSuccess, type GlobalContext, type Meta } from './protocol';
+import { registerWorkbenchQueries } from '../../features/catalog/workbench-query-registration';
+import type { WorkbenchReadPorts } from '../../features/catalog/workbench-read-models';
+import { assertContextGraph } from '../../features/catalog/workbench-search';
+import { moscowLocalDate } from '../../features/execution/workbench-reminders';
+import { pageResultSchema } from './protocol';
 
 export type WorkbenchApplicationDeps = {
   notifications?: Pick<NotificationRuntime, 'start' | 'stop'>;
@@ -22,6 +27,7 @@ export type WorkbenchApplicationDeps = {
   sessions: LocalSessionStore; allowedOrigins: string[]; installationId: UUIDv4; files: FileStore;
   // T21/T22 bind these narrow reads when catalog/publication read models exist.
   readState?: { defaultContext(context: QueryContext): Promise<GlobalContext | null>; publishedCommit(): string | null };
+  queryPorts?:WorkbenchReadPorts;
   browserResults?: { read(context: QueryContext, resultId: UUIDv4, kind: 'original' | 'enriched'): Promise<BrowserResultArtifact> };
 };
 
@@ -44,6 +50,7 @@ export function createWorkbenchApplication(deps: WorkbenchApplicationDeps): Work
   // Validate the entire import graph before installing projections or descriptors.
   validateModules(deps.modules);
   installHistoryIndex(deps.repository);
+  if(deps.queryPorts) registerWorkbenchQueries(deps.queries,deps.queryPorts);
   for (const module of deps.modules) {
     for (const query of module.queries) deps.queries.register(query);
     for (const command of module.commands) deps.commands.register(command);
@@ -54,7 +61,15 @@ export function createWorkbenchApplication(deps: WorkbenchApplicationDeps): Work
   const envelope = async <T>(data: T, request: LocalRequest): Promise<ApiSuccess<T>> => ({ apiVersion: '1', requestId: request.requestId, data, meta: await meta(request) });
   const session = async (request: LocalRequest) => {
     const local = assertSession(request); const ctx = await context(request); const own = ctx.ownAccess;
-    const defaultContext = deps.readState ? await deps.readState.defaultContext(ctx) : null;
+    let defaultContext = deps.readState ? await deps.readState.defaultContext(ctx) : null;
+    if(!deps.readState && deps.queryPorts) {
+      const saved=deps.queryPorts.preferences?.get(ctx.installationId).context;
+      if(saved) {try {assertContextGraph(saved,deps.queryPorts.index);defaultContext=saved;}catch { /* An old preference cannot invent a valid current path. */ }}
+      if(!defaultContext) {
+        const dit=deps.queryPorts.index.list('directory_entity').find(entity=>entity.kind==='dit');
+        if(dit) defaultContext={scopePath:{ditId:dit.id,clusterId:null,productId:null,teamId:null},goalId:null,time:{kind:'as_of',date:moscowLocalDate(ctx.clock.now())},resultMode:'current',snapshotId:null};
+      }
+    }
     return { ...own, allowedCommands: deps.commands.listNames().filter(name => { const capability = deps.commands.getCapability(name); return capability !== null && canUseCapability(own, capability); }), csrfToken: local.csrfToken, defaultContext: defaultContext === null ? null : globalContextSchema.parse(defaultContext) };
   };
   return {
@@ -66,7 +81,13 @@ export function createWorkbenchApplication(deps: WorkbenchApplicationDeps): Work
       if (!canUseCapability(ctx.ownAccess, purpose.data === 'workspace-restore' ? 'workspace.backup' : 'uor.prepare')) throw new WorkbenchHttpError(403, 'ACCESS_DENIED', 'The current own profile does not permit this upload');
       return envelope(await deps.files.stage({ ...input, purpose: purpose.data, installationId: deps.installationId, profilePersonId: ctx.ownAccess.personId }), request);
     },
-    async query(name, request, local) { const ctx = await context(local); return envelope(await deps.queries.execute(name, request, ctx), local); },
+    async query(name, request, local) {
+      const ctx = await context(local);const data=await deps.queries.execute(name,request,ctx);
+      const response=await envelope(data,local);
+      const page=pageResultSchema.safeParse(data && typeof data==='object' && 'page' in data?data.page:undefined);
+      if(page.success) response.meta.page=page.data;
+      return response;
+    },
     async browserResult(resultId, kind, local) {
       const ctx = await context(local);
       if (!deps.browserResults) throw new WorkbenchHttpError(404, 'RESULT_NOT_FOUND', 'Result not found');

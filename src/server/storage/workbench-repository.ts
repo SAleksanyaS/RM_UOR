@@ -45,12 +45,14 @@ export interface WorkbenchRepository {
   readPublishedEvidenceForArtifact(artifactId: UUIDv4): Evidence | null;
   readPublishedExecutionGraph(): { works: Work[]; dependencies: WorkDependency[]; decisions: Decision[] };
   readPublishedDirectoryLinks(): DirectoryLink[];
+  readPublishedCatalog(): Array<{entityType:string;value:Header}>;
+  registerCatalogProjection(name:string,project:(refs:EntityRef[])=>void):void;
   registerEntityType<T extends Header>(type: string, registration: EntityRegistration<T>): void;
   registerProjection(name: string, project: (entityType: string, value: Header) => void): void;
   sqlForModule(moduleId: string, options?: { trackStateRevision?: boolean }): WorkbenchSql;
 }
 type PayloadRow = { payload_json: string };
-type Frame = { dirty: boolean; staged: Array<{ type: string; value: Header }> };
+type Frame = { dirty: boolean; staged: Array<{ type: string; value: Header }>; catalogRefs:Map<string,EntityRef> };
 type Lease = { active: boolean; parent?: Lease };
 
 export function createWorkbenchRepository(options: { filename: string; artifactRoot: string }): WorkbenchRepository {
@@ -61,6 +63,7 @@ export function createWorkbenchRepository(options: { filename: string; artifactR
   migrateWorkbench(db);
   const registrations = new Map<string, EntityRegistration<Header>>();
   const projections = new Map<string, (type: string, value: Header) => void>();
+  const catalogProjections=new Map<string,(refs:EntityRef[])=>void>();
   const frames: Frame[] = [];
   const leases = new AsyncLocalStorage<Lease>();
   let savepoint = 0;
@@ -115,6 +118,21 @@ export function createWorkbenchRepository(options: { filename: string; artifactR
   const atomic = <T>(action: () => T): T => frames.length ? action() : repository.transaction(action);
 
   const repository: WorkbenchRepository = {
+    readPublishedCatalog() {
+      assertOpen();
+      const rows=db.prepare(`SELECT v.entity_type,v.payload_json FROM wb_entity_versions v
+        WHERE EXISTS(SELECT 1 FROM wb_publication_anchors a WHERE a.id=v.publication_anchor_id AND a.publication_state='confirmed'
+          AND a.revision=(SELECT MAX(a2.revision) FROM wb_publication_anchors a2 WHERE a2.id=a.id))
+        AND NOT EXISTS(SELECT 1 FROM wb_entity_versions newer WHERE newer.entity_type=v.entity_type AND newer.id=v.id AND newer.revision>v.revision
+          AND EXISTS(SELECT 1 FROM wb_publication_anchors a WHERE a.id=newer.publication_anchor_id AND a.publication_state='confirmed'
+            AND a.revision=(SELECT MAX(a2.revision) FROM wb_publication_anchors a2 WHERE a2.id=a.id)))
+        ORDER BY v.entity_type,v.id`).all() as Array<PayloadRow & {entity_type:string}>;
+      return rows.map(row=>({entityType:row.entity_type,value:JSON.parse(row.payload_json) as Header}));
+    },
+    registerCatalogProjection(name,project) {
+      assertOpen(); if(!name || catalogProjections.has(name)) throw new WorkbenchError('PROJECTION_ALREADY_REGISTERED',{name});
+      catalogProjections.set(name,project);
+    },
     readPublishedDirectoryLinks() {
       assertOpen();
       const rows = db.prepare(`SELECT v.payload_json FROM wb_entity_versions v WHERE v.entity_type='directory_link' AND v.revision=(
@@ -160,6 +178,7 @@ export function createWorkbenchRepository(options: { filename: string; artifactR
         db.prepare('INSERT INTO wb_entity_heads VALUES(?,?,?) ON CONFLICT(entity_type,id) DO UPDATE SET revision=excluded.revision').run(type, parsed.id, parsed.revision);
         indexEntity(type, parsed);
         const frame = currentFrame(); frame.dirty = true; frame.staged.push({ type, value: parsed });
+        frame.catalogRefs.set(`${type}/${parsed.id}`,{entityType:type,id:parsed.id});
         return { entityType: type, id: parsed.id, revision: parsed.revision };
       });
     },
@@ -167,7 +186,7 @@ export function createWorkbenchRepository(options: { filename: string; artifactR
       assertWritable();
       if (action.constructor.name === 'AsyncFunction' || action.constructor.name === 'AsyncGeneratorFunction') throw new WorkbenchError('ASYNC_TRANSACTION_FORBIDDEN');
       const outer = frames.length === 0; const point = 'wb_save_' + (++savepoint);
-      const frame: Frame = { dirty: false, staged: [] };
+      const frame: Frame = { dirty: false, staged: [],catalogRefs:new Map() };
       const lease: Lease = { active: true, parent: leases.getStore() };
       db.exec(outer ? 'BEGIN IMMEDIATE' : `SAVEPOINT ${point}`); frames.push(frame);
       try {
@@ -187,12 +206,21 @@ export function createWorkbenchRepository(options: { filename: string; artifactR
                 if (projected instanceof Promise) void projected.catch(() => undefined);
                 throw new WorkbenchError('ASYNC_TRANSACTION_FORBIDDEN');
               }
-            } } finally { projecting = false; }
+            }
+              if(frame.catalogRefs.size) for(const project of catalogProjections.values()) {
+                const result=project([...frame.catalogRefs.values()]) as unknown;
+                if(result && typeof (result as {then?:unknown}).then==='function') {
+                  if(result instanceof Promise) void result.catch(()=>undefined);
+                  throw new WorkbenchError('ASYNC_TRANSACTION_FORBIDDEN');
+                }
+              }
+            } finally { projecting = false; }
             if (frame.dirty) db.prepare("UPDATE wb_meta SET value=? WHERE key='state_revision'").run((BigInt(repository.getStateRevision()) + 1n).toString());
             db.exec('COMMIT');
           } else {
             db.exec(`RELEASE SAVEPOINT ${point}`);
             const parent = frames.at(-2)!; parent.dirty ||= frame.dirty; parent.staged.push(...frame.staged);
+            for(const [key,ref] of frame.catalogRefs) parent.catalogRefs.set(key,ref);
           }
           return result;
         });
@@ -232,17 +260,23 @@ export function createWorkbenchRepository(options: { filename: string; artifactR
       const position=query.cursor?decodeHistoryCursor(query.cursor,filter):null;
       if(position!==null&&(!Array.isArray(position)||position.length!==4||typeof position[0]!=='string'||typeof position[1]!=='string'||typeof position[2]!=='string'||!Number.isSafeInteger(position[3])))throw new WorkbenchError('INVALID_CURSOR');
       const prefix:SqlValue[]=[query.sourceId??goal.sourceId,query.metricRef.id,query.scope.kind,query.scope.id];
+      if(query.visibility) {uuidSchema.parse(query.visibility.installationId);if(query.visibility.profilePersonId!==null) uuidSchema.parse(query.visibility.profilePersonId);}
+      const visibility=(alias:string)=>query.visibility?` AND EXISTS(SELECT 1 FROM wb_entity_versions visible WHERE visible.entity_type='observed_fact' AND visible.id=${alias}.id AND visible.revision=${alias}.revision AND (
+        (json_extract(visible.payload_json,'$.actor.installationId')=? AND json_extract(visible.payload_json,'$.actor.profilePersonId') IS ?)
+        OR EXISTS(SELECT 1 FROM wb_publication_anchors anchor WHERE anchor.id=visible.publication_anchor_id AND anchor.publication_state='confirmed' AND anchor.revision=(SELECT MAX(a2.revision) FROM wb_publication_anchors a2 WHERE a2.id=anchor.id))))`:'';
+      const visibilityParams:SqlValue[]=query.visibility?[query.visibility.installationId,query.visibility.profilePersonId]:[];
       const rows=db.prepare(`SELECT id,revision,business_start,captured_at,payload_ref FROM wb_history_observations INDEXED BY wb_history_scope_time
         WHERE source_id=? AND metric_id=? AND scope_kind=? AND scope_id=? AND business_start>=? AND business_start<? AND captured_at<=?
+        ${visibility('wb_history_observations')}
         ${position?'AND (business_start,captured_at,id,revision)>(?,?,?,?)':''}
-        ORDER BY business_start,captured_at,id,revision LIMIT ?`).all(...prefix,query.fromInclusive,query.toExclusive,new Date(query.capturedBefore).toISOString(),...(position as SqlValue[]??[]),query.limit+1) as Array<{id:string;revision:number;business_start:string;captured_at:string;payload_ref:string}>;
+        ORDER BY business_start,captured_at,id,revision LIMIT ?`).all(...prefix,query.fromInclusive,query.toExclusive,new Date(query.capturedBefore).toISOString(),...visibilityParams,...(position as SqlValue[]??[]),query.limit+1) as Array<{id:string;revision:number;business_start:string;captured_at:string;payload_ref:string}>;
       const more=rows.length>query.limit;const selected=rows.slice(0,query.limit);const last=selected.at(-1);
       const facts=selected.map(row=>repository.readVersion<ObservedFact>(JSON.parse(row.payload_ref))!).filter(Boolean);
       let predecessors:ObservedFact[]=[];
       if(query.predecessorBefore&&!query.cursor){
         // Retain the semantic tie group so UUID ordering cannot hide conflicting evidence.
-        const base=`FROM wb_history_observations h INDEXED BY wb_history_scope_time JOIN wb_entity_versions v ON v.entity_type='observed_fact' AND v.id=h.id AND v.revision=h.revision WHERE h.source_id=? AND h.metric_id=? AND h.scope_kind=? AND h.scope_id=? AND h.business_start<? AND h.captured_at<=? AND json_extract(v.payload_json,'$.state')='known'`;
-        const params=[...prefix,query.fromInclusive,new Date(query.predecessorBefore).toISOString()];
+        const base=`FROM wb_history_observations h INDEXED BY wb_history_scope_time JOIN wb_entity_versions v ON v.entity_type='observed_fact' AND v.id=h.id AND v.revision=h.revision WHERE h.source_id=? AND h.metric_id=? AND h.scope_kind=? AND h.scope_id=? AND h.business_start<? AND h.captured_at<=? AND json_extract(v.payload_json,'$.state')='known'${visibility('h')}`;
+        const params=[...prefix,query.fromInclusive,new Date(query.predecessorBefore).toISOString(),...visibilityParams];
         const first=db.prepare(`SELECT h.business_start,h.captured_at ${base} ORDER BY h.business_start DESC,h.captured_at DESC,h.id DESC,h.revision DESC LIMIT 1`).get(...params) as {business_start:string;captured_at:string}|undefined;
         if(first){const tied=db.prepare(`SELECT h.payload_ref ${base} AND h.business_start=? AND h.captured_at=? ORDER BY h.id,h.revision`).all(...params,first.business_start,first.captured_at) as Array<{payload_ref:string}>;predecessors=tied.map(row=>repository.readVersion<ObservedFact>(JSON.parse(row.payload_ref))!).filter(Boolean);}
       }
@@ -266,6 +300,10 @@ export function createWorkbenchRepository(options: { filename: string; artifactR
         const metadataRevision = (actual ?? 0) + 1;
         db.prepare('INSERT INTO wb_publication_anchors VALUES(?,?,?,?,?)').run(parsed.id, metadataRevision, JSON.stringify(parsed), parsed.publicationState, parsed.mergedAt);
         currentFrame().dirty = true;
+        // Confirmation can activate records which were stored in an earlier
+        // transaction; current read indexes must receive those identities too.
+        const affected=db.prepare('SELECT DISTINCT entity_type,id FROM wb_entity_versions WHERE publication_anchor_id=?').all(parsed.id) as Array<{entity_type:string;id:string}>;
+        for(const row of affected) currentFrame().catalogRefs.set(`${row.entity_type}/${row.id}`,{entityType:row.entity_type,id:row.id});
         return { entityType: 'publication_anchor', id: parsed.id, revision: metadataRevision };
       });
     },
