@@ -5,3 +5,5 @@ export { createPackagePreview, assertPackagePreview, type PackagePreviewDependen
 export { PublishingService, type PublishingDependencies } from './publishing-service';
 export { registerPublishingCommands } from './register-commands';
 export type { PublicationReadPort } from './package-store';
+export { createGitStagingProvider, type GitStagingOptions } from './git-staging-provider';
+export type { PublicationGitPort, PreparedProposal } from './git-port';
