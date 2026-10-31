@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { Header } from '../../../domain/workbench/primitives';
 import { entityRefSchema, headerShape, positiveIntSchema, sha256Schema, utcInstantSchema, uuidSchema, versionRefSchema } from '../../../domain/workbench/primitives';
-import { problemSchema } from '../../../server/workbench/protocol';
+import { problemSchema,revisionTokenSchema } from '../../../server/workbench/protocol';
 import { publicationAnchorSchema } from '../../../domain/workbench/schemas';
 
 export const gitOidSchema = z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/);
@@ -33,8 +33,13 @@ export const proposalLinkSchema=z.strictObject({provider:z.literal('bitbucket'),
 export const proposalSnapshotSchema=z.strictObject({link:proposalLinkSchema,packageId:uuidSchema,sourceCommit:gitOidSchema,targetCommit:gitOidSchema,state:z.enum(['open','needs_rework','merged','declined','unknown']),author:z.strictObject({externalId:z.string().min(1).nullable(),displayName:z.string()}),externalVersion:z.string().min(1)});
 export const proposalCommentSchema=z.strictObject({id:z.string().min(1),version:z.string().min(1),text:z.string(),createdAt:utcInstantSchema,authorDisplayName:z.string(),requiresRework:z.boolean()});
 export const proposalWriteSchema=z.strictObject({packageRevision:packageRevisionSchema,branch:z.string().regex(/^uor\/[0-9a-f-]{36}\/[0-9a-f-]{36}$/),proposalCommit:gitOidSchema,summary:z.string().min(1),marker:z.string().min(1)});
-export const mergeEvidenceSchema=z.strictObject({mainCommit:gitOidSchema,proposalCommit:gitOidSchema.nullable(),mergedAt:utcInstantSchema.nullable(),source:z.string().min(1),verified:z.boolean()});
+export const mergeEvidenceSchema=z.strictObject({mainCommit:gitOidSchema,proposalCommit:gitOidSchema.nullable(),mergedAt:utcInstantSchema.nullable(),source:z.string().min(1),verified:z.boolean(),repositoryId:z.string().min(1).optional(),packageId:uuidSchema.optional(),revision:positiveIntSchema.optional(),contentHash:sha256Schema.optional(),pullRequestId:z.string().min(1).optional()});
 export const packageSubmitResultSchema=z.strictObject({packageRevision:packageRevisionSchema,preparedCommit:gitOidSchema,proposal:proposalLinkSchema,state:z.literal('open_pr')});
 export type PackageSubmitResult=z.infer<typeof packageSubmitResultSchema>;
 export const packageStatusResultSchema=z.strictObject({packageId:uuidSchema,state:packageStateSchema,proposal:proposalLinkSchema.nullable(),comments:z.array(proposalCommentSchema),anchor:publicationAnchorSchema.nullable(),warnings:z.array(problemSchema)});
 export type PackageStatusResult=z.infer<typeof packageStatusResultSchema>;
+export const publicationCheckResultSchema=z.strictObject({currentCommit:gitOidSchema.nullable(),availableCommit:gitOidSchema.nullable(),available:z.boolean(),warnings:z.array(problemSchema)});
+export type PublicationCheckResult=z.infer<typeof publicationCheckResultSchema>;
+export const publicationApplyInputSchema=z.strictObject({mainCommit:gitOidSchema});
+export const publicationApplyResultSchema=z.strictObject({appliedCommit:gitOidSchema,stateRevision:revisionTokenSchema,anchors:z.array(publicationAnchorSchema),warnings:z.array(problemSchema)});
+export type PublicationApplyResult=z.infer<typeof publicationApplyResultSchema>;

@@ -5,7 +5,7 @@ import type { JobStore, JobSink } from '../../../server/workbench/jobs';
 import { createPackageStore } from './package-store';
 import { assertPackagePreview, createPackagePreview, type PackagePreviewDependencies } from './package-preview';
 import { fail } from './package-projection';
-import { packageSubmitResultSchema,proposalSnapshotSchema,proposalCommentSchema,bitbucketCapabilitiesSchema,type PackagePreviewInput,type PackagePreviewResult,type PackageSubmitInput,type PackageSubmitResult,type PackageStatusResult,type PublicationPackageRecord } from './contracts';
+import { packageSubmitResultSchema,proposalSnapshotSchema,proposalCommentSchema,bitbucketCapabilitiesSchema,gitOidSchema,type PackagePreviewInput,type PackagePreviewResult,type PackageSubmitInput,type PackageSubmitResult,type PackageStatusResult,type PublicationPackageRecord,type PublicationCheckResult,type PublicationApplyResult } from './contracts';
 import { WorkbenchHttpError,type Problem } from '../../../server/workbench/protocol';
 import { commitCommandEffect,withCommandExecution } from '../../../server/workbench/command-store';
 import { buildPackageManifest } from './package-manifest';
@@ -14,15 +14,18 @@ import { reconcileProposal } from './proposal-reconciliation';
 import type { PublicationGitPort,PreparedProposal } from './git-port';
 import type { TerminalRunner,TerminalRunResult } from './terminal-runner';
 import { createPreTransferGate } from './pre-transfer-gate';
+import { applyVerifiedPublication,readAppliedPublication } from './publication-apply';
+import type { EvidenceService } from '../../evidence/workbench-evidence';
 
-export type PublishingDependencies=PackagePreviewDependencies & {accessPolicy:AccessPolicyService;jobs:JobStore;jobSink:JobSink;bitbucket?:BitbucketPort;terminal?:TerminalRunner};
+export type PublishingDependencies=PackagePreviewDependencies & {accessPolicy:AccessPolicyService;jobs:JobStore;jobSink:JobSink;bitbucket?:BitbucketPort;terminal?:TerminalRunner;evidence?:EvidenceService};
 export class PublishingService {
   private readonly store;
   readonly readPort;
   constructor(private readonly deps:PublishingDependencies) {
     this.store=createPackageStore(deps.repository,deps.drafts); this.readPort=this.store.readPort;
     deps.jobs.registerStage('package.preview.check');
-    for(const stage of ['package.prepare','package.push','git.auth','pr.write','pr.status','PR.auth']) deps.jobs.registerStage(stage);
+    for(const stage of ['package.prepare','package.push','git.auth','pr.write','pr.status','PR.auth','publication.check','publication.apply']) deps.jobs.registerStage(stage);
+    readAppliedPublication(deps.repository);
   }
   async preview(context:CommandContext,input:PackagePreviewInput):Promise<PackagePreviewResult> {
     const previous=this.readPort.readOwnPackage(context,input.packageId);if(previous&&['merged','declined'].includes(previous.state)) return fail('PACKAGE_CLOSED',409);
@@ -159,6 +162,26 @@ export class PublishingService {
       if(pushMayHaveOccurred&&!(error instanceof WorkbenchHttpError&&['PREVIEW_STALE','ACCESS_DENIED','COMMAND_FORBIDDEN','OPERATION_CANCELLED'].includes(error.code))) return pending('REMOTE_STATE_UNKNOWN','git');
       if(!proposalConfirmed&&error instanceof WorkbenchHttpError&&['REMOTE_STATE_UNKNOWN','PR_AUTH_REQUIRED'].includes(error.code)) return pending(error.code,'bitbucket');throw error;
     }
+  }
+  private publicationRecheck(context:CommandContext,name:'publication.check'|'publication.apply') {
+    const person=context.ownAccess.personId,installation=context.installationId,command=context.commandId;
+    return async()=>{
+      if(context.repository!==this.deps.repository||context.actor.installationId!==installation||context.installationId!==installation||context.commandId!==command||context.actor.profilePersonId!==person) return fail('COMMAND_CONTEXT_MISMATCH',409);
+      const fresh=await this.deps.accessPolicy.assertCommandAllowed(name);
+      if(fresh.personId!==person||!canUseCapability(fresh,'publication.apply')) return fail('COMMAND_FORBIDDEN',403);context.ownAccess=fresh;
+    };
+  }
+  async checkPublication(context:CommandContext):Promise<PublicationCheckResult> {
+    const recheck=this.publicationRecheck(context,'publication.check');await recheck();
+    const main=await this.deps.git.readMain();await recheck();gitOidSchema.parse(main.commit);
+    const current=readAppliedPublication(this.deps.repository);if(current&&current.repositoryId!==main.repositoryId) return fail('REPOSITORY_MISMATCH',409);
+    const result:PublicationCheckResult={currentCommit:current?.commit??null,availableCommit:main.commit,available:current?.commit!==main.commit,warnings:[]};
+    return commitCommandEffect(context,()=>({result,changedRefs:[],editToken:null})).result;
+  }
+  async applyPublication(context:CommandContext,mainCommit:string):Promise<PublicationApplyResult> {
+    const recheck=this.publicationRecheck(context,'publication.apply');await recheck();
+    const curator=canUseCapability(context.ownAccess,'uor.prepare');
+    return applyVerifiedPublication(context,{mainCommit},{repository:this.deps.repository,git:this.deps.git as PublicationGitPort,artifacts:this.deps.artifacts,clock:this.deps.clock,bitbucket:curator?this.deps.bitbucket??null:null,publication:this.deps.publication,evidence:this.deps.evidence,recheck,knownProposal:curator?packageId=>{try{return this.readPort.readOwnPackage(context,packageId)?.proposal??null;}catch(error){if(error instanceof WorkbenchHttpError&&error.statusCode===404)return null;throw error;}}:undefined});
   }
   async refreshStatus(context:CommandContext,packageId:string):Promise<PackageStatusResult> {
     let pkg=this.own(context,packageId);const owner=context.actor.profilePersonId,bitbucket=this.deps.bitbucket??createUnavailableBitbucketPort();const warnings:Problem[]=[];

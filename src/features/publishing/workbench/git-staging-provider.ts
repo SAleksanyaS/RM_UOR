@@ -98,6 +98,13 @@ export function createGitStagingProvider(input:GitStagingOptions):PublicationGit
       return {repositoryId:options.repositoryId,commit:observed,files:await tree(cwd,observed)};
     } finally {release();}
   }
+  async function readAcceptedMainAt(oid:string):Promise<VerifiedMain> {
+    gitOidSchema.parse(oid);
+    const accepted=await readMain(),cwd=await cache();
+    await commit(cwd,oid);
+    if((await invoke(cwd,['merge-base','--is-ancestor',oid,accepted.commit],true,[1])).exitCode!==0) return integrity();
+    return {repositoryId:options.repositoryId,commit:oid,files:await tree(cwd,oid)};
+  }
   async function assertProposalDelta(cwd:string,tip:string,revision:PackageManifest['packageRevision'],maxRevision:number):Promise<void> {
     const changes=new TextDecoder('utf-8',{fatal:true}).decode((await invoke(cwd,['diff','--name-status','-z','--no-renames',revision.baseCommit,tip],true)).bytes).split('\0');
     if(changes.pop()!=='') return stale();const groups=new Map<string,Set<string>>();
@@ -180,6 +187,7 @@ export function createGitStagingProvider(input:GitStagingOptions):PublicationGit
     return null;
   }
   const port:PublicationGitPort={
+    readAcceptedMainAt,
     readMain,
     async inspectRemote(branch) {if(!branchPattern.test(branch)) return bad();return remote(await cache(),branch);},
     async verifyPrepared(candidate) {

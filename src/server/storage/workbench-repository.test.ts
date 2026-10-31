@@ -126,6 +126,25 @@ describe('append-only workbench repository', () => {
     expect(() => moduleSql.all('SELECT * FROM wb_fact_index')).toThrow();
   });
 
+  it('imports immutable published history without replacing a newer local fact or anchoring a coincident local version', () => {
+    const {repository:r}=setup(),graph=makeEntityGraph();seedGraph(r,graph);const fact=graph.input.facts[0];
+    r.append('observed_fact',{...fact,revision:2,publicationAnchorId:null,value:'71'},1);
+    r.append('observed_fact',{...fact,revision:3,publicationAnchorId:null,value:'72'},2);
+    const incomingAnchor=makePublicationAnchor({id:fixtureId(269001),packageId:fixtureId(269001),timeVerification:'unknown',mergedAt:null});r.appendPublicationAnchor(incomingAnchor,null);
+    const incoming={...fact,id:fixtureId(269002),revision:2,publicationAnchorId:incomingAnchor.id,value:'69'};
+    expect(r.importPublishedVersion('observed_fact',incoming)).toEqual({entityType:'observed_fact',id:incoming.id,revision:2});
+    expect(r.importPublishedVersion('observed_fact',{...incoming,revision:1,value:'68'}).revision).toBe(1);
+    expect(r.getHead({entityType:'observed_fact',id:incoming.id})?.revision).toBe(2);
+    expect(r.getHead({entityType:'observed_fact',id:fact.id})).toMatchObject({revision:3,value:'72',publicationAnchorId:null});
+    expect(()=>r.importPublishedVersion('observed_fact',{...fact,revision:2,publicationAnchorId:incomingAnchor.id,value:'71'})).toThrowError(expect.objectContaining({code:'VERSION_CONTENT_IMMUTABLE'}));
+    expect(()=>r.importPublishedVersion('observed_fact',{...incoming,publicationAnchorId:null})).toThrowError(expect.objectContaining({code:'PUBLICATION_UNCONFIRMED'}));
+    const revision=r.getStateRevision();r.importPublishedVersion('observed_fact',incoming);expect(r.getStateRevision()).toBe(revision);
+    expect(r.publicationAnchorMetadataRevision({entityType:'publication_anchor',id:incomingAnchor.id})).toBe(1);
+    expect(r.readVersionsForPublicationAnchor(incomingAnchor.id).map(row=>[row.entityType,row.value.id,row.value.revision])).toEqual([['observed_fact',incoming.id,1],['observed_fact',incoming.id,2]]);
+    r.appendPublicationAnchor({...incomingAnchor,timeVerification:'verified',mergedAt:'2026-10-23T08:00:00Z'},1);
+    expect(r.publicationAnchorMetadataRevision({entityType:'publication_anchor',id:incomingAnchor.id})).toBe(2);
+    expect(r.readPublicationAnchor({entityType:'publication_anchor',id:incomingAnchor.id})?.revision).toBe(1);
+  });
   it('queries 2000 expected members without a SQL expression-depth limit or truncation', () => {
     const { repository: r } = setup();
     const scopes = Array.from({ length: 2000 }, (_, index) => ({ kind: 'product' as const, id: fixtureId(500 + index) }));

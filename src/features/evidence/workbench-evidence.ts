@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
-import { mkdir, open } from 'node:fs/promises';
+import { mkdir, open,link,unlink,chmod } from 'node:fs/promises';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import type { Evidence, FileArtifactRef } from '../../domain/workbench/entities';
@@ -20,8 +20,31 @@ const integrity = (): never => { throw new WorkbenchHttpError(422, 'INTEGRITY_MI
 export function createEvidenceService({ repository, store, files, clock }: { repository: WorkbenchRepository; store: DraftStore; files: FileStore; clock: Clock }) {
   const sql = repository.sqlForModule('evidence');
   sql.execMigration('v1', 'CREATE TABLE wb_evidence_artifacts(artifact_id TEXT PRIMARY KEY,evidence_id TEXT NOT NULL,installation_id TEXT NOT NULL,owner_person_id TEXT NOT NULL,name TEXT NOT NULL,mime_type TEXT NOT NULL,bytes INTEGER NOT NULL,sha256 TEXT NOT NULL); CREATE INDEX wb_evidence_by_entity ON wb_evidence_artifacts(evidence_id);');
+  sql.execMigration('v2-published', 'CREATE TABLE wb_evidence_published_artifacts(artifact_id TEXT PRIMARY KEY,evidence_id TEXT NOT NULL,installation_id TEXT NOT NULL,owner_person_id TEXT NOT NULL,name TEXT NOT NULL,mime_type TEXT NOT NULL,bytes INTEGER NOT NULL,sha256 TEXT NOT NULL)');
   const prepared = new Map<string, Artifact>();
   return {
+    /** Internal verified-publication port. Metadata is committed by its caller's transaction. */
+    async stagePublished(context:CommandContext,unparsed:Evidence,inputBytes:Uint8Array):Promise<{commit():void}> {
+      const value=evidenceSchema.parse(unparsed);if(value.kind!=='file'||!value.publicationAnchorId||context.repository!==repository||context.actor.installationId!==context.installationId||context.actor.profilePersonId!==context.ownAccess.personId)return integrity();
+      const bytes=Buffer.from(inputBytes),hash=createHash('sha256').update(bytes).digest('hex');
+      if(bytes.length!==value.file.bytes||bytes.length>defaultFileLimits.evidenceBytes||'sha256:'+hash!==value.file.hash)return integrity();
+      const extensions:Record<string,string>={'text/plain':'txt','application/pdf':'pdf','image/png':'png','image/jpeg':'jpg','application/vnd.openxmlformats-officedocument.wordprocessingml.document':'docx','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':'xlsx'};
+      const extension=extensions[value.file.mimeType];if(!extension)return integrity();
+      const metadata:Artifact={artifact_id:value.file.artifactId,evidence_id:value.id,installation_id:context.installationId,owner_person_id:context.ownAccess.personId??'',name:`evidence-${value.id}.${extension}`,mime_type:value.file.mimeType,bytes:bytes.length,sha256:hash};
+      const checkMetadata=()=>{for(const table of ['wb_evidence_artifacts','wb_evidence_published_artifacts']){const existing=sql.get<Artifact>(`SELECT * FROM ${table} WHERE artifact_id=?`,[metadata.artifact_id]);if(existing&&(existing.sha256!==hash||existing.bytes!==bytes.length||existing.mime_type!==metadata.mime_type))return integrity();}};
+      checkMetadata();let ancestor=store.artifactDirectory;
+      while(true){try{await assertPhysicalPath(ancestor,true);break;}catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;const parent=path.dirname(ancestor);if(parent===ancestor)return integrity();ancestor=parent;}}
+      await mkdir(store.artifactDirectory,{recursive:true,mode:0o700});await assertPhysicalPath(store.artifactDirectory,true);
+      const filename=path.join(store.artifactDirectory,metadata.artifact_id),temporary=path.join(store.artifactDirectory,newUuid()+'.staging');
+      const handle=await open(temporary,'wx',0o600);
+      try{await handle.writeFile(bytes);await handle.sync();}finally{await handle.close();}
+      // No-clobber installation; the temporary hardlink is removed before any publication metadata exists.
+      let installed=false;try{await link(temporary,filename);installed=true;}catch(error){if((error as NodeJS.ErrnoException).code!=='EEXIST')throw error;}finally{await unlink(temporary);}
+      if(installed)await chmod(filename,0o400);
+      await assertPhysicalPath(filename,false);const saved=await open(filename,constants.O_RDONLY|(constants.O_NOFOLLOW??0));
+      try{const info=await saved.stat();if(!info.isFile()||info.nlink!==1||info.size!==bytes.length)return integrity();const actual=await saved.readFile();if(actual.length!==bytes.length||createHash('sha256').update(actual).digest('hex')!==hash)return integrity();}finally{await saved.close();}
+      return {commit(){checkMetadata();sql.run('INSERT OR IGNORE INTO wb_evidence_published_artifacts VALUES(?,?,?,?,?,?,?,?)',[metadata.artifact_id,metadata.evidence_id,metadata.installation_id,metadata.owner_person_id,metadata.name,metadata.mime_type,metadata.bytes,metadata.sha256]);}};
+    },
     async fromHandle(context: CommandContext, { draftId, fileHandle }: { draftId: string; fileHandle: string }): Promise<Evidence> {
       const entry = store.getEntry(draftId), pkg = entry ? store.getPackage(entry.packageId) : null;
       if (!entry || entry.entityRef.entityType !== 'evidence' || !pkg || pkg.installationId !== context.installationId || pkg.ownerPersonId !== context.ownAccess.personId) return missing();
@@ -43,7 +66,7 @@ export function createEvidenceService({ repository, store, files, clock }: { rep
     },
     async readArtifactForContext(context: QueryContext, artifactId: string): Promise<ArtifactReadResult> {
       if (!uuidSchema.safeParse(artifactId).success) return missing();
-      const metadata = sql.get<Artifact>('SELECT * FROM wb_evidence_artifacts WHERE artifact_id=?', [artifactId]);
+      const metadata = sql.get<Artifact>('SELECT * FROM wb_evidence_published_artifacts WHERE artifact_id=?', [artifactId])??sql.get<Artifact>('SELECT * FROM wb_evidence_artifacts WHERE artifact_id=?', [artifactId]);
       if (!metadata) return missing();
       const matches = (value: unknown) => { const parsed = evidenceSchema.safeParse(value); return parsed.success && parsed.data.kind === 'file' && parsed.data.file.artifactId === artifactId && parsed.data.file.hash === `sha256:${metadata.sha256}` && parsed.data.file.bytes === metadata.bytes && parsed.data.file.mimeType === metadata.mime_type; };
       const published = repository.readPublishedEvidenceForArtifact(artifactId);

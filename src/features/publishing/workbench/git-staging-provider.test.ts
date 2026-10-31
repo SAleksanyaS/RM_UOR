@@ -4,8 +4,31 @@ import { afterEach, expect, it } from 'vitest';
 import { gitStagingFixture, stagingCleanups } from '../../../../tests/fixtures/workbench/git-staging';
 import { createGitStagingProvider } from './index';
 import { buildPackageManifest } from './package-manifest';
+import type { PublicationGitPort } from './git-port';
+import type { VerifiedMain } from './contracts';
 
 afterEach(async()=>{for(const cleanup of stagingCleanups.splice(0).reverse()) await cleanup();});
+it('reads an earlier merge tree only after proving it belongs to the freshly accepted main ancestry', async () => {
+  const f = await gitStagingFixture(), provider = createGitStagingProvider(f.options) as PublicationGitPort & { readAcceptedMainAt(commit: string): Promise<VerifiedMain> };
+  const prepared = await provider.prepare(f.makePackage());
+  await f.git(prepared.checkout, ['push', 'origin', prepared.branch]);
+  await f.git(f.projectRoot, ['fetch', 'origin', prepared.branch]); await f.git(f.projectRoot, ['merge', '--ff-only', 'FETCH_HEAD']); await f.git(f.projectRoot, ['push', 'origin', 'main']);
+  await writeFile(path.join(f.projectRoot, 'README.md'), 'Later main after actual package merge');
+  await f.git(f.projectRoot, ['add', '--', 'README.md']); await f.git(f.projectRoot, ['commit', '-m', 'descendant main']); await f.git(f.projectRoot, ['push', 'origin', 'main']);
+  const current = await provider.readMain(), proof = await provider.readAcceptedMainAt(prepared.commit);
+  expect(current.commit).not.toBe(prepared.commit); expect(proof.commit).toBe(prepared.commit); expect(proof.repositoryId).toBe(f.options.repositoryId); expect(proof.files).toEqual(current.files);
+  const foreign = await f.git(f.projectRoot, ['commit-tree', await f.git(f.projectRoot, ['rev-parse', prepared.commit + '^{tree}']), '-m', 'same tree on unrelated branch']);
+  await f.git(f.projectRoot, ['push', 'origin', foreign + ':refs/heads/unrelated']);
+  // Make the unrelated object genuinely available in the private reader. A
+  // missing object would not prove that the ancestry check rejects its branch.
+  const repositories = path.join(f.runtimeRoot, 'workbench-git');
+  const privateRoot = path.join(repositories, (await readdir(repositories))[0]);
+  const reader = path.join(privateRoot, (await readdir(privateRoot)).find(name => name.startsWith('reader-'))!);
+  await f.git(reader, ['fetch', 'origin', 'refs/heads/unrelated:refs/remotes/origin/unrelated']);
+  expect(await f.git(reader, ['cat-file', '-t', foreign])).toBe('commit');
+  await expect(provider.readAcceptedMainAt(foreign)).rejects.toThrow();
+  await expect(provider.readAcceptedMainAt('HEAD')).rejects.toThrow();
+}, 60000);
 it('prepares independent curator branches, stages exact manifest paths and preserves the running checkout',async()=>{
   const f=await gitStagingFixture();const provider=createGitStagingProvider(f.options);
   await writeFile(path.join(f.projectRoot,'README.md'),'Unsaved human text');await mkdir(path.join(f.projectRoot,'.runtime'));await writeFile(path.join(f.projectRoot,'.runtime','registry.local.json'),'synthetic-private');

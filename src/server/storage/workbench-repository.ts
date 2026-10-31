@@ -1,6 +1,7 @@
 import type { HistoryIndexQuery, HistoryIndexPage } from '../../features/history/workbench-history-contracts';
 import { decodeHistoryCursor, encodeHistoryCursor, historyFingerprint } from '../../features/history/workbench-history-cursor';
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { isDeepStrictEqual } from 'node:util';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -30,6 +31,9 @@ export interface WorkbenchRepository {
   getHead<T extends Header>(ref: EntityRef): T | null;
   readVersion<T extends Header>(ref: VersionRef): T | null;
   append<T extends Header>(entityType: string, value: T, expectedHead: number | null): VersionRef;
+  importPublishedVersion<T extends Header>(entityType:string,value:T):VersionRef;
+  publicationAnchorMetadataRevision(ref:EntityRef):number|null;
+  readVersionsForPublicationAnchor(id:string):Array<{entityType:string;value:Header}>;
   transaction<T>(action: () => T): T;
   getStateRevision(): string;
   close(): void;
@@ -182,6 +186,21 @@ export function createWorkbenchRepository(options: { filename: string; artifactR
         return { entityType: type, id: parsed.id, revision: parsed.revision };
       });
     },
+    importPublishedVersion<T extends Header>(type:string,value:T):VersionRef {
+      assertWritable();if(projecting) throw new WorkbenchError('PROJECTION_ENTITY_WRITE_FORBIDDEN');
+      return atomic(()=>{
+        const parsed=registration(type).schema.parse(value);
+        if(!parsed.publicationAnchorId||repository.readPublicationAnchor({entityType:'publication_anchor',id:parsed.publicationAnchorId})?.publicationState!=='confirmed') throw new WorkbenchError('PUBLICATION_UNCONFIRMED');
+        if(type==='capture'&&parsed.revision!==1) throw new WorkbenchError('CAPTURE_IMMUTABLE');
+        const ref={entityType:type,id:parsed.id,revision:parsed.revision},previous=repository.readVersion(ref);
+        if(previous){if(!isDeepStrictEqual(previous,parsed))throw new WorkbenchError('VERSION_CONTENT_IMMUTABLE');return ref;}
+        db.prepare('INSERT INTO wb_entity_versions VALUES(?,?,?,?,?,?)').run(type,parsed.id,parsed.revision,JSON.stringify(parsed),parsed.recordedAt,parsed.publicationAnchorId);
+        db.prepare('INSERT INTO wb_entity_heads VALUES(?,?,?) ON CONFLICT(entity_type,id) DO UPDATE SET revision=MAX(revision,excluded.revision)').run(type,parsed.id,parsed.revision);
+        indexEntity(type,parsed);const frame=currentFrame();frame.dirty=true;frame.staged.push({type,value:parsed});frame.catalogRefs.set(`${type}/${parsed.id}`,{entityType:type,id:parsed.id});return ref;
+      });
+    },
+    publicationAnchorMetadataRevision(ref) {assertOpen();entityRefSchema.parse(ref);return ref.entityType==='publication_anchor'?anchorRow(ref.id)?.revision??null:null;},
+    readVersionsForPublicationAnchor(id) {assertOpen();uuidSchema.parse(id);return (db.prepare('SELECT entity_type,payload_json FROM wb_entity_versions WHERE publication_anchor_id=? ORDER BY entity_type,id,revision').all(id) as Array<PayloadRow&{entity_type:string}>).map(row=>({entityType:row.entity_type,value:JSON.parse(row.payload_json) as Header}));},
     transaction<T>(action: () => T): T {
       assertWritable();
       if (action.constructor.name === 'AsyncFunction' || action.constructor.name === 'AsyncGeneratorFunction') throw new WorkbenchError('ASYNC_TRANSACTION_FORBIDDEN');

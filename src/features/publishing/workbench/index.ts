@@ -16,3 +16,5 @@ export { createPreTransferGate } from './pre-transfer-gate';
 export { bindTerminalCapabilityProfile,terminalCapabilityProfileSchema } from './terminal-capability-profile';
 export type { TerminalCapabilityProfile } from './terminal-capability-profile';
 export { createNativeTerminalPort,createWindowsTerminalLauncher } from './terminal-native';
+export { verifyPublicationAnchor,type PublicationAnchor } from './publication-anchor';
+export { applyVerifiedPublication,readAppliedPublication,type PublicationApplyDependencies } from './publication-apply';

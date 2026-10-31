@@ -168,4 +168,3 @@ it('does not accept retry while the original native terminal is still waiting',a
   try{await expect(f.registry.execute({commandId:retryId,name:'job.retry',baseRevision:null,payload:{jobId:job.jobId}},{...f.context,commandId:retryId})).rejects.toMatchObject({code:'RETRY_NOT_AVAILABLE'});}finally{release();await sent;}
   expect(f.jobs.get(job.jobId,f.context.installationId)!.status).toBe('succeeded');expect(f.counts()).toEqual({commits:1,pushes:1});
 });
-
