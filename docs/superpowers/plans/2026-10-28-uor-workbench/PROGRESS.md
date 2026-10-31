@@ -5,7 +5,7 @@ Branch: `codex/uor-workbench-rebuild`. Source code baseline: `3d8704e4a6ff2195af
 
 ## Continue here
 
-T00–T27 are implemented and checked. T28 archive/restore integration, T29 migration/probes and T30 client work are in progress under the user's parallel-work authorization. The user's priority OKO export/enrichment path is implemented. Read the latest run entry and [core checkpoint review](CORE_CHECKPOINT_REVIEW.md). The workbench remains separate from the production entry (T39); no live data has been migrated.
+T00–T30 are implemented and checked. T31 shell review fixes, T32 goal views and T34 data views are in progress under the user's parallel-work authorization. T42/T44/T45 shared OKO command/source integration remains before production cutover. Read the latest run entry and [core checkpoint review](CORE_CHECKPOINT_REVIEW.md). The workbench remains separate from the production entry (T39); no live data has been migrated.
 
 Resume commands from the repository root:
 
@@ -57,11 +57,11 @@ DONE requires actual checks, commit and evidence. Default execution order is in 
 | T27 | [03-publication-and-recovery.md](03-publication-and-recovery.md) | Обновление кода через существующий durable activation runtime | DONE | v3 workspace lifecycle/v2 recovery, live-owner protection and journal-first reconciliation;4 review fixes,50 isolated tests+build PASS |
 | T28 | [03-publication-and-recovery.md](03-publication-and-recovery.md) | Типизированный backup/restore, replace-preview и независимая rescue | DONE | Commit titled feat(workbench): add verified workspace backup and recovery; 16 files /86 tests and build PASS; concrete production owner T39 |
 | T29 | [03-publication-and-recovery.md](03-publication-and-recovery.md) | Legacy staging migration и исполняемые probe drivers | DONE | Commit titled feat(workbench): stage legacy history and honest bank probes; combined T22–T29 32 files /395 tests PASS; actual bank not_ready |
-| T30 | [04-interface-and-release.md](04-interface-and-release.md) | API client, ошибки, контекст и тестовый мост | RUNNING | Review fixes and 41 focused checks passed; combined build passed; acceptance/commit pending |
+| T30 | [04-interface-and-release.md](04-interface-and-release.md) | API client, ошибки, контекст и тестовый мост | DONE | Commit titled feat(workbench): add guarded client and persistent context; exact13file snapshot42tests/build/client browser bundle PASS |
 | T31 | [04-interface-and-release.md](04-interface-and-release.md) | Оболочка, роли, навигация, приветствие и уведомления | RUNNING | Real notification commands connected; shell focused checks passed; final review pending |
-| T32 | [04-interface-and-release.md](04-interface-and-release.md) | Обзор, список и карточка цели | PLANNED | Not executed |
+| T32 | [04-interface-and-release.md](04-interface-and-release.md) | Обзор, список и карточка цели | RUNNING | Actual goal scenario/read-model composition and view tests in progress |
 | T33 | [04-interface-and-release.md](04-interface-and-release.md) | Простой конструктор цели и методики | PLANNED | Not executed |
-| T34 | [04-interface-and-release.md](04-interface-and-release.md) | Источники, импорт, исходные и обогащённые строки | PLANNED | Not executed |
+| T34 | [04-interface-and-release.md](04-interface-and-release.md) | Источники, импорт, исходные и обогащённые строки | RUNNING | Actual import/service fixture and injected data views in progress |
 | T35 | [04-interface-and-release.md](04-interface-and-release.md) | Работы, риски, зависимости и запросы решений | PLANNED | Not executed |
 | T36 | [04-interface-and-release.md](04-interface-and-release.md) | Панель УОР, накопленный пакет и внешний вход Git | PLANNED | Not executed |
 | T37 | [04-interface-and-release.md](04-interface-and-release.md) | Конструктор дашбордов, поля и общий поиск | PLANNED | Not executed |
@@ -448,3 +448,12 @@ Remaining work is explicit: wire own v1 profile/record/test commands/queries and
 - Final owned integration gate5files83/83 PASS exit0 (t29-review-final-focused.log); strict focused TypeScript exit0 (t29-review-types.log). Combined T22–T29 focused gate, including actual native Git, update faults, archives and migration/probes:32files395/395 PASS exit0,221.28s (t22-t29-combined-focused.log). Fresh combined build after source fixes exit0,Vite6.98s (t28-review-final-build.log). Counts overlap; they are not summed into a full-suite claim.
 - Bank connectivity, provider evidence verification, BP-04 golden inventory/curator acceptance and final production composition remain explicit external/T39 boundaries. Public package integration is now real and exercised. Last full suite remains exact T25 checkpoint176files1115tests; these combined checks are not relabeled as a new full suite.
 - T28 is committed582d95b. T30 exact13file snapshot independently passed42tests/build/browser-client bundle; acceptance next. T31 review fixes run in parallel with T32/T34. No production entry/main merge/live migration or real external PR mutation performed.
+
+### 2026-10-31 — T30 guarded browser client and persistent context
+
+- Implemented real v1 client/session/CSRF/query/command/FormData wire, typed errors, browser-safe shared file response schema, canonical scope/time/current-agreed URL/preferences and abort/sequence ownership. No invented empty-installation context, app cookie access or automatic retry of an unknown mutation with a new ID. Additive preferences.get uses the actual owner service and strict request schema.
+- One fresh review found4Important issues; all reproduced and fixed in one pass: explicit null URL state losing to saved preferences, early popstate erasing preferences, old-client queued effects/completions changing a replacement context, and malformed HTTP200/foreign command receipts accepted as success. Actual command/upload schema validation and lifecycle guards now fail safely. No re-review or deferred minors.
+- Root found the shell's real notification commands absent in test composition; actual reader APIclient regression failed, registered real notifications.markRead/subscribe and observed GREEN. No fake handler or role grant was added.
+- Exact reviewed13file T30 snapshot on committed T28 base582d95b, isolated from concurrently changing T32 fixture:8files42/42 PASS exit0,8.85s (t30-isolated-final-focused.log); npm run build exit0,Vite3.23s (t30-isolated-final-build.log); actual client browser entry bundle exit0,724ms, no server builtins (t30-isolated-final-browser-bundle.log). Earlier agent41/41 is included. Current shared production entry remains legacy; the separate new-client bundle is the relevant browser dependency proof.
+- Rulings: future page command wiring/seed cases belong their feature owners; the strict owner preferences query is additive to business queries; generic query DTO validation remains per registered owner. Actual production composition/entry and bank acceptance remain T39/BP obligations, not inferred from these local tests. Wrong composition would block provider/page readiness and must fail the T39 gate.
+- T28/T29 are committed582d95b/0acde24. T31 single review fix pass runs while T32 and T34 build real pages/fixtures. The reviewed T30 test-application snapshot is committed separately; later fixture changes stay in the working tree for their owning task, preserving all parallel edits.

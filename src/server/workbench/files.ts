@@ -6,9 +6,10 @@ import { z } from 'zod';
 import { uuidSchema, type UUIDv4 } from '../../domain/workbench/primitives';
 import { validateFileContent } from './file-content-safety';
 import { WorkbenchHttpError } from './protocol';
+import { fileHandleViewSchema, type FileHandleView } from './file-view';
+export { fileHandleViewSchema, type FileHandleView } from './file-view';
 
 export type FilePurpose = 'goal-import' | 'evidence' | 'workspace-restore';
-export type FileHandleView = { fileHandle: UUIDv4; name: string; mediaType: string; bytes: number; sha256: string };
 export type StagedFile = FileHandleView & { purpose: FilePurpose; installationId: UUIDv4; profilePersonId?: UUIDv4 | null; bytesValue: Uint8Array };
 export type FileLimits = { goalImportBytes: number; evidenceBytes: number; restoreBytes: number; restoreExpandedBytes: number };
 export interface FileStore {
@@ -17,7 +18,6 @@ export interface FileStore {
 }
 export const defaultFileLimits: Readonly<FileLimits> = { goalImportBytes: 10 * 1024 ** 2, evidenceBytes: 32 * 1024 ** 2, restoreBytes: 64 * 1024 ** 2, restoreExpandedBytes: 256 * 1024 ** 2 };
 export const filePurposeSchema = z.enum(['goal-import', 'evidence', 'workspace-restore']);
-export const fileHandleViewSchema = z.strictObject({ fileHandle: uuidSchema, name: z.string().min(1).max(255), mediaType: z.string().min(1).max(150), bytes: z.number().int().positive().safe(), sha256: z.string().regex(/^[a-f0-9]{64}$/) });
 const metadataSchema = fileHandleViewSchema.extend({ purpose: filePurposeSchema, installationId: uuidSchema, profilePersonId: uuidSchema.nullable().optional() });
 export const fileValidationError = () => new WorkbenchHttpError(422, 'INVALID_FILE', 'The file is invalid or unsupported');
 const missing = () => new WorkbenchHttpError(404, 'FILE_NOT_FOUND', 'File not found');

@@ -15,9 +15,20 @@ import { createJobStore } from '../jobs';
 import { QueryRegistry } from '../query-registry';
 import { WorkbenchHttpError, type GlobalContext } from '../protocol';
 import { createLocalSessionStore } from '../session';
+import { createPreferencesService } from '../../../features/system/workbench-preferences';
+import { registerPreferencesQueries } from '../../../features/system/workbench-preferences-query';
+import { createDraftStore } from '../../../features/catalog/workbench-draft-store';
+import { createDraftService } from '../../../features/catalog/workbench-drafts';
+import { createDirectoryStore } from '../../../features/catalog/workbench-directory-store';
+import { createEvidenceService } from '../../../features/evidence/workbench-evidence';
+import { registerConfigurationCommands } from '../../../features/knowledge/workbench-fields';
+import { createWorkbenchReadIndex } from '../../../features/catalog/workbench-read-index';
+import { createSourceStore } from '../../../features/connectors/workbench-source-store';
+import { createNotificationService, registerNotificationCommands } from '../../../features/execution/workbench-notifications';
+import { createPackageStore } from '../../../features/publishing/workbench/package-store';
 
 export type WorkbenchTestScenario = 'empty' | 'scope-split' | 'population-gap' | 'stale-fallback' | 'manual-goal' | 'partial-file' | 'publication-ready' | 'offline-draft';
-export async function createWorkbenchTestApplication(options: { role: 'viewer' | 'curator' | 'chief'; scenario: WorkbenchTestScenario; clock?: string }): Promise<{ app: FastifyInstance; repository: WorkbenchRepository; refs: Record<string, VersionRef>; close(): Promise<void> }> {
+export async function createWorkbenchTestApplication(options: { role: 'viewer' | 'curator' | 'chief'; scenario: WorkbenchTestScenario; clock?: string; clientOrigin?: string }): Promise<{ app: FastifyInstance; repository: WorkbenchRepository; refs: Record<string, VersionRef>; close(): Promise<void> }> {
   if (options.scenario !== 'empty' && options.scenario !== 'scope-split') throw new Error('Test scenario not implemented by its owning feature: ' + options.scenario);
   const root = mkdtempSync(path.join(tmpdir(), 'uor-workbench-test-'));
   const repository = createWorkbenchRepository({ filename: ':memory:', artifactRoot: root });
@@ -42,6 +53,8 @@ export async function createWorkbenchTestApplication(options: { role: 'viewer' |
       const graph = makeEntityGraph(input);
       const header = makeHeader(103, { publicationAnchorId: input.goal.publicationAnchorId });
       graph.entries.push({ entityType: 'directory_entity', value: { ...header, kind: 'cluster', name: 'Кластер А', externalKeys: [] } });
+      graph.entries.push({ entityType: 'directory_link', value: { ...header, id: fixtureId(104), kind: 'dit_cluster', from: { entityType: 'directory_entity', id: fixtureId(100) }, to: { entityType: 'directory_entity', id: fixtureId(103) } } });
+      for (const [n, id] of [fixtureId(101), fixtureId(102)].entries()) graph.entries.push({ entityType: 'directory_link', value: { ...header, id: fixtureId(105 + n), kind: 'cluster_product', from: { entityType: 'directory_entity', id: fixtureId(103) }, to: { entityType: 'directory_entity', id } } });
       const clusterMethod = { ...input.method, id: fixtureId(114), rules: input.method.mode === 'numeric' ? input.method.rules.map(rule => ({ ...rule, condition: { op: 'gte' as const, target: '95' } })) : [] };
       // Independent published method and assignment; no child-rollup inference.
       graph.entries.push({ entityType: 'method_version', value: clusterMethod });
@@ -58,7 +71,18 @@ export async function createWorkbenchTestApplication(options: { role: 'viewer' |
       async assertFreshPublishAllowed() { throw new WorkbenchHttpError(503, 'INTEGRATION_NOT_READY', 'Synthetic fixture has no external publishing port'); },
     };
     const jobs = createJobStore({ repository, clock }); commands = createCommandRegistry({ repository, jobs, accessPolicy });
-    app = await createWorkbenchApp({ files: createFileStore({ directory: path.join(root, 'private-files'), limits: defaultFileLimits }), repository, clock, hostname: () => 'test-workbench-host', installationId: fixtureId(1), accessPolicy, commands, queries: new QueryRegistry(), jobs, modules: [], sessions: createLocalSessionStore({ clock }), allowedOrigins: ['http://127.0.0.1:5173'], readState: { defaultContext: async () => defaultContext, publishedCommit: () => options.scenario === 'scope-split' ? inputCommit : null } });
+    const installationId = fixtureId(1);
+    const files = createFileStore({ directory: path.join(root, 'private-files'), limits: defaultFileLimits });
+    const preferences = createPreferencesService({ repository, installationId, clock });
+    const store = createDraftStore({ repository, artifactDirectory: path.join(root, 'draft-artifacts') });
+    const evidence = createEvidenceService({ repository, store, files, clock });
+    const sources = createSourceStore({ repository });
+    const drafts = createDraftService({ repository, store, clock, files, directory: createDirectoryStore({ repository }), evidence, sourceState: sources });
+    registerConfigurationCommands(commands, { drafts, preferences });
+    const queries = new QueryRegistry(); registerPreferencesQueries(queries, preferences);
+    const notifications = createNotificationService({ repository, provider: { async current() { throw Error('Test read must not poll'); } }, preferences: id => ({ notificationPersonId: preferences.get(id).notificationPersonId ?? null }) });
+    registerNotificationCommands(commands, notifications);
+    app = await createWorkbenchApp({ files, repository, clock, hostname: () => 'test-workbench-host', installationId, accessPolicy, commands, queries, jobs, modules: [], sessions: createLocalSessionStore({ clock }), allowedOrigins: [options.clientOrigin ?? 'http://127.0.0.1:5173'], queryPorts: { repository, index: createWorkbenchReadIndex(repository), drafts, publishing: createPackageStore(repository, drafts).readPort, sources, notifications, jobs, preferences }, readState: { defaultContext: async () => preferences.get(installationId).context ?? defaultContext, publishedCommit: () => options.scenario === 'scope-split' ? inputCommit : null } });
     return { app, repository, refs, close };
   } catch (error) { await close(); throw error; }
 }
