@@ -111,3 +111,61 @@ it('does not present comments from an external snapshot rejected for another pac
   const refreshed=await f.send('package.refreshStatus',{packageId:f.packageId()});const result=packageStatusResultSchema.parse(refreshed.job.result);
   expect(result.comments).toEqual([]);expect(result.warnings[0].code).toBe('REMOTE_STATE_UNKNOWN');expect(result.proposal?.id).toBe('1');
 });
+it('opens Git auth separately and retains the same commit for an explicit retry',async()=>{
+  const f=await fixture(),preview=await f.preview(),push=f.terminal.runGitPush;let opened=0;
+  f.terminal.runGitPush=async()=>({status:'auth_required',provider:'git'});f.terminal.openAuth=async()=>{opened++;};
+  const sent=await f.send('package.submit',{packageId:f.packageId(),previewToken:preview.previewToken});
+  expect(sent.job).toMatchObject({status:'waiting_user',stage:'git.auth',nextAction:{commandName:'job.openAuth'}});
+  await f.execute('job.openAuth',{jobId:sent.job.jobId});expect(opened).toBe(1);expect(f.counts()).toEqual({commits:1,pushes:0});expect(f.jobs.get(sent.job.jobId,f.context.installationId)!.status).toBe('waiting_user');
+  f.terminal.runGitPush=push;await f.send('job.retry',{jobId:sent.job.jobId});expect(f.jobs.get(sent.job.jobId,f.context.installationId)!.status).toBe('succeeded');expect(f.counts()).toEqual({commits:1,pushes:1});
+});
+it('keeps REST PR auth separate after Git succeeds without creating another commit',async()=>{
+  const f=await fixture(),preview=await f.preview(),create=f.fake.createProposal;let authorized=false;
+  f.fake.createProposal=async input=>{if(!authorized)throw new WorkbenchHttpError(409,'PR_AUTH_REQUIRED','Separate native REST login required');return create(input);};
+  f.fake.openAuth=async()=>{authorized=true;};
+  const sent=await f.send('package.submit',{packageId:f.packageId(),previewToken:preview.previewToken});expect(sent.job).toMatchObject({status:'waiting_user',stage:'PR.auth',nextAction:{commandName:'job.openAuth'}});expect(sent.job.warnings[0]).toMatchObject({code:'PR_AUTH_REQUIRED',provider:'bitbucket'});
+  await f.execute('job.openAuth',{jobId:sent.job.jobId});expect(f.counts()).toEqual({commits:1,pushes:1});expect(f.fake.testing.creates).toBe(0);
+  await f.send('job.retry',{jobId:sent.job.jobId});expect(f.jobs.get(sent.job.jobId,f.context.installationId)!.status).toBe('succeeded');expect(f.counts()).toEqual({commits:1,pushes:1});expect(f.fake.testing.creates).toBe(1);
+});
+it('checks the actual preview and revoked profile after the native session waits',async()=>{
+  const f=await fixture(),preview=await f.preview(),push=f.terminal.runGitPush;let started!:()=>void,release!:()=>void;
+  const waiting=new Promise<void>(resolve=>{started=resolve;}),resume=new Promise<void>(resolve=>{release=resolve;});
+  f.terminal.runGitPush=async input=>{input.onWaiting?.();started();await resume;return push(input);};
+  const sent=f.send('package.submit',{packageId:f.packageId(),previewToken:preview.previewToken});await waiting;f.context.ownAccess={...f.context.ownAccess,role:'viewer',policyState:'revoked'};release();const result=await sent;
+  expect(result.job.status).toBe('failed');expect(f.counts()).toEqual({commits:1,pushes:0});expect(f.fake.testing.creates).toBe(0);expect(f.prepared.size).toBe(1);
+});
+it('reconciles a cancel after a possible native transfer instead of erasing the accepted push',async()=>{
+  const f=await fixture(),preview=await f.preview(),push=f.terminal.runGitPush;let started!:()=>void;const waiting=new Promise<void>(resolve=>{started=resolve;});
+  f.terminal.runGitPush=async input=>{await push(input);started();await new Promise<void>(resolve=>input.signal.addEventListener('abort',()=>resolve(),{once:true}));return {status:'unknown',exitCode:null,reason:'CANCELLED_AFTER_POSSIBLE_TRANSFER'};};
+  const commandId=fixtureId(251001),sent=f.send('package.submit',{packageId:f.packageId(),previewToken:preview.previewToken},commandId);await waiting;const job=f.jobs.findByCommand(commandId,f.context.installationId)!;
+  await expect(f.execute('job.cancel',{jobId:job.jobId})).rejects.toMatchObject({code:'REMOTE_STATE_UNKNOWN'});await sent;
+  expect(f.jobs.get(job.jobId,f.context.installationId)).toMatchObject({status:'retry_wait',warnings:[{code:'REMOTE_STATE_UNKNOWN',provider:'git'}]});expect(f.counts()).toEqual({commits:1,pushes:1});expect(f.fake.testing.creates).toBe(0);
+  f.terminal.runGitPush=push;await f.send('job.retry',{jobId:job.jobId});
+  expect(f.jobs.get(job.jobId,f.context.installationId)!.status).toBe('succeeded');expect(f.counts()).toEqual({commits:1,pushes:1});expect(f.fake.testing.creates).toBe(1);
+});
+it('accepts cancellation before transfer without reporting a second terminal-state error',async()=>{
+  const f=await fixture(),preview=await f.preview();let started!:()=>void;const waiting=new Promise<void>(resolve=>{started=resolve;});
+  f.terminal.runGitPush=async input=>{input.onWaiting?.();started();await new Promise<void>(resolve=>input.signal.addEventListener('abort',()=>resolve(),{once:true}));return {status:'cancelled',exitCode:null};};
+  const commandId=fixtureId(251002),sent=f.send('package.submit',{packageId:f.packageId(),previewToken:preview.previewToken},commandId);await waiting;const job=f.jobs.findByCommand(commandId,f.context.installationId)!;
+  await expect(f.execute('job.cancel',{jobId:job.jobId})).resolves.toMatchObject({result:{cancelRequested:true}});await sent;
+  expect(f.jobs.get(job.jobId,f.context.installationId)!.status).toBe('cancelled');expect(f.counts()).toEqual({commits:1,pushes:0});expect(f.prepared.size).toBe(1);expect(f.fake.testing.creates).toBe(0);
+});
+it('reconciles a previous accepted push when cancellation interrupts a retry before loading its preparation',async()=>{
+  const f=await fixture(),preview=await f.preview(),inspect=f.git.inspectRemote;let failed=false;
+  f.git.inspectRemote=async branch=>{if(f.counts().pushes>0&&!failed){failed=true;throw Error('Lost confirmation');}return inspect(branch);};
+  const sent=await f.send('package.submit',{packageId:f.packageId(),previewToken:preview.previewToken});expect(sent.job.status).toBe('retry_wait');
+  const original=f.publishing.assertPreview.bind(f.publishing);let started!:()=>void,release!:()=>void;const waiting=new Promise<void>(resolve=>{started=resolve;}),resume=new Promise<void>(resolve=>{release=resolve;});
+  f.publishing.assertPreview=async(...args)=>{started();await resume;return original(...args);};
+  const retry=f.send('job.retry',{jobId:sent.job.jobId});await waiting;
+  try{await expect(f.execute('job.cancel',{jobId:sent.job.jobId})).rejects.toMatchObject({code:'REMOTE_STATE_UNKNOWN'});}finally{release();await retry;}
+  expect(f.jobs.get(sent.job.jobId,f.context.installationId)!.status).toBe('retry_wait');expect(f.counts()).toEqual({commits:1,pushes:1});expect(f.fake.testing.creates).toBe(0);
+});
+it('does not accept retry while the original native terminal is still waiting',async()=>{
+  const f=await fixture(),preview=await f.preview(),push=f.terminal.runGitPush;let started!:()=>void,release!:()=>void;const waiting=new Promise<void>(resolve=>{started=resolve;}),resume=new Promise<void>(resolve=>{release=resolve;});
+  f.terminal.runGitPush=async input=>{input.onWaiting?.();started();await resume;return push(input);};
+  const commandId=fixtureId(251003),sent=f.send('package.submit',{packageId:f.packageId(),previewToken:preview.previewToken},commandId);await waiting;const job=f.jobs.findByCommand(commandId,f.context.installationId)!;
+  const retryId=fixtureId(251004);
+  try{await expect(f.registry.execute({commandId:retryId,name:'job.retry',baseRevision:null,payload:{jobId:job.jobId}},{...f.context,commandId:retryId})).rejects.toMatchObject({code:'RETRY_NOT_AVAILABLE'});}finally{release();await sent;}
+  expect(f.jobs.get(job.jobId,f.context.installationId)!.status).toBe('succeeded');expect(f.counts()).toEqual({commits:1,pushes:1});
+});
+

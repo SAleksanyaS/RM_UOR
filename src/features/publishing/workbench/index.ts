@@ -11,3 +11,8 @@ export { createUnavailableBitbucketPort } from './bitbucket-port';
 export type { BitbucketPort,BitbucketCapabilities,ProposalLink,ProposalSnapshot,ProposalComment,ProposalWrite,MergeEvidence } from './bitbucket-port';
 export { reconcileProposal } from './proposal-reconciliation';
 export type { TerminalRunner,TerminalRunResult,PreTransferGate } from './terminal-runner';
+export { createTerminalRunner } from './terminal-runner';
+export { createPreTransferGate } from './pre-transfer-gate';
+export { bindTerminalCapabilityProfile,terminalCapabilityProfileSchema } from './terminal-capability-profile';
+export type { TerminalCapabilityProfile } from './terminal-capability-profile';
+export { createNativeTerminalPort,createWindowsTerminalLauncher } from './terminal-native';

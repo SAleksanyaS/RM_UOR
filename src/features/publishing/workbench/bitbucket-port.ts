@@ -8,6 +8,7 @@ export type ProposalComment=z.infer<typeof proposalCommentSchema>;
 export type ProposalWrite=z.infer<typeof proposalWriteSchema>;
 export type MergeEvidence=z.infer<typeof mergeEvidenceSchema>;
 export interface BitbucketPort {
+  openAuth?(input:{signal:AbortSignal}):Promise<void>;
   capabilities():Promise<BitbucketCapabilities>;
   findProposal(packageId:string):Promise<ProposalSnapshot|null>;
   createProposal(input:ProposalWrite):Promise<ProposalSnapshot>;

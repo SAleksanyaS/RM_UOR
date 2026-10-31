@@ -245,3 +245,15 @@ UI не выдаёт восстановленный receipt за успешно�
 `MaintenanceService` реализует `backup.create`, `backup.restore.preview`, `backup.restore.apply` и безопасное обновление кода. Регистраторы связывают сервисы с CommandRegistry; второй HTTP API не создаётся.
 
 Реальный Bitbucket/Qlik адаптер подключается только после соответствующего probe. Синтетический адаптер доказывает локальный контракт, а не корпоративную работоспособность. Пробам запрещено превращать отсутствие параметров в успешный результат.
+
+### T25 native transfer and authentication boundary
+
+`createTerminalRunner(profile)` accepts only a profile object privately bound by trusted server composition to reviewed P-06 evidence and an actual native port. Copied/serialized profile JSON has no authority. A local fixture transport cannot match the HTTPS/SSH profile. Runtime/hook/configuration fingerprints are checked before opening the native session and again inside the one-use transfer gate. An unsupported profile never falls back to an unguarded push.
+
+`createPreTransferGate(context,prepared,{accessPolicy,git,artifacts,operationId,assertPreview})` requires the actual jobId and a trusted preview-owner callback. Both additional arguments fail closed when absent. It rereads the exact package bytes, canonical manifest, prepared commit/remote and current preview before the final fresh publish-policy check. Corporate hooks remain untouched; an approved native chain must invoke the nonce-bound helper after its own waits and hooks. Local ordering evidence does not certify a bank helper or transport.
+
+The native adapter retains interactive Git/helper/ASKPASS policy, uses literal Git arguments and supplies no credential forms, app stdin proxy or captured prompt output. Only typed IPC outcomes cross into jobs. Effective push URL must be unique and identical to the reviewed fetch/read-back destination; split/remapped destinations are currently unsupported.
+
+Native auth recovery begins with a separate explicit read-only native login check. Success marks readiness only for the same physical checkout and runtime fingerprint. It does not send the prepared commit or authenticate Bitbucket REST. `job.openAuth` leaves the original job waiting; explicit `job.retry` reuses its prepared revision. Git and REST use separate `git.auth`/`GIT_AUTH_REQUIRED` and `PR.auth`/`PR_AUTH_REQUIRED` stages. Errors are safe codes; native secret text is not a job result.
+
+Cancellation before transfer preserves the prepared branch/commit and returns cancellation without a second terminal-state error. Cancellation after a possible transfer, including during an early retry of an earlier uncertain send, reconciles retained intent and remote state before deciding. An accepted push remains recoverable and cannot be erased by a cancelled label. Retry is disabled while the original native session is active; a new attempt clears stale auth controls. `JobStore.cancel` accepts an owner control that already completed exactly `cancelled`; other terminal transitions retain their existing guard.
