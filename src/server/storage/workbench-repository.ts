@@ -27,6 +27,7 @@ export type EntityRegistration<T extends Header> = { schema: z.ZodType<T>; refer
 export type EvaluationCandidateQuery = { sourceId: UUIDv4; assignmentId: UUIDv4; metricIds: UUIDv4[]; scopes: ScopeRef[]; businessTime: EvaluationContext['businessTime']; evaluatedAt: UtcInstant };
 export type EvaluationCandidates = Pick<EvaluationInput, 'facts' | 'captures' | 'applicability' | 'corrections'>;
 export type ImportFactQuery = Pick<EvaluationCandidateQuery, 'sourceId' | 'metricIds' | 'scopes' | 'businessTime'> & { factKeys: string[] };
+export type WorkspaceCoreRecord={entityType:string;version:number;value:Header|PublicationAnchor};
 export interface WorkbenchRepository {
   getHead<T extends Header>(ref: EntityRef): T | null;
   readVersion<T extends Header>(ref: VersionRef): T | null;
@@ -34,6 +35,8 @@ export interface WorkbenchRepository {
   importPublishedVersion<T extends Header>(entityType:string,value:T):VersionRef;
   publicationAnchorMetadataRevision(ref:EntityRef):number|null;
   readVersionsForPublicationAnchor(id:string):Array<{entityType:string;value:Header}>;
+  exportWorkspaceCore():WorkspaceCoreRecord[];
+  restoreWorkspaceCore(records:WorkspaceCoreRecord[]):void;
   transaction<T>(action: () => T): T;
   getStateRevision(): string;
   close(): void;
@@ -56,7 +59,7 @@ export interface WorkbenchRepository {
   sqlForModule(moduleId: string, options?: { trackStateRevision?: boolean }): WorkbenchSql;
 }
 type PayloadRow = { payload_json: string };
-type Frame = { dirty: boolean; staged: Array<{ type: string; value: Header }>; catalogRefs:Map<string,EntityRef> };
+type Frame = { dirty: boolean; staged: Array<{ type: string; value: Header; archived?:true }>; catalogRefs:Map<string,EntityRef> };
 type Lease = { active: boolean; parent?: Lease };
 
 export function createWorkbenchRepository(options: { filename: string; artifactRoot: string }): WorkbenchRepository {
@@ -85,7 +88,7 @@ export function createWorkbenchRepository(options: { filename: string; artifactR
   const registration = (type: string) => { const result = registrations.get(type); if (!result) throw new WorkbenchError('UNKNOWN_ENTITY_TYPE', { entityType: type }); return result; };
   const validateStaged = (frame: Frame) => {
     const targets = new Map<string, Header | PublicationAnchor>();
-    for (const { type, value } of frame.staged) {
+    for (const { type, value,archived } of frame.staged) {
       for (const requirement of registration(type).references(value)) {
         const { ref, expectedEntityTypes, validateTarget } = requirement;
         if (!expectedEntityTypes.includes(ref.entityType)) throw new WorkbenchError('REFERENCE_TYPE_MISMATCH', { ref, expectedEntityTypes });
@@ -103,7 +106,7 @@ export function createWorkbenchRepository(options: { filename: string; artifactR
           targets.set(key, parsed);
         }
         if (parsed.id !== ref.id || ('revision' in ref && parsed.revision !== ref.revision)) throw new WorkbenchError('REFERENCE_VERSION_MISMATCH', { ref });
-        validateTarget?.(parsed);
+        if(!archived||'revision'in ref)validateTarget?.(parsed);
       }
     }
   };
@@ -201,6 +204,39 @@ export function createWorkbenchRepository(options: { filename: string; artifactR
     },
     publicationAnchorMetadataRevision(ref) {assertOpen();entityRefSchema.parse(ref);return ref.entityType==='publication_anchor'?anchorRow(ref.id)?.revision??null:null;},
     readVersionsForPublicationAnchor(id) {assertOpen();uuidSchema.parse(id);return (db.prepare('SELECT entity_type,payload_json FROM wb_entity_versions WHERE publication_anchor_id=? ORDER BY entity_type,id,revision').all(id) as Array<PayloadRow&{entity_type:string}>).map(row=>({entityType:row.entity_type,value:JSON.parse(row.payload_json) as Header}));},
+    exportWorkspaceCore() {
+      assertOpen();
+      const entities=(db.prepare('SELECT entity_type,revision,payload_json FROM wb_entity_versions ORDER BY entity_type,id,revision').all() as Array<PayloadRow&{entity_type:string;revision:number}>).map(row=>({entityType:row.entity_type,version:row.revision,value:JSON.parse(row.payload_json) as Header}));
+      const anchors=(db.prepare('SELECT revision,payload_json FROM wb_publication_anchors ORDER BY id,revision').all() as Array<PayloadRow&{revision:number}>).map(row=>({entityType:'publication_anchor',version:row.revision,value:JSON.parse(row.payload_json) as PublicationAnchor}));
+      return [...entities,...anchors];
+    },
+    restoreWorkspaceCore(records) {
+      assertWritable();if(projecting)throw new WorkbenchError('PROJECTION_ENTITY_WRITE_FORBIDDEN');
+      atomic(()=>{
+        if(db.prepare('SELECT 1 FROM wb_entity_versions LIMIT 1').get()||db.prepare('SELECT 1 FROM wb_entity_heads LIMIT 1').get()||db.prepare('SELECT 1 FROM wb_publication_anchors LIMIT 1').get())throw new WorkbenchError('RESTORE_TARGET_NOT_EMPTY');
+        if(!Array.isArray(records))throw new WorkbenchError('WORKSPACE_SNAPSHOT_INVALID');
+        const seen=new Set<string>();const entities:Array<{type:string;value:Header}>=[],anchors:Array<{version:number;value:PublicationAnchor}>=[];
+        for(const record of records){
+          if(!record||Object.keys(record).some(key=>!['entityType','version','value'].includes(key))||typeof record.entityType!=='string'||!Number.isSafeInteger(record.version)||record.version<1)throw new WorkbenchError('WORKSPACE_SNAPSHOT_INVALID');
+          if(record.entityType==='publication_anchor'){
+            const value=publicationAnchorSchema.parse(record.value),key=`publication_anchor/${value.id}/${record.version}`;
+            if(seen.has(key))throw new WorkbenchError('WORKSPACE_SNAPSHOT_INVALID');seen.add(key);anchors.push({version:record.version,value});
+          }else{
+            const value=registration(record.entityType).schema.parse(record.value),key=`${record.entityType}/${value.id}/${record.version}`;
+            if(value.revision!==record.version||seen.has(key)||record.entityType==='capture'&&value.revision!==1)throw new WorkbenchError('WORKSPACE_SNAPSHOT_INVALID');seen.add(key);entities.push({type:record.entityType,value});
+          }
+        }
+        for(const anchor of anchors.sort((a,b)=>a.value.id.localeCompare(b.value.id)||a.version-b.version)){
+          const previous=anchorRow(anchor.value.id)?.revision??null;
+          if(anchor.version!==(previous??0)+1)throw new WorkbenchError('WORKSPACE_SNAPSHOT_INVALID');repository.appendPublicationAnchor(anchor.value,previous);
+        }
+        for(const {type,value}of entities){
+          db.prepare('INSERT INTO wb_entity_versions VALUES(?,?,?,?,?,?)').run(type,value.id,value.revision,JSON.stringify(value),value.recordedAt,value.publicationAnchorId);
+          db.prepare('INSERT INTO wb_entity_heads VALUES(?,?,?) ON CONFLICT(entity_type,id) DO UPDATE SET revision=MAX(revision,excluded.revision)').run(type,value.id,value.revision);
+          indexEntity(type,value);const frame=currentFrame();frame.dirty=true;frame.staged.push({type,value,archived:true});frame.catalogRefs.set(`${type}/${value.id}`,{entityType:type,id:value.id});
+        }
+      });
+    },
     transaction<T>(action: () => T): T {
       assertWritable();
       if (action.constructor.name === 'AsyncFunction' || action.constructor.name === 'AsyncGeneratorFunction') throw new WorkbenchError('ASYNC_TRANSACTION_FORBIDDEN');

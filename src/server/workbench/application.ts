@@ -11,6 +11,7 @@ import type { QueryContext, QueryRegistry } from './query-registry';
 import type { BrowserResultArtifact, LocalRequest, WorkbenchHttpPort } from './routes';
 import type { LocalSessionStore } from './session';
 import type { EvidenceService } from '../../features/evidence/workbench-evidence';
+import type { MaintenanceService } from '../../features/workspace-maintenance/workbench/maintenance-service';
 import type { NotificationRuntime } from '../../features/execution/workbench-notification-runtime';
 import { globalContextSchema, WorkbenchHttpError, type ApiSuccess, type GlobalContext, type Meta } from './protocol';
 import { registerWorkbenchQueries } from '../../features/catalog/workbench-query-registration';
@@ -20,6 +21,7 @@ import { moscowLocalDate } from '../../features/execution/workbench-reminders';
 import { pageResultSchema } from './protocol';
 
 export type WorkbenchApplicationDeps = {
+  maintenance?:Pick<MaintenanceService,'getBackupFile'>&Partial<Pick<MaintenanceService,'recover'>>;
   notifications?: Pick<NotificationRuntime, 'start' | 'stop'>;
   evidence?: Pick<EvidenceService, 'readArtifactForContext'>;
   hostname: () => string; repository: WorkbenchRepository; clock: Clock; accessPolicy: AccessPolicyService;
@@ -73,6 +75,7 @@ export function createWorkbenchApplication(deps: WorkbenchApplicationDeps): Work
     return { ...own, allowedCommands: deps.commands.listNames().filter(name => { const capability = deps.commands.getCapability(name); return capability !== null && canUseCapability(own, capability); }), csrfToken: local.csrfToken, defaultContext: defaultContext === null ? null : globalContextSchema.parse(defaultContext) };
   };
   return {
+    async backupFile(id,local){const ctx=await context(local);if(!deps.maintenance)throw new WorkbenchHttpError(404,'BACKUP_NOT_FOUND','Backup not found');return deps.maintenance.getBackupFile(ctx,id);},
     async artifact(artifactId, local) { const ctx = await context(local); if (!deps.evidence) throw new WorkbenchHttpError(404, 'ARTIFACT_NOT_FOUND', 'Evidence artifact not found'); return deps.evidence.readArtifactForContext(ctx, artifactId); },
     session, refreshSession: session, meta,
     async upload(input, request) {

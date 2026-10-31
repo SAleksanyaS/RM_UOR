@@ -1,0 +1,35 @@
+import path from 'node:path';
+import { writeFile } from 'node:fs/promises';
+import { createHash,randomUUID } from 'node:crypto';
+import { afterEach,expect,it,vi } from 'vitest';
+import { fixture } from './test-fixture';
+import { MaintenanceService } from './maintenance-service';
+import { createWorkbenchApp } from '../../../server/workbench/app';
+import { createCommandRegistry } from '../../../server/workbench/command-registry';
+import { QueryRegistry } from '../../../server/workbench/query-registry';
+import { createJobStore } from '../../../server/workbench/jobs';
+import { createLocalSessionStore } from '../../../server/workbench/session';
+const cleanups:Array<()=>Promise<void>>=[];
+afterEach(async()=>{for(const cleanup of cleanups.splice(0).reverse())await cleanup();vi.restoreAllMocks();});
+it('mounts real backup bytes through the existing session and exact-origin boundary before sending headers',async()=>{
+  const f=await fixture('own-workspace');cleanups.push(()=>f.dispose());
+  const jobs=createJobStore({repository:f.deps.repository,clock:f.deps.clock}),accessPolicy={async resolveOwnAccess(){return f.context.ownAccess;},async assertCommandAllowed(){return f.context.ownAccess;},async assertFreshPublishAllowed(){return f.context.ownAccess;}};
+  const commands=createCommandRegistry({repository:f.deps.repository,jobs,accessPolicy}),maintenance=new MaintenanceService({archive:f.deps,jobs,jobSink:jobs});
+  const app=await createWorkbenchApp({repository:f.deps.repository,clock:f.deps.clock,hostname:()=>f.context.actor.hostname,installationId:f.context.installationId,accessPolicy,commands,jobs,queries:new QueryRegistry(),modules:[],sessions:createLocalSessionStore({clock:f.deps.clock}),allowedOrigins:['http://127.0.0.1:5173'],files:f.deps.files,maintenance});cleanups.push(()=>app.close());
+  const backup=await maintenance.createBackup(f.context,{label:null,includeOriginals:true}),url=`/api/v1/backups/${backup.backupId}/file`;
+  expect((await app.inject({method:'GET',url})).statusCode).toBe(401);
+  const session=await app.inject({method:'GET',url:'/api/v1/session',headers:{origin:'http://127.0.0.1:5173'}}),cookie=session.cookies.map(v=>`${v.name}=${v.value}`).join('; '),headers={cookie,origin:'http://127.0.0.1:5173'};
+  const downloaded=await app.inject({method:'GET',url,headers});expect(downloaded.statusCode).toBe(200);expect(downloaded.headers['content-type']).toMatch(/^application\/zip/);expect(downloaded.headers['x-archive-sha256']).toBe(backup.archiveSha256);expect(createHash('sha256').update(downloaded.rawPayload).digest('hex')).toBe(backup.archiveSha256);
+  expect((await app.inject({method:'GET',url,headers:{...headers,origin:'https://foreign.invalid'}})).statusCode).toBe(403);
+  expect((await app.inject({method:'GET',url:`/api/v1/backups/${randomUUID()}/file`,headers})).statusCode).toBe(404);
+  await writeFile(path.join(f.deps.artifactRoot,'backups',backup.backupId,'archive.zip'),'tampered');
+  const tampered=await app.inject({method:'GET',url,headers});expect(tampered.statusCode).toBe(422);expect(tampered.headers['content-type']).toMatch(/^application\/json/);expect(tampered.json().error.code).toBe('INTEGRITY_MISMATCH');
+});
+it('recovers the maintenance owner before installing application projections and refuses startup on recovery failure',async()=>{
+  const f=await fixture();cleanups.push(()=>f.dispose());const jobs=createJobStore({repository:f.deps.repository,clock:f.deps.clock}),accessPolicy={async resolveOwnAccess(){return f.context.ownAccess;},async assertCommandAllowed(){return f.context.ownAccess;},async assertFreshPublishAllowed(){return f.context.ownAccess;}};
+  const commands=createCommandRegistry({repository:f.deps.repository,jobs,accessPolicy}),owner=new MaintenanceService({archive:f.deps,jobs,jobSink:jobs});let recovered=false,sawEarlyRead=false;
+  const original=f.deps.repository.sqlForModule.bind(f.deps.repository);vi.spyOn(f.deps.repository,'sqlForModule').mockImplementation((...args)=>{if(!recovered)sawEarlyRead=true;return original(...args);});
+  const deps={repository:f.deps.repository,clock:f.deps.clock,hostname:()=>f.context.actor.hostname,installationId:f.context.installationId,accessPolicy,commands,jobs,queries:new QueryRegistry(),modules:[],sessions:createLocalSessionStore({clock:f.deps.clock}),allowedOrigins:['http://127.0.0.1:5173'],files:f.deps.files,maintenance:{getBackupFile:owner.getBackupFile.bind(owner),async recover(){recovered=true;}}};
+  const app=await createWorkbenchApp(deps);cleanups.push(()=>app.close());expect(recovered).toBe(true);expect(sawEarlyRead).toBe(false);
+  recovered=false;sawEarlyRead=false;await expect(createWorkbenchApp({...deps,maintenance:{...deps.maintenance,async recover(){throw Error('Synthetic recovery failure');}}})).rejects.toThrow('Synthetic recovery failure');expect(sawEarlyRead).toBe(false);
+});

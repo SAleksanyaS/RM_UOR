@@ -5,6 +5,7 @@ import { registerWorkbenchRoutes } from './routes';
 
 /** Isolated v1 composition; legacy launcher is deliberately unchanged until T39. */
 export async function createWorkbenchApp(deps: WorkbenchApplicationDeps, options: { configure?: (app: FastifyInstance) => Promise<void> } = {}): Promise<FastifyInstance> {
+  await deps.maintenance?.recover?.();
   const application = createWorkbenchApplication(deps);
   const app = Fastify({ logger: false, trustProxy: false });
   app.addHook('onClose', async () => { await deps.notifications?.stop(); });

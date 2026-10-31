@@ -5,6 +5,7 @@ import { z } from 'zod';
 import multipart from '@fastify/multipart';
 import { Transform } from 'node:stream';
 import type { ArtifactReadResult } from '../../features/evidence/workbench-evidence';
+import { registerBackupDownloadRoutes,type BackupDownloadPort } from '../../features/workspace-maintenance/workbench/download-routes';
 import { assertFileName, defaultFileLimits, fileHandleViewSchema, type FileHandleView, type FileStore } from './files';
 import { withMultipartUpload } from './multipart-upload';
 import { uuidSchema, type UUIDv4 } from '../../domain/workbench/index';
@@ -14,6 +15,7 @@ import { anyQueryRequestSchema, apiSuccessSchema, commandReconciliationSchema, c
 export type LocalRequest = { requestId: UUIDv4; sessionId: UUIDv4 };
 export type BrowserResultArtifact = { bytes: Uint8Array; name: string; mimeType: string; sha256: string };
 export interface WorkbenchHttpPort {
+  backupFile?:BackupDownloadPort['backupFile'];
   artifact?(artifactId: UUIDv4, request: LocalRequest): Promise<ArtifactReadResult>;
   upload(input: Omit<Parameters<FileStore['stage']>[0], 'installationId'>, request: LocalRequest): Promise<ApiSuccess<FileHandleView>>;
   session(request: LocalRequest): Promise<SessionView>;
@@ -98,6 +100,7 @@ export async function registerWorkbenchRoutes(app: FastifyInstance, application:
       if (mutate && !csrfMatches(request.headers['x-csrf-token'], session.csrfToken)) throw new WorkbenchHttpError(403, 'CSRF_INVALID', 'A valid CSRF token is required');
       return { requestId: requestIds.get(request)!, sessionId: session.id };
     };
+    registerBackupDownloadRoutes(api,{async backupFile(id,request){if(!application.backupFile)throw new WorkbenchHttpError(404,'BACKUP_NOT_FOUND','Backup not found');return application.backupFile(id,request);}},async request=>local(request));
     api.get('/session', async (request, reply) => {
       let session = sessions.get(request.cookies[cookieName] ?? '');
       if (!session) { session = sessions.issue(); reply.setCookie(cookieName, session.id, { httpOnly: true, sameSite: 'strict', path: '/api/v1' }); }
