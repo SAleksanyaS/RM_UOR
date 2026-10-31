@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "profileId": "runtime-example",
+  "environmentLabel": "not-configured",
+  "credentialProfileRef": null,
+  "approvedOrigins": [],
+  "evidenceDirectory": ".runtime/probe-reports",
+  "probe": "BP-05",
+  "workspaceRoot": null,
+  "nodeExecutable": null,
+  "npmExecutable": null,
+  "gitExecutable": null,
+  "pythonExecutable": null,
+  "caProfileRef": null,
+  "proxyProfileRef": null,
+  "testUpdateCommit": null,
+  "disposableWorkspaceRoot": null
+}

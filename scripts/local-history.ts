@@ -1,6 +1,6 @@
 import {createHash,randomUUID} from 'node:crypto';
 import {constants,createReadStream} from 'node:fs';
-import {access,chmod,copyFile,mkdir,open,readFile,readdir,rename,stat} from 'node:fs/promises';
+import {access,chmod,copyFile,lstat,mkdir,open,readFile,readdir,rename,stat} from 'node:fs/promises';
 import path from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import {createServer as createPortProbe} from 'node:net';
@@ -15,6 +15,26 @@ export interface LocalHistoryArchive {
 }
 interface DatabaseInspection {counts:Record<string,number>;digest:string;changeIds:string[]}
 interface HistoryBaseline {at:string;changeIds:string[]}
+
+/** Legacy import/cleanup cannot bypass workbench staging or erase its indefinite history. */
+export async function assertLegacyCliAllowed(projectRoot:string):Promise<void>{
+ const root=path.resolve(projectRoot);
+ for(const relative of ['.runtime/workbench.sqlite','.runtime/workbench/workbench.sqlite','.runtime/app.db']){
+  const candidate=path.join(root,...relative.split('/'));let exists=true,current=root;const parts=relative.split('/');
+  for(let index=0;index<parts.length;index++){
+   current=path.join(current,parts[index]);
+   try{const info=await lstat(current);if(info.isSymbolicLink()||(index<parts.length-1?!info.isDirectory():!info.isFile()||info.nlink!==1))throw new Error('WORKBENCH_MIGRATION_REQUIRED: нельзя безопасно проверить локальное хранилище.');}
+   catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT'){exists=false;break;}throw error;}
+  }
+  if(!exists)continue;
+  let database:DatabaseSync|undefined;
+  try{
+   database=new DatabaseSync(candidate,{readOnly:true});
+   if(database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='wb_meta'").get()||relative!=='.runtime/app.db')throw new Error('WORKBENCH_MIGRATION_REQUIRED: используйте проверяемый перенос и бессрочную историю нового рабочего места.');
+  }catch(error){if(error instanceof Error&&error.message.startsWith('WORKBENCH_MIGRATION_REQUIRED:'))throw error;throw new Error('WORKBENCH_MIGRATION_REQUIRED: схема локального хранилища не подтверждена.');}
+  finally{database?.close();}
+ }
+}
 
 /** A stale heartbeat is not proof that a process has stopped. Do not reveal marker contents. */
 async function requireLauncherStopped(projectRoot:string,runtimeRoot:string){
@@ -111,6 +131,7 @@ async function retainArchiveDatabase(runtimeRoot:string,manifest:LocalHistoryArc
 
 /** Offline journal maintenance only. The full verified database remains in the private backup. */
 export async function archiveLocalHistory({projectRoot}:{projectRoot:string}):Promise<LocalHistoryArchive>{
+ await assertLegacyCliAllowed(projectRoot);
  const requestedRoot=path.resolve(projectRoot),site=await loadSite(requestedRoot),workspace=await resolveWorkspace({projectRoot:requestedRoot,allowedRoots:site.allowedWorkspaceRoots});
  await requireStopped(workspace.projectRoot,workspace.runtimeRoot,site.port);const databasePath=await safeArtifactPath(workspace.runtimeRoot,'app.db');await access(databasePath);
  const db=new LocalDatabase(databasePath);

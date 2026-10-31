@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "profileId": "qlik-example",
+  "environmentLabel": "not-configured",
+  "credentialProfileRef": null,
+  "approvedOrigins": [],
+  "evidenceDirectory": ".runtime/probe-reports",
+  "probe": "BP-03",
+  "goalRef": null,
+  "sourceLocator": null,
+  "acquisition": "sberbrowser-recorder",
+  "sberBrowserExecutable": null,
+  "authenticationSelector": null,
+  "browserScenarioRef": null,
+  "managedProfileRef": null,
+  "contextDescription": null,
+  "expectedRows": null,
+  "expectedKeys": [],
+  "expectedDateFields": [],
+  "completenessReference": null
+}

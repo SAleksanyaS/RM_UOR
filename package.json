@@ -23,7 +23,9 @@
     "setup:curators:file": "tsx scripts/provision-curators-file.ts",
     "setup:workspace": "node scripts/setup-workspace.mjs",
     "export:clean": "node scripts/export-clean.mjs",
-    "history:archive": "tsx scripts/archive-local-history.ts"
+    "history:archive": "tsx scripts/archive-local-history.ts",
+    "probe:bank": "tsx scripts/probes/bank-probe.ts",
+    "probe:readiness": "tsx scripts/probes/check-readiness.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.2",
