@@ -5,7 +5,7 @@ Branch: `codex/uor-workbench-rebuild`. Source code baseline: `3d8704e4a6ff2195af
 
 ## Continue here
 
-T00–T26 are implemented and checked. T27 update lifecycle is in verification; independent T28 archive/restore, T29 probe and T30 client work has started under the user's parallel-work authorization. The user's priority OKO export/enrichment path is implemented. Read the latest run entry and [core checkpoint review](CORE_CHECKPOINT_REVIEW.md). The workbench remains separate from the production entry (T39); no live data has been migrated.
+T00–T27 are implemented and checked. T28 archive/restore integration, T29 migration/probes and T30 client work are in progress under the user's parallel-work authorization. The user's priority OKO export/enrichment path is implemented. Read the latest run entry and [core checkpoint review](CORE_CHECKPOINT_REVIEW.md). The workbench remains separate from the production entry (T39); no live data has been migrated.
 
 Resume commands from the repository root:
 
@@ -54,7 +54,7 @@ DONE requires actual checks, commit and evidence. Default execution order is in 
 | T24 | [03-publication-and-recovery.md](03-publication-and-recovery.md) | Нативный Bitbucket port, recovery и capability profile | DONE | Typed native PR contract, durable reconciliation, owned submit/status/restart retry;9 review findings fixed.75 focused/1088 full tests PASS, build exit0; bank binding not_ready |
 | T25 | [03-publication-and-recovery.md](03-publication-and-recovery.md) | TerminalRunner, native auth и fresh gate после ожидания | DONE | Six reviewed issues fixed RED→GREEN;43 focused tests, actual Windows TTY/native Git and isolated build PASS; bank P06 remains unverified |
 | T26 | [03-publication-and-recovery.md](03-publication-and-recovery.md) | Verified main и независимые оси PublicationAnchor | DONE | Atomic typed apply/check, independent merge time and real evidence download;3 review fixes,147 focused tests+isolated build PASS |
-| T27 | [03-publication-and-recovery.md](03-publication-and-recovery.md) | Обновление кода через существующий durable activation runtime | PLANNED | Not executed |
+| T27 | [03-publication-and-recovery.md](03-publication-and-recovery.md) | Обновление кода через существующий durable activation runtime | DONE | v3 workspace lifecycle/v2 recovery, live-owner protection and journal-first reconciliation;4 review fixes,50 isolated tests+build PASS |
 | T28 | [03-publication-and-recovery.md](03-publication-and-recovery.md) | Типизированный backup/restore, replace-preview и независимая rescue | PLANNED | Not executed |
 | T29 | [03-publication-and-recovery.md](03-publication-and-recovery.md) | Legacy staging migration и исполняемые probe drivers | PLANNED | Not executed |
 | T30 | [04-interface-and-release.md](04-interface-and-release.md) | API client, ошибки, контекст и тестовый мост | PLANNED | Not executed |
@@ -422,3 +422,11 @@ Remaining work is explicit: wire own v1 profile/record/test commands/queries and
 - Focused exact T26 snapshot from db7bb01 plus only T26 source: pinned Node22.16/npm10.9.2, seven files147/147 PASS exit0,206.33s (t26-isolated-focused.log), including16 real Git provider regressions and the actual reader attachment download. Isolated npm run build exit0,Vite4.08s (t26-isolated-build.log). This excludes unfinished T27–T30 work; no shared-tree false success is claimed.
 - Additional frozen T25 full regression:176files1115tests PASS exit0,480.54s (t25-isolated-full-retry.log), with two workers. An earlier run passed all assertions but hit Vitest RPC timeout and is not counted as success. Temporary T25 verification checkout was removed only after source hashes matched db7bb01; dependency junction was removed separately to preserve shared dependencies.
 - Decisions: extend legacy merge evidence with optional exact package bindings; extend Git proof port only for accepted ancestors; require trusted classification/recheck/evidence composition; keep binary staging private until its metadata transaction. Real bank provider correctness/SSO/otherOS remain probe boundaries. T27–T30 work continues, production cutover T39 and actual data migration remain pending.
+
+### 2026-10-31 — T27 durable code update
+
+- Kept the existing update algorithm and added typed service/authenticated launcher adapter, v3 full-workspace ownership, v2 interrupted-journal compatibility and recovery before database/import reads. Dependencies prepare while old app still serves; no quiesce on failed verification/install. Missing full-workspace callbacks reject actual persistent workbench storage before preparation.
+- Durable commitpoint never triggers an old-data restore, including a throwing status callback. Precommit rollback checks matching ownership and human edits; failed restore or unsupported journal requires recovery and blocks writes. A second ordinary startup cannot mutate a journal owned by a live authenticated launcher.
+- Fresh independent review produced4Important issues, corrected in one RED→GREEN pass: live launcher takeover, actual storage-path detection, stale display status masking durable success, and a definitely unsubmitted request losing same-ID retry. No second review or deferred minors. Exact journal outcome wins over stale status; uncertain acknowledgement remains read-only reconciliation.
+- Frozen exact T27 snapshot from59ea7cc plus only nine T27 files: pinned Node22.16/npm10.9.2,3files50/50 PASS exit0,90.40s (t27-isolated-focused.log); isolated npm run build exit0,Vite4.05s (t27-isolated-build.log). Implementer final focused50/50 and typecheck also passed. Earlier interrupted sessions/logs were explicitly not counted; owned-process audit found no surviving test process.
+- Real archive content/exclusions/evidence restoration belong T28, concrete production factory/IPC activation T39, bank/otherOS/power-loss proof BP-05. This commit does not switch entry, restore live data or assert bank readiness.

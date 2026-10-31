@@ -19,6 +19,7 @@ import { canReadSnapshot } from '../../features/connectors/service';
 import { storeValidatedTemplateBundle } from '../../features/report-templates/service';
 import { stageEvidenceBundle,type EvidenceRecord } from '../../features/evidence/evidence-service';
 import {readerCatalog,readerChange,readerSnapshot} from '../../features/identity/reader-projection';
+import { prepareCodeUpdateStartup } from '../../../scripts/code-update-runtime.mjs';
 
 export interface AppOptions {
   projectRoot: string; allowedRoots?: string[]; initialCatalog?: CatalogSnapshot; registry?: CuratorRecord[];
@@ -175,6 +176,9 @@ export async function createContext(options: AppOptions): Promise<ApplicationCon
   if (options.repositoryUrl !== undefined) config.repositoryUrl = options.repositoryUrl;
   if (options.publicationMode) config.publicationMode = options.publicationMode;
   const paths = await resolveWorkspace({ projectRoot: options.projectRoot, allowedRoots: options.allowedRoots ?? config.allowedWorkspaceRoots });
+  // Controlled children authenticate their live launcher; a second ordinary start cannot recover its journal.
+  // Every ordinary start resolves interrupted updates before opening SQLite or reading imports.
+  await prepareCodeUpdateStartup(paths.projectRoot);
   for (const folder of ['imports', 'local-config', 'source-artifacts', 'exports', 'backups', 'evidence']) await mkdir(path.join(paths.runtimeRoot, folder), { recursive: true });
   const registry = options.registry ?? await readJson<CuratorRecord[]>(path.join(paths.runtimeRoot, 'local-config/curators.json'), []);
   const db = new LocalDatabase(paths.databasePath);
