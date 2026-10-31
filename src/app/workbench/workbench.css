@@ -1,0 +1,26 @@
+.wb-shell { color: #16332b; background: #f5f8f6; min-height: 100vh; font: 16px/1.5 system-ui, sans-serif; overflow-wrap: anywhere; }
+.wb-shell *, .wb-shell *::before, .wb-shell *::after { box-sizing: border-box; }
+.wb-shell button, .wb-shell select, .wb-shell input { font: inherit; max-width: 100%; }
+.wb-shell button { min-height: 44px; padding: .5rem .85rem; border: 1px solid #698579; border-radius: .5rem; background: #fff; color: #16332b; cursor: pointer; }
+.wb-shell button:disabled { color: #5c6761; background: #edf0ed; cursor: default; }
+.wb-shell :focus-visible { outline: 3px solid #006d54; outline-offset: 3px; }
+.wb-shell [aria-current=page] { background: #d1f2df; border-color: #006d54; }
+.wb-header, .wb-navigation, .wb-welcome { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; padding: 1rem; }
+.wb-header { justify-content: space-between; background: #fff; border-bottom: 1px solid #c6d7cc; }
+.wb-navigation p { flex-basis: 100%; margin: 0; font-size: .875rem; }
+.wb-main { min-width: 0; padding: 1rem; }
+.wb-main h1 { font-size: clamp(1.5rem, 5vw, 2rem); margin-top: 0; }
+.wb-unavailable { padding: 1rem; border: 1px dashed #698579; border-radius: .75rem; }
+.wb-skip { position: absolute; left: 1rem; top: -5rem; background: #fff; padding: .5rem; z-index: 5; }
+.wb-skip:focus { top: .5rem; }
+.wb-dialog-backdrop { position: fixed; inset: 0; z-index: 10; background: #122f2766; display: flex; justify-content: flex-end; padding: 1rem; }
+.wb-notifications { background: #fff; border-radius: .75rem; padding: 1rem; width: min(100%, 42rem); max-height: 100%; overflow-y: auto; min-width: 0; }
+.wb-notifications header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem; }
+.wb-notifications h2 { margin: 0; }
+.wb-notifications label, .wb-notifications select { display: block; width: 100%; }
+.wb-notifications section { border-top: 1px solid #c6d7cc; padding-top: 1rem; margin-top: 1rem; }
+.wb-notifications li { margin-block: 1rem; }
+.wb-notifications button { margin: .25rem; }
+.wb-table-scroll { max-width: 100%; overflow-x: auto; }
+.wb-table-scroll table { min-width: max-content; }
+@media (max-width: 480px) { .wb-navigation { display: grid; grid-template-columns: minmax(0, 1fr); } .wb-dialog-backdrop { padding: .25rem; } .wb-notifications { padding: .75rem; } }
