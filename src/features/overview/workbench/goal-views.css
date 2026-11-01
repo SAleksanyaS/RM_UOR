@@ -1,0 +1,8 @@
+.wb-goal-rows { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 26rem), 1fr)); gap: 1rem; margin-block: 1rem; }
+.wb-goal-card { min-width: 0; background: #fff; border: 1px solid #c6d7cc; border-radius: .75rem; padding: 1rem; }
+.wb-goal-card h3 { margin-top: 0; }
+.wb-goal-card p { margin-block: .5rem; }
+.wb-goal-tabs { display: flex; flex-wrap: wrap; gap: .5rem; margin-block: 1rem; }
+.wb-goal-tabs [aria-selected=true] { background: #d1f2df; border-color: #006d54; }
+.wb-shell [role=tabpanel] table { width: 100%; border-collapse: collapse; }
+.wb-shell [role=tabpanel] td, .wb-shell [role=tabpanel] th { text-align: left; vertical-align: top; border: 1px solid #c6d7cc; padding: .5rem; }

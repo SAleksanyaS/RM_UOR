@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import type { ApiSuccess, AnyQueryRequest, CommandResult, GlobalContext, SessionView } from '../../server/workbench/protocol';
 import type { PreferencesRead } from '../../features/system/workbench-preferences-query';
 import { WorkbenchClient } from './api-client';
-import { readRouteState, routeUrl, updateGlobalContext, type ContextPatch, type WorkbenchRouteState } from './route-state';
+import { canonicalPageTarget, goalContextForPath, readRouteState, routeUrl, updateGlobalContext, type ContextPatch, type WorkbenchRouteState } from './route-state';
 
 type WorkbenchValue = { client: WorkbenchClient; session: SessionView | null; preferences: PreferencesRead | null; loading: boolean; error: unknown; refreshSession(): Promise<void> };
 type GlobalContextValue = WorkbenchRouteState & { setContext(patch: ContextPatch): Promise<void>; navigate(pathname: string, options?: { replace?: boolean }): void; persistenceError: unknown };
@@ -56,7 +56,7 @@ export function WorkbenchProvider({ client, children }: { client: WorkbenchClien
       // used by the server to choose it; UI never selects an arbitrary first DIT.
       defaultRef.current = response.data.defaultContext;
       const next = readRouteState(locationUrl(), response.data.defaultContext);
-      window.history.replaceState(null, '', routeUrl(next.pathname, next.context));
+      window.history.replaceState(null, '', routeUrl(canonicalPageTarget(locationUrl()), next.context));
       applyRoute(next); setSession(response.data); setPreferences(savedPreferences.data); owner.ready = true;
     } catch (failure) { if (isCurrent(owner) && current === owner.refresh) setError(failure); }
     finally { if (isCurrent(owner) && current === owner.refresh) setLoading(false); }
@@ -72,7 +72,8 @@ export function WorkbenchProvider({ client, children }: { client: WorkbenchClien
   useEffect(() => {
     const onPopState = () => {
       if (!isCurrent(lifetime.current) || !lifetime.current.ready) return;
-      const next = readRouteState(locationUrl(), defaultRef.current); applyRoute(next);
+      const next = readRouteState(locationUrl(), defaultRef.current);
+      window.history.replaceState(null, '', routeUrl(canonicalPageTarget(locationUrl()), next.context)); applyRoute(next);
       void persist(next.context).catch(() => undefined);
     };
     window.addEventListener('popstate', onPopState);
@@ -90,10 +91,12 @@ export function WorkbenchProvider({ client, children }: { client: WorkbenchClien
   }, [applyRoute, persist, client, isCurrent]);
   const navigate = useCallback((pathname: string, options: { replace?: boolean } = {}) => {
     const current = routeRef.current;
-    const url = new URL(routeUrl(pathname, current.context), window.location.origin);
+    const context = goalContextForPath(pathname, current.context);
+    const url = new URL(routeUrl(pathname, context), window.location.origin);
     window.history[options.replace ? 'replaceState' : 'pushState'](null, '', url.pathname + url.search + url.hash);
-    applyRoute({ ...current, pathname: url.pathname });
-  }, [applyRoute]);
+    applyRoute({ ...current, pathname: url.pathname, context });
+    if (context?.goalId !== current.context?.goalId) void persist(context).catch(() => undefined);
+  }, [applyRoute, persist]);
   return <Workbench.Provider value={{ client, session, preferences, loading, error, refreshSession }}><Global.Provider value={{ ...route, setContext, navigate, persistenceError }}>{children}</Global.Provider></Workbench.Provider>;
 }
 export function useWorkbench(): WorkbenchValue {

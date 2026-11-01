@@ -3,6 +3,15 @@ import { globalContextSchema, type GlobalContext } from '../../server/workbench/
 
 export type WorkbenchRouteState = { pathname: string; context: GlobalContext | null; warnings: string[] };
 export type ContextPatch = Omit<Partial<GlobalContext>, 'scopePath'> & { scopePath?: Partial<GlobalContext['scopePath']> };
+function goalIdFromPath(pathname: string): string | null {
+  const match = new URL(pathname, 'http://localhost').pathname.match(/^\/goals\/([^/]+)$/);
+  const goal = uuidSchema.safeParse(match?.[1]);
+  return goal.success ? goal.data : null;
+}
+export function goalContextForPath(pathname: string, context: GlobalContext | null): GlobalContext | null {
+  const goalId = goalIdFromPath(pathname);
+  return context && goalId ? { ...context, goalId } : context;
+}
 export function businessTimeFromRange(range: { at: string } | { from: string; to: string }): GlobalContext['time'] {
   const value = 'at' in range ? { kind: 'as_of', date: range.at } : { kind: 'period', startInclusive: range.from, endExclusive: range.to };
   const parsed = businessTimeSchema.parse(value);
@@ -50,10 +59,27 @@ export function readRouteState(input: string | URL, defaultContext: GlobalContex
   const mode = params.get('mode');
   if (mode && !['current', 'agreed'].includes(mode)) warnings.push('Некорректный вид результата');
   const resultMode = mode === 'agreed' ? 'agreed' : mode === 'current' ? 'current' : defaultContext.resultMode;
-  const goalId = id('goal', explicitScope ? null : defaultContext.goalId);
+  const goalId = goalIdFromPath(url.pathname) ?? id('goal', explicitScope ? null : defaultContext.goalId);
   const selectionChanged = ditChanged || clusterChanged || productChanged || teamId !== defaultContext.scopePath.teamId || goalId !== defaultContext.goalId || JSON.stringify(time) !== JSON.stringify(defaultContext.time);
   const snapshotId = resultMode === 'current' ? null : id('snapshot', explicitScope || selectionChanged ? null : defaultContext.snapshotId);
   return { pathname: url.pathname, context: globalContextSchema.parse({ scopePath: { ditId, clusterId, productId, teamId }, goalId, time, resultMode, snapshotId }), warnings };
+}
+/** Page selectors are separate from personal global context and survive startup canonicalization. */
+export function canonicalPageTarget(input: string | URL): string {
+  const url = new URL(String(input), 'http://localhost');
+  const target = new URL(url.pathname, 'http://localhost');
+  if (url.pathname === '/data' && !(url.searchParams.has('fact') && url.searchParams.has('result'))) {
+    const kind = url.searchParams.has('result') ? 'result' : 'fact';
+    const id = uuidSchema.safeParse(url.searchParams.get(kind));
+    const revisionText = url.searchParams.get(kind + 'Revision') ?? '';
+    const revision = Number(revisionText);
+    if (id.success && /^[1-9]\d*$/.test(revisionText) && Number.isSafeInteger(revision)) {
+      target.searchParams.set(kind, id.data);
+      target.searchParams.set(kind + 'Revision', String(revision));
+    }
+  }
+  target.hash = url.hash;
+  return target.pathname + target.search + target.hash;
 }
 export function routeUrl(pathname: string, context: GlobalContext | null): string {
   const url = new URL(pathname, 'http://localhost');
