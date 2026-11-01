@@ -8,7 +8,8 @@ import type { QueryContext } from '../../server/workbench/query-registry';
 import { pageResultSchema, nextActionSchema, jobSnapshotSchema, WorkbenchHttpError, type GlobalContext, type QueryRequest } from '../../server/workbench/protocol';
 import type { DraftService } from './workbench-drafts';
 import type { PublicationReadPort } from '../publishing/workbench/package-store';
-import { publicationPackageRecordSchema } from '../publishing/workbench/contracts';
+import { packageZones } from '../publishing/workbench/package-zones';
+import { publicationPackageRecordSchema,packageDeliverySchema } from '../publishing/workbench/contracts';
 import type { SourceStore, SourceCaptureView } from '../connectors/workbench-source-store';
 import { sourceIssueSchema } from '../connectors/workbench-source-contracts';
 import type { NotificationService } from '../execution/workbench-notifications';
@@ -64,7 +65,7 @@ export const dashboardBlockReadSchema=z.discriminatedUnion('type',[
 export type DashboardBlockRead=z.infer<typeof dashboardBlockReadSchema>;
 const rawItem=z.strictObject({layer:z.literal('raw'),row:schemas.rawSourceRowSchema,issues:z.array(sourceIssueSchema)});
 const enrichedItem=z.strictObject({layer:z.literal('enriched'),row:schemas.canonicalSourceRowSchema,factRefs:z.array(versionRefSchema),issues:z.array(sourceIssueSchema)});
-const packageSummarySchema=z.strictObject({packageRef:entityRefSchema,revision:z.number().int(),editToken:z.string(),incomplete:z.number().int(),publication:publicationPackageRecordSchema.nullable(),activeJob:jobSnapshotSchema.nullable(),previewCurrent:z.null()});
+const packageSummarySchema=z.strictObject({packageRef:entityRefSchema,revision:z.number().int(),editToken:z.string(),incomplete:z.number().int(),publication:publicationPackageRecordSchema.nullable(),activeJob:jobSnapshotSchema.nullable(),previewCurrent:z.null(),delivery:packageDeliverySchema.nullable().optional(),zones:z.array(z.strictObject({id:uuidSchema,name:z.string().nullable()})).optional()});
 const formSchema=z.strictObject({formKind:z.string(),ref:entityRefSchema.nullable(),schema:z.record(z.string(),z.unknown()),registeredSchemas:z.array(z.strictObject({schemaId:z.string(),schemaVersion:z.number(),schema:z.record(z.string(),z.unknown())})),values:z.record(z.string(),z.unknown()).nullable(),problems:z.array(z.strictObject({path:z.string(),code:z.string(),message:z.string(),ref:entityRefSchema.nullable()})),help:z.string(),actions:z.array(nextActionSchema),editToken:z.string().nullable()});
 export const workbenchOutputSchemas={
   'context.options':z.strictObject({entities:z.array(schemas.directoryEntitySchema),links:z.array(schemas.directoryLinkSchema),goals:z.array(schemas.coreGoalDefinitionSchema)}),
@@ -303,7 +304,7 @@ export async function queryWorkbench(name:WorkbenchQueryName,request:QueryReques
       const activeJob=running.find(job=>job.resourceKey==='package:'+pkg.packageId)?.snapshot??null;
       // Metadata state alone never enables submission. A new preview command
       // followed by assertPreview remains the authoritative drift/TTL gate.
-      return {packageRef:{entityType:'publication_package',id:pkg.packageId},revision:pkg.revision,editToken:`draft:${pkg.packageId}:${pkg.revision}`,incomplete:pkg.entries.filter(e=>!e.complete).length,publication,activeJob,previewCurrent:null};
+      return {packageRef:{entityType:'publication_package',id:pkg.packageId},revision:pkg.revision,editToken:`draft:${pkg.packageId}:${pkg.revision}`,incomplete:pkg.entries.filter(e=>!e.complete).length,publication,activeJob,previewCurrent:null,delivery:ports.publishing.readOwnDelivery?.(context,pkg.packageId)??null,zones:packageZones(pkg.entries,ports.index)};
     });
     if(name==='uor.queue') return paged(summaries);
     return {summary:summaries[0],entries:packages[0].entries.map(({draftId,entityRef,versionRef,baseRef,definition,complete,problems})=>({draftId,entityRef,versionRef,baseRef,definition,complete,problems}))};

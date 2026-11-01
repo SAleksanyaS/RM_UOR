@@ -113,7 +113,7 @@ UI-тесты указывают `// @vitest-environment jsdom`, использ�
 
 **Interfaces:** `WorkbenchGoalSetupWizard({goalRef?:EntityRef,onClose:()=>void})`; draft.open → PartialDraftInput save → package.preview; состояние незавершённой формы хранится по draftId, а не во временном DOM.
 
-- [ ] Написать `saves_incomplete_without_zero_defaults`, `retains_draft_and_focus_on_background_refresh`, `rejects_publish_without_population_and_result`, `template_change_preserves_standalone`.
+- [x] Написать `saves_incomplete_without_zero_defaults`, `retains_draft_and_focus_on_background_refresh`, `rejects_publish_without_population_and_result`, `template_change_preserves_standalone`.
   ```ts
   const h = await createWorkbenchUiHarness({role:'curator',scenario:'population-gap'});
   await h.open('/goals/'+h.refs.goal.id);
@@ -122,10 +122,10 @@ UI-тесты указывают `// @vitest-environment jsdom`, использ�
   expect(screen.queryByLabelText('Дата начала действия')).toBeNull();
   ```
   В тесте сохранить неполный текст, получить фоновое обновление и убедиться, что текст и активное поле сохранились; preview возвращает список конкретных ошибок, текущая общая цель не меняется.
-- [ ] RED: `npm test -- src/features/goal-setup/workbench/goal-setup.test.tsx`.
-- [ ] Реализовать последовательные шаги: название/источник/измерение → область и ожидаемый состав → шаблон/самостоятельная методика → показатели/условия/веса/давность → пример/влияние. Начальные операторы только 16, неподдержанный formulaId не подменяется средним. Ручное завершение требует результата, возврат — причины. N/A имеет область/период/причину; дата действия назначения всегда publication.
-- [ ] GREEN: тот же test + `npm run build`; проверить server 422 отражается рядом с соответствующим полем, draft не стёрт.
-- [ ] `git add src/features/goal-setup/workbench/GoalSetupWizard.tsx src/features/goal-setup/workbench/MethodEditor.tsx src/features/goal-setup/workbench/PopulationEditor.tsx src/features/goal-setup/workbench/ApplicabilityEditor.tsx src/features/goal-setup/workbench/goal-setup.test.tsx src/features/overview/workbench/GoalDetailPage.tsx`; `git commit -m "feat(workbench): add guided goal and method configuration"`.
+- [x] RED: `npm test -- src/features/goal-setup/workbench/goal-setup.test.tsx`.
+- [x] Реализовать последовательные шаги: название/источник/измерение → область и ожидаемый состав → шаблон/самостоятельная методика → показатели/условия/веса/давность → пример/влияние. Начальные операторы только 16, неподдержанный formulaId не подменяется средним. Ручное завершение требует результата, возврат — причины. N/A имеет область/период/причину; дата действия назначения всегда publication.
+- [x] GREEN: тот же test + `npm run build`; проверить server 422 отражается рядом с соответствующим полем, draft не стёрт.
+- [x] `git add src/features/goal-setup/workbench/GoalSetupWizard.tsx src/features/goal-setup/workbench/MethodEditor.tsx src/features/goal-setup/workbench/PopulationEditor.tsx src/features/goal-setup/workbench/ApplicabilityEditor.tsx src/features/goal-setup/workbench/goal-setup.test.tsx src/features/overview/workbench/GoalDetailPage.tsx`; `git commit -m "feat(workbench): add guided goal and method configuration"`.
 
 ### T34: Источники, импорт, исходные и обогащённые строки
 
@@ -175,7 +175,7 @@ UI-тесты указывают `// @vitest-environment jsdom`, использ�
 
 **Interfaces:** `WorkbenchCuratorPanel()`; package.preview/submit/refreshStatus и job.openAuth/cancel/retry; API сообщает фактический этап, UI не считает закрытие консоли успехом.
 
-- [ ] Написать `shows_git_pushed_pr_auth_pending`, `keeps_commits_after_auth_cancel`, `chief_has_same_panel_and_no_merge_action`:
+- [x] Написать `shows_git_pushed_pr_auth_pending`, `keeps_commits_after_auth_cancel`, `chief_has_same_panel_and_no_merge_action`:
   ```ts
   // test provider: Git push accepted; Bitbucket REST requests auth
   expect(await screen.findByText('Коммиты отправлены, PR ожидает входа')).toBeTruthy();
@@ -183,10 +183,10 @@ UI-тесты указывают `// @vitest-environment jsdom`, использ�
   expect(screen.queryByLabelText(/пароль/i)).toBeNull();
   ```
   После job.retry число созданных PR не больше одного; при policy revoke поле reason и пакет сохранены, нет попытки remote write.
-- [ ] RED: `npm test -- src/features/publishing/workbench/curator-panel.test.tsx`.
-- [ ] Реализовать очередь зоны как фильтр, сводку «было/станет/влияние», точную preview revision, отдельные commit/push/PR статусы и ссылку на настоящий Bitbucket PR. Ритм накопления не меняется сохранением комментария. Ручной вход только во внешнем штатном окне, app не принимает пароль.
-- [ ] GREEN: тот же test + `npm run build`; проверить оба curator/chief и offline-draft. Обновление состояния после внешнего merge не создаёт новый PR.
-- [ ] `git add src/features/publishing/workbench/CuratorPanel.tsx src/features/publishing/workbench/PackageDiff.tsx src/features/publishing/workbench/PublishOperation.tsx src/features/publishing/workbench/curator-panel.test.tsx src/app/workbench/WorkbenchShell.tsx`; `git commit -m "feat(workbench): add accumulated publishing workflow"`.
+- [x] RED: `npm test -- src/features/publishing/workbench/curator-panel.test.tsx`.
+- [x] Реализовать очередь зоны как фильтр, сводку «было/станет/влияние», точную preview revision, отдельные commit/push/PR статусы и ссылку на настоящий Bitbucket PR. Ритм накопления не меняется сохранением комментария. Ручной вход только во внешнем штатном окне, app не принимает пароль.
+- [x] GREEN: тот же test + `npm run build`; проверить оба curator/chief и offline-draft. Обновление состояния после внешнего merge не создаёт новый PR.
+- [x] `git add src/features/publishing/workbench/CuratorPanel.tsx src/features/publishing/workbench/PackageDiff.tsx src/features/publishing/workbench/PublishOperation.tsx src/features/publishing/workbench/curator-panel.test.tsx src/app/workbench/WorkbenchShell.tsx`; `git commit -m "feat(workbench): add accumulated publishing workflow"`.
 
 ### T37: Конструктор дашбордов, поля и общий поиск
 

@@ -305,3 +305,8 @@ it('measures 20 repetitions for 2000 rows and larger immutable history without h
   f.index.rebuild();const history=await f.query('history.series',{metricRef:{entityType:'metric_definition',id:input.metrics[0].id,revision:1},granularity:'day'}) as any;
   expect(history.points).toHaveLength(1);expect(f.index.explain('goal_assignment').join(' ')).toContain('wb_read_type');
 },180000);
+it('projects package zones from exact own edits and published assignments without changing cadence',async()=>{
+ const f=queryFixture();await f.open('core_goal_definition',{entityType:'core_goal_definition',id:f.input.goal.id});const before=f.repository.getStateRevision();
+ const queue=await f.query('uor.queue') as import('./workbench-read-models').WorkbenchReadModels['uor.queue'];
+ expect(queue.items[0]).toHaveProperty('zones');expect(queue.items[0].zones?.map(zone=>zone.id)).toContain(f.input.assignment.scope.id);expect(f.repository.getStateRevision()).toBe(before);
+});

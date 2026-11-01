@@ -22,7 +22,7 @@ export class PublishingService {
   private readonly store;
   readonly readPort;
   constructor(private readonly deps:PublishingDependencies) {
-    this.store=createPackageStore(deps.repository,deps.drafts); this.readPort=this.store.readPort;
+    this.store=createPackageStore(deps.repository,deps.drafts,deps.jobs); this.readPort=this.store.readPort;
     deps.jobs.registerStage('package.preview.check');
     for(const stage of ['package.prepare','package.push','git.auth','pr.write','pr.status','PR.auth','publication.check','publication.apply']) deps.jobs.registerStage(stage);
     readAppliedPublication(deps.repository);
@@ -103,7 +103,11 @@ export class PublishingService {
           const outcome=nativeFlight?await nativeFlight.catch(()=>null):null;
           let observed:string|null|undefined;try{observed=await git.inspectRemote(currentCandidate.branch);}catch{observed=undefined;}
           if(observed===currentCandidate.commit||observed===undefined||nativeFlight&&(!outcome||!['cancelled','auth_required'].includes(outcome.status))||!nativeFlight&&previousIntent) {
-            if(observed===currentCandidate.commit) this.deps.jobs.markIrreversible(job.jobId);
+            if(observed===currentCandidate.commit) {
+              this.store.bindDelivery(context,currentCandidate,job.jobId);
+              this.deps.jobSink.checkpoint(job.jobId,{stage:'git.push.confirmed',packageId:currentCandidate.packageRevision.packageId,revision:currentCandidate.packageRevision.revision,preparedCommit:currentCandidate.commit});
+              this.deps.jobs.markIrreversible(job.jobId);
+            }
             return pending('REMOTE_STATE_UNKNOWN','git');
           }
         } else if(previousIntent) return pending('REMOTE_STATE_UNKNOWN','git');
@@ -122,6 +126,7 @@ export class PublishingService {
         await this.assertPreview(context,input);active();this.deps.repository.transaction(()=>this.store.savePreparation(context,prepared!));
       }
       const candidate=prepared;currentCandidate=candidate;
+      this.store.bindDelivery(context,candidate,job.jobId);
       const preTransfer=createPreTransferGate(context,candidate,{accessPolicy:this.deps.accessPolicy,git,artifacts:this.deps.artifacts,operationId:job.jobId,assertPreview:async()=>{active();await this.assertPreview(context,input);active();}});
       const gate=async(afterPush:boolean)=>{
         if(!afterPush){active();await preTransfer();active();return context.ownAccess;}
@@ -143,8 +148,8 @@ export class PublishingService {
         if(pushed.status==='auth_required') return pending(pushed.provider==='git'?'GIT_AUTH_REQUIRED':'PR_AUTH_REQUIRED',pushed.provider);
         if(pushed.status==='cancelled') return fail('OPERATION_CANCELLED',409);
         if(remote!==candidate.commit) return pending('REMOTE_STATE_UNKNOWN','git');
-        this.deps.jobSink.checkpoint(job.jobId,{stage:'git.push.confirmed',packageId:revision.packageId,preparedCommit:candidate.commit});
       }
+      this.deps.jobSink.checkpoint(job.jobId,{stage:'git.push.confirmed',packageId:revision.packageId,revision:revision.revision,preparedCommit:candidate.commit});
       this.deps.jobs.markIrreversible(job.jobId);active();await gate(true);
       this.deps.jobSink.stage(job.jobId,'pr.write',{completed:0,total:null,unit:'steps'});
       pushMayHaveOccurred=false;

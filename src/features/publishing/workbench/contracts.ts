@@ -1,13 +1,16 @@
 import { z } from 'zod';
 import type { Header } from '../../../domain/workbench/primitives';
 import { entityRefSchema, headerShape, positiveIntSchema, sha256Schema, utcInstantSchema, uuidSchema, versionRefSchema } from '../../../domain/workbench/primitives';
-import { problemSchema,revisionTokenSchema } from '../../../server/workbench/protocol';
+import { problemSchema,revisionTokenSchema,jobSnapshotSchema } from '../../../server/workbench/protocol';
 import { publicationAnchorSchema } from '../../../domain/workbench/schemas';
 
 export const gitOidSchema = z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/);
 export const rawSha256Schema = z.string().regex(/^[a-f0-9]{64}$/);
 export const packageRevisionSchema = z.strictObject({schemaVersion:z.literal(1),packageId:uuidSchema,cycleId:uuidSchema,curatorPersonId:uuidSchema,revision:positiveIntSchema,baseCommit:gitOidSchema,targetBranch:z.literal('main'),contentHash:sha256Schema,createdAt:utcInstantSchema});
 export type PackageRevision = z.infer<typeof packageRevisionSchema>;
+/** Own read projection; never a package state or client-supplied delivery flag. */
+export const packageDeliverySchema = z.strictObject({packageRevision:packageRevisionSchema,preparedCommit:gitOidSchema,pushState:z.enum(['prepared','unknown','confirmed']),job:jobSnapshotSchema});
+export type PackageDelivery = z.infer<typeof packageDeliverySchema>;
 export const packageFileSchema = z.strictObject({path:z.string().min(1),sha256:rawSha256Schema,bytes:z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER)});
 export type PackageFile = z.infer<typeof packageFileSchema>;
 export const packageManifestSchema = z.strictObject({packageRevision:packageRevisionSchema,files:z.array(packageFileSchema)});

@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { useGlobalContext, useWorkbenchQuery } from '../../../app/workbench/context';
+import { useGlobalContext, useWorkbench, useWorkbenchQuery } from '../../../app/workbench/context';
 import type { GlobalContext } from '../../../server/workbench/protocol';
 import type { GoalReadRow, WorkbenchReadModels } from '../../catalog/workbench-read-models';
 import type { EvaluationBasis, MethodVersion } from '../../../domain/workbench/entities';
+import { WorkbenchGoalSetupWizard } from '../../goal-setup/workbench/GoalSetupWizard';
 import { BasisInspector } from './BasisInspector';
 import { ResultSummary } from './ResultSummary';
 import { ContextLink, displayExact, goalRequest, QueryFeedback, ResultModeSelector } from './goal-view-utils';
@@ -29,6 +30,8 @@ function GoalHistory({ row, context, method }: { row: GoalReadRow; context: Glob
 }
 export function WorkbenchGoalDetailPage({ goalId }: { goalId: string }) {
   const { context, setContext } = useGlobalContext();
+  const { session } = useWorkbench();
+  const [setup, setSetup] = useState(false);
   const [tab, setTab] = useState<(typeof tabs)[number]>('Состояние');
   const requestContext = context?.goalId === goalId ? context : null;
   const query = useGoalRead('goals.detail', requestContext ? goalRequest(requestContext) : null);
@@ -40,7 +43,9 @@ export function WorkbenchGoalDetailPage({ goalId }: { goalId: string }) {
     const basis = basisFor(row), ref = basis?.methodRef ?? (row.assignment.methodBinding.kind === 'standalone' ? row.assignment.methodBinding.methodRef : null);
     return data?.tabs.method.find(method => method.id === ref?.id && method.revision === ref.revision);
   };
-  return <section aria-label="Карточка цели"><ResultModeSelector goalId={goalId} selectedSnapshot={data?.rows[0]?.snapshot} /><QueryFeedback loading={query.loading} error={query.error} operation={query.errorOperation} />
+  return <section aria-label="Карточка цели">
+    {session?.allowedCommands.includes('goal.draft.save') && <button type="button" onClick={() => setSetup(true)}>Настроить цель</button>}
+    {setup && <WorkbenchGoalSetupWizard goalRef={{entityType:'core_goal_definition',id:goalId}} onClose={() => setSetup(false)} />}<ResultModeSelector goalId={goalId} selectedSnapshot={data?.rows[0]?.snapshot} /><QueryFeedback loading={query.loading} error={query.error} operation={query.errorOperation} />
     {data && <><h2>{data.goal.title}</h2>{data.goal.description && <p>{data.goal.description}</p>}
       <p>Области: {data.rows.map(row => row.scopeName ?? row.assignment.scope.id).join('; ')}</p><p>Дата данных: {data.tabs.enriched[0]?.capture.sourceUpdatedAt ?? 'Неизвестна'}</p>
       <p>Официальные сроки: {data.rows.map(row => `${row.scopeName ?? row.assignment.scope.id}: ${row.assignment.officialDueOn ?? 'Не задан'}`).join('; ')}</p>

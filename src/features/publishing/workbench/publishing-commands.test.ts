@@ -168,3 +168,21 @@ it('does not accept retry while the original native terminal is still waiting',a
   try{await expect(f.registry.execute({commandId:retryId,name:'job.retry',baseRevision:null,payload:{jobId:job.jobId}},{...f.context,commandId:retryId})).rejects.toMatchObject({code:'RETRY_NOT_AVAILABLE'});}finally{release();await sent;}
   expect(f.jobs.get(job.jobId,f.context.installationId)!.status).toBe('succeeded');expect(f.counts()).toEqual({commits:1,pushes:1});
 });
+it('projects only exact owned saved delivery proof for the pending REST job',async()=>{
+  const f=await fixture(), preview=await f.preview();
+  f.fake.createProposal=async()=>{throw new WorkbenchHttpError(409,'PR_AUTH_REQUIRED','Native REST login required');};
+  const sent=await f.send('package.submit',{packageId:f.packageId(),previewToken:preview.previewToken});
+  expect(f.publishing.readPort).toHaveProperty('readOwnDelivery');
+  const delivery=f.publishing.readPort.readOwnDelivery(f.context,f.packageId());
+  expect(delivery).toMatchObject({packageRevision:preview.packageRevision,preparedCommit:'b'.repeat(40),pushState:'confirmed',job:{jobId:sent.job.jobId,status:'waiting_user',stage:'PR.auth'}});
+  expect(JSON.stringify(delivery)).not.toMatch(/checkout|cwd|origin|nonce|credential/);
+  expect(()=>f.publishing.readPort.readOwnDelivery({...f.context,ownAccess:{...f.context.ownAccess,personId:fixtureId(399999)}},f.packageId())).toThrow();
+});
+it('records remote acceptance proved during cancellation and preserves it on the next read',async()=>{
+  const f=await fixture(),preview=await f.preview(),push=f.terminal.runGitPush;let started!:()=>void;const waiting=new Promise<void>(resolve=>{started=resolve;});
+  f.terminal.runGitPush=async input=>{await push(input);started();await new Promise<void>(resolve=>input.signal.addEventListener('abort',()=>resolve(),{once:true}));return {status:'unknown',exitCode:null,reason:'CANCELLED_AFTER_POSSIBLE_TRANSFER'};};
+  const commandId=fixtureId(361000),sent=f.send('package.submit',{packageId:f.packageId(),previewToken:preview.previewToken},commandId);await waiting;const job=f.jobs.findByCommand(commandId,f.context.installationId)!;
+  await expect(f.execute('job.cancel',{jobId:job.jobId})).rejects.toMatchObject({code:'REMOTE_STATE_UNKNOWN'});await sent;
+  expect(f.publishing.readPort).toHaveProperty('readOwnDelivery');
+  expect(f.publishing.readPort.readOwnDelivery(f.context,f.packageId())).toMatchObject({pushState:'confirmed',job:{status:'retry_wait',cancelAvailable:false}});
+});

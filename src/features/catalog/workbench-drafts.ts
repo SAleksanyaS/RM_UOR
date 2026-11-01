@@ -3,7 +3,7 @@ import { WorkbenchError } from '../../domain/workbench/errors';
 import type { AgreedSnapshot, Attestation, CalculationResult, CoreGoalDefinition, DirectoryEntity, DirectoryLink, Evidence, EvaluationBasis, EvaluationInput, GoalAssignment, ManualCorrection, ManualStatusEvent, ObservedFact, Template, WorkbenchEntity, WorkbenchEntityType } from '../../domain/workbench/entities';
 import type { EntityRef, Header, VersionRef } from '../../domain/workbench/primitives';
 import { newUuid } from '../../domain/workbench/primitives';
-import { entityReferences, schemaForEntity, validateReferences } from '../../domain/workbench/schemas';
+import { entityReferences, schemaForEntity, validateReferences, methodBindingSchema } from '../../domain/workbench/schemas';
 import type { WorkbenchRepository } from '../../server/storage/workbench-repository';
 import type { CommandContext } from '../../server/workbench/command-registry';
 import { commitCommandEffect, createCommandStore } from '../../server/workbench/command-store';
@@ -20,6 +20,8 @@ import { canonicalBasis, digestBasis } from '../evaluation/workbench/basis';
 import { evaluateAssignment } from '../evaluation/workbench/evaluate';
 import { validateAgreedSnapshot, validateAttestation, validateCorrection, validateManualTransition } from '../evaluation/workbench/state-rules';
 
+type DraftReadContext=Pick<CommandContext,'repository'|'installationId'|'ownAccess'>;
+
 type DeepPartial<T> = T extends readonly (infer V)[] ? DeepPartial<V>[] : T extends object ? { [K in keyof T]?: DeepPartial<T[K]> } : T;
 export type PartialDraftInput<T> = T extends Header ? DeepPartial<Omit<T, keyof Header>> : never;
 export type DraftEntry = { draftId: string; entityRef: EntityRef; versionRef: VersionRef; baseRef: VersionRef | null; definition: Record<string, unknown>; complete: boolean; problems: FieldProblem[] };
@@ -29,6 +31,7 @@ export type DraftOpenInput = { entityType: string; ref: EntityRef | null; packag
 export type DraftOpenResult = { draftId: string; objectId: string; entityRef: EntityRef; editToken: RevisionToken };
 export type DraftSaveInput = { draftId: string; definition: PartialDraftInput<WorkbenchEntity> };
 export type DraftSaveResult = { draftId: string; entityRef: EntityRef; versionRef: VersionRef; complete: boolean; problems: FieldProblem[] };
+export type PendingManualTransition={draftId:string;ref:VersionRef;targetState:ManualStatusEvent['to'];reason:string|null;resultDescription:string|null};
 export type DraftOwnerSave = { context: CommandContext; entry: StoredDraft; definition: Record<string, unknown>; previous: Header | null };
 /** Complete directory of the exact package projection; point lookups cannot expose additions/removals. */
 export type DraftDirectoryInventory = { entities: DirectoryEntity[]; links: DirectoryLink[] };
@@ -89,9 +92,9 @@ export function createDraftService({ repository, store, clock, prepareEvaluation
     if (!intent) return fail('COMMAND_INTENT_MISSING', 409); return (JSON.parse(intent.request_json) as { baseRevision: string | null }).baseRevision;
   };
   const isPublished = (value: Header) => value.publicationAnchorId !== null && repository.readPublicationAnchor({ entityType: 'publication_anchor', id: value.publicationAnchorId })?.publicationState === 'confirmed';
-  const accessible = (context: CommandContext, value: Header) => isPublished(value) || value.actor.installationId === context.installationId && value.actor.profilePersonId === context.ownAccess.personId;
+  const accessible = (context: DraftReadContext, value: Header) => isPublished(value) || value.actor.installationId === context.installationId && value.actor.profilePersonId === context.ownAccess.personId;
   const materialize = (entry: StoredDraft) => ({ ...entry.header, ...entry.definition }) as WorkbenchEntity;
-  const resolve = <T extends Header>(context: CommandContext, ref: EntityRef | VersionRef, pkg?: StoredPackage): T => {
+  const resolve = <T extends Header>(context: DraftReadContext, ref: EntityRef | VersionRef, pkg?: StoredPackage): T => {
     const draft = pkg?.entries.find(entry => entry.entityRef.entityType === ref.entityType && entry.entityRef.id === ref.id) as StoredDraft | undefined;
     if (draft && (!('revision' in ref) || ref.revision === draft.header.revision)) {
       const parsed = schemaForEntity(ref.entityType).safeParse(materialize(draft)); if (!parsed.success) return fail('DRAFT_REFERENCE_INCOMPLETE'); return parsed.data as T;
@@ -191,13 +194,13 @@ export function createDraftService({ repository, store, clock, prepareEvaluation
   const publishedManual = (ref: VersionRef): ManualStatusEvent | null => {
     const value = repository.readVersion<ManualStatusEvent>(ref); return value && isPublished(value) ? value : null;
   };
-  const manualDefinitions = (context: CommandContext, pkg: StoredPackage, assignmentId: string) => {
+  const manualDefinitions = (context: DraftReadContext, pkg: StoredPackage, assignmentId: string) => {
     const assignment = resolve<GoalAssignment>(context, { entityType: 'goal_assignment', id: assignmentId }, pkg);
     const goal = resolve<CoreGoalDefinition>(context, { entityType: 'core_goal_definition', id: assignment.goalId }, pkg);
     if (goal.mode !== 'manual_status') return fail('INVALID_MANUAL_TRANSITION');
     return { assignmentRef: refOf('goal_assignment', assignment), goalRef: refOf('core_goal_definition', goal) };
   };
-  const manualChain = (context: CommandContext, pkg: StoredPackage, ref: VersionRef, assignmentId: string) => {
+  const manualChain = (context: DraftReadContext, pkg: StoredPackage, ref: VersionRef, assignmentId: string) => {
     const refs = new Set<string>(); const definitions = manualDefinitions(context, pkg, assignmentId);
     const walk = (current: VersionRef): VersionRef | null => {
       const key = refKey(current); if (refs.has(key)) return fail('INVALID_MANUAL_TRANSITION'); refs.add(key);
@@ -283,6 +286,36 @@ export function createDraftService({ repository, store, clock, prepareEvaluation
       return store.frozenVersions(packageId);
     },
     readPreparedForPackage(packageId: string, ref: VersionRef) { const found = store.readDerived(ref); if (!store.getPackage(packageId) || found?.packageId !== packageId) return fail('REFERENCE_NOT_FOUND', 404); return found.value; },
+    readOwnStandaloneMethodRef(context:DraftReadContext,input:{packageId:string;assignmentRef:VersionRef;editToken:string}):VersionRef|null {
+      if(context.repository!==repository)fail('COMMAND_CONTEXT_MISMATCH',409);
+      if(!context.ownAccess.personId||!canUseCapability(context.ownAccess,'uor.prepare'))fail('ACCESS_DENIED',403);
+      const pkg=ownPackage(context,input.packageId);if(store.token(pkg)!==input.editToken)fail('PREVIEW_STALE',409);
+      const entry=pkg.entries.find(e=>e.entityRef.entityType==='goal_assignment'&&e.entityRef.id===input.assignmentRef.id);
+      if(!entry)fail('REFERENCE_NOT_FOUND',404);if(input.assignmentRef.entityType!=='goal_assignment'||entry!.versionRef.revision!==input.assignmentRef.revision)fail('PREVIEW_STALE',409);
+      for(const saved of store.history(entry!.draftId).reverse()){const parsed=methodBindingSchema.safeParse(saved.definition.methodBinding);if(parsed.success&&parsed.data.kind==='standalone')return parsed.data.methodRef;}
+      return null;
+    },
+    readOwnManualTip(context: DraftReadContext, input: {packageId:string;assignmentRef:VersionRef;editToken:string}) {
+      if(context.repository!==repository)fail('COMMAND_CONTEXT_MISMATCH',409);
+      if(!context.ownAccess.personId||!canUseCapability(context.ownAccess,'uor.prepare'))fail('ACCESS_DENIED',403);
+      const pkg=ownPackage(context,input.packageId);
+      if(store.token(pkg)!==input.editToken)fail('PREVIEW_STALE',409);
+      const assignment=pkg.entries.find(entry=>entry.entityRef.entityType==='goal_assignment'&&entry.entityRef.id===input.assignmentRef.id);
+      if(!assignment)fail('REFERENCE_NOT_FOUND',404);
+      if(input.assignmentRef.entityType!=='goal_assignment'||assignment!.versionRef.revision!==input.assignmentRef.revision)fail('PREVIEW_STALE',409);
+      const definitions=manualDefinitions(context,pkg,input.assignmentRef.id);
+      const finish=(status:'ready'|'incomplete',tipRef:VersionRef|null,event:ManualStatusEvent|null,problems:FieldProblem[]=[],pending:PendingManualTransition|null=null)=>({packageId:pkg.packageId,...definitions,status,tipRef,event,problems,pending});
+      const problemRef={entityType:'goal_assignment',id:input.assignmentRef.id};
+      const unfinished=pkg.entries.filter(entry=>entry.entityRef.entityType==='manual_status_event'&&!entry.complete&&(entry.definition.assignmentId===input.assignmentRef.id||entry.definition.assignmentId===undefined));
+      const pendingProof=unfinished.length===1?store.readProof<PendingManualTransition&{assignmentRef:VersionRef;goalRef:VersionRef}>(unfinished[0].draftId,'pending-transition'):null;
+      if(unfinished.length&&(!pendingProof||refKey(pendingProof.assignmentRef)!==refKey(definitions.assignmentRef)||refKey(pendingProof.goalRef)!==refKey(definitions.goalRef)))return finish('incomplete',null,null,[issue('MANUAL_TIP_INCOMPLETE','/manualStatus',problemRef)]);
+      const resume=(tipRef:VersionRef|null,event:ManualStatusEvent|null)=>{if(!pendingProof)return finish('ready',tipRef,event);const expected=tipRef??definitions.assignmentRef;if(refKey(expected)!==refKey(pendingProof.ref))return finish('incomplete',null,null,[issue('MANUAL_TIP_AMBIGUOUS','/manualStatus',problemRef)]);const {draftId,ref,targetState,reason,resultDescription}=pendingProof;return finish('ready',tipRef,event,[],{draftId,ref,targetState,reason,resultDescription});};
+      const events=pkg.entries.filter(entry=>entry.entityRef.entityType==='manual_status_event'&&entry.complete&&entry.definition.assignmentId===input.assignmentRef.id&&!publishedManual(entry.versionRef));
+      if(!events.length){const current=repository.readLatestManualStatus(input.assignmentRef.id);return resume(current?refOf('manual_status_event',current):null,current);}
+      const tips=events.filter(entry=>{try{const chain=manualChain(context,pkg,entry.versionRef,input.assignmentRef.id);assertManualTip(pkg,input.assignmentRef.id,chain.refs);return true;}catch{return false;}});
+      if(tips.length!==1)return finish('incomplete',null,null,[issue('MANUAL_TIP_AMBIGUOUS','/manualStatus',problemRef)]);
+      return resume(tips[0].versionRef,resolve<ManualStatusEvent>(context,tips[0].versionRef,pkg));
+    },
     readPackageBasisContexts(context: Pick<CommandContext,'repository'|'installationId'|'ownAccess'>, packageId: string) { if(context.repository!==repository) return fail('COMMAND_CONTEXT_MISMATCH',409); ownPackage(context,packageId); return store.readBasisContexts(packageId); },
     readPackageProofReferences(context: Pick<CommandContext,'repository'|'installationId'|'ownAccess'>, packageId: string): VersionRef[] {
       if(context.repository!==repository) return fail('COMMAND_CONTEXT_MISMATCH',409); const pkg=ownPackage(context,packageId); const refs:VersionRef[]=[];
@@ -478,6 +511,25 @@ export function createDraftService({ repository, store, clock, prepareEvaluation
       validateAgreedSnapshot({ snapshot: value, basis, result, manualStatus, attestation });
       return write(context, input.draftId, businessDefinition(value), ['agreed_snapshot'], () => store.setProof(input.draftId, 'snapshot', input));
     },
+    async prepareManualTransition(context:CommandContext,input:Omit<PendingManualTransition,'draftId'>&{packageId:string;draftId:string|null}):Promise<DraftOpenResult> {
+      assertContext(context);
+      return commitCommandEffect(context,()=>{
+        const pkg=ownPackage(context,input.packageId);store.assertToken(pkg.packageId,expectedToken(context));
+        const previous=input.ref.entityType==='manual_status_event'?resolve<ManualStatusEvent>(context,input.ref,pkg):null;
+        if(!previous&&input.ref.entityType!=='goal_assignment')return fail('INVALID_MANUAL_TRANSITION');
+        const assignment=resolve<GoalAssignment>(context,previous?{entityType:'goal_assignment',id:previous.assignmentId}:input.ref,pkg);
+        const definitions=manualDefinitions(context,pkg,assignment.id);
+        const tip=service.readOwnManualTip(context,{packageId:pkg.packageId,assignmentRef:definitions.assignmentRef,editToken:store.token(pkg)});
+        if(tip.status!=='ready'||refKey(tip.tipRef??definitions.assignmentRef)!==refKey(input.ref))return fail('REVISION_CONFLICT',409);
+        if(tip.pending&&tip.pending.draftId!==input.draftId)return fail('REVISION_CONFLICT',409);
+        let entry=input.draftId?own(context,input.draftId,['manual_status_event']):null;
+        if(entry&&(entry.packageId!==pkg.packageId||entry.complete||!tip.pending||tip.pending.draftId!==entry.draftId))return fail('REVISION_CONFLICT',409);
+        if(!entry){const entityRef={entityType:'manual_status_event',id:newUuid()},draftId=newUuid();const header:Header={schemaVersion:1,id:entityRef.id,revision:1,actor:context.actor,recordedAt:clock.now(),publicationAnchorId:null};store.add({draftId,packageId:pkg.packageId,entityRef,baseRef:null,definition:{},...assess({entityRef,header} as StoredDraft,{}),header});entry=store.getEntry(draftId)!;}
+        const proof={draftId:entry.draftId,ref:input.ref,targetState:input.targetState,reason:input.reason,resultDescription:input.resultDescription,...definitions};store.setProof(entry.draftId,'pending-transition',proof);
+        const editToken=store.save(entry.draftId,entry.definition,false,entry.problems,context.actor,clock.now());
+        return {result:{draftId:entry.draftId,objectId:entry.entityRef.id,entityRef:entry.entityRef,editToken},changedRefs:[entry.entityRef],editToken};
+      }).result;
+    },
     async transition(context: CommandContext, input: { draftId: string; ref: VersionRef; targetState: ManualStatusEvent['to']; reason: string | null; resultDescription: string | null }) {
       const entry = own(context, input.draftId, ['manual_status_event']); const pkg = ownPackage(context, entry.packageId);
       const previous = input.ref.entityType === 'manual_status_event' ? resolve<ManualStatusEvent>(context, input.ref, pkg) : null;
@@ -489,7 +541,7 @@ export function createDraftService({ repository, store, clock, prepareEvaluation
       if (!previous && repository.readLatestManualStatus(assignment.id)) return fail('REVISION_CONFLICT', 409);
       assertManualTip(pkg, assignment.id, chain.refs);
       const value = validatedEntity('manual_status_event', { ...entry.header, assignmentId: assignment.id, from: previous?.to ?? null, to: input.targetState, reason: input.reason, resultDescription: input.resultDescription ?? previous?.resultDescription ?? null, evidenceIds: previous?.evidenceIds ?? [] }) as ManualStatusEvent;
-      validateManualTransition(previous, value); return write(context, input.draftId, businessDefinition(value), ['manual_status_event'], updated => store.setProof(input.draftId, `manual-transition:${updated.versionRef.revision}`, { previousRef: previous ? input.ref : null, publishedRootRef: chain.rootRef, ...definitions } satisfies ManualProof));
+      validateManualTransition(previous, value); return write(context, input.draftId, businessDefinition(value), ['manual_status_event'], updated => {store.setProof(input.draftId, `manual-transition:${updated.versionRef.revision}`, { previousRef: previous ? input.ref : null, publishedRootRef: chain.rootRef, ...definitions } satisfies ManualProof);store.clearProof(input.draftId,'pending-transition');});
     },
     async archive(context: CommandContext, input: { draftId: string; goalRef: VersionRef; reason: string }, restore = false) {
       const entry = own(context, input.draftId, ['core_goal_definition']);

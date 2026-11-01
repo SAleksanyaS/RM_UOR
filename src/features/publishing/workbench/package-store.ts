@@ -8,6 +8,8 @@ import type { DraftService } from '../../catalog/workbench-drafts';
 import { publicationPackageRecordSchema, packagePreviewResultSchema, type PackagePreviewResult, type PublicationPackageRecord, type PackageRevision } from './contracts';
 import type { PreparedProposal } from './git-port';
 import { canonicalBytes,hashBytes } from './package-manifest';
+import type { JobStore } from '../../../server/workbench/jobs';
+import { packageDeliverySchema, type PackageDelivery } from './contracts';
 
 type Identity = Pick<QueryContext,'repository'|'installationId'|'ownAccess'>;
 export type PreviewBinding = {repositoryId:string;mainCommit:string;draftRevision:number;fingerprint:string};
@@ -17,8 +19,9 @@ type Row = {payload:string};
 export interface PublicationReadPort {
   readOwnPackage(context:Identity,packageId:string):PublicationPackageRecord|null;
   listOwnPackages(context:Identity):PublicationPackageRecord[];
+  readOwnDelivery?(context:Identity,packageId:string):PackageDelivery|null;
 }
-export function createPackageStore(repository:WorkbenchRepository,drafts:DraftService) {
+export function createPackageStore(repository:WorkbenchRepository,drafts:DraftService,jobs?:JobStore) {
   const sql=repository.sqlForModule('publishing');
   const technical=repository.sqlForModule('publishing',{trackStateRevision:false});
   sql.execMigration('preview-001',`
@@ -29,6 +32,7 @@ export function createPackageStore(repository:WorkbenchRepository,drafts:DraftSe
     CREATE INDEX wb_publishing_own_tokens ON wb_publishing_tokens(package_id,installation_id,person_id);
   `);
   technical.execMigration('submission-001','CREATE TABLE wb_publishing_prepared(package_id TEXT NOT NULL,revision INTEGER NOT NULL,installation_id TEXT NOT NULL,person_id TEXT NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(package_id,revision));');
+  technical.execMigration('submission-delivery-001','CREATE TABLE wb_publishing_delivery_jobs(job_id TEXT PRIMARY KEY,package_id TEXT NOT NULL,revision INTEGER NOT NULL,installation_id TEXT NOT NULL,person_id TEXT NOT NULL);');
   const own=(context:Identity,packageId:string)=>drafts.readOwnPackage(context,packageId);
   const latest=(context:Identity,packageId:string):PublicationPackageRecord|null=>{
     own(context,packageId);
@@ -36,6 +40,11 @@ export function createPackageStore(repository:WorkbenchRepository,drafts:DraftSe
     return row?publicationPackageRecordSchema.parse(JSON.parse(row.payload)):null;
   };
   return {
+    bindDelivery(context:Identity,value:PreparedProposal,jobId:string) {
+      own(context,value.packageRevision.packageId);
+      if(!jobs || jobs.name(jobId,context.installationId)!=='package.submit' || jobs.getResourceKey(jobId,context.installationId)!=='package:'+value.packageRevision.packageId) throw new WorkbenchHttpError(409,'COMMAND_CONTEXT_MISMATCH','Delivery job differs');
+      technical.run('INSERT OR IGNORE INTO wb_publishing_delivery_jobs(job_id,package_id,revision,installation_id,person_id) VALUES(?,?,?,?,?)',[jobId,value.packageRevision.packageId,value.packageRevision.revision,context.installationId,context.ownAccess.personId]);
+    },
     hasPreparation(context:Identity,packageId:string):boolean {
       own(context,packageId);return !!technical.get('SELECT revision FROM wb_publishing_prepared WHERE package_id=? AND installation_id=? AND person_id=? LIMIT 1',[packageId,context.installationId,context.ownAccess.personId]);
     },
@@ -64,6 +73,15 @@ export function createPackageStore(repository:WorkbenchRepository,drafts:DraftSe
     },
     readPort:{
       readOwnPackage:latest,
+      readOwnDelivery(context:Identity,packageId:string):PackageDelivery|null {
+        own(context,packageId);if(!jobs)return null;
+        const row=technical.get<{payload:string;job_id:string;revision:number}>(`SELECT p.payload,d.job_id,d.revision FROM wb_publishing_delivery_jobs d JOIN wb_publishing_prepared p ON p.package_id=d.package_id AND p.revision=d.revision AND p.installation_id=d.installation_id AND p.person_id=d.person_id WHERE d.package_id=? AND d.installation_id=? AND d.person_id=? ORDER BY d.rowid DESC LIMIT 1`,[packageId,context.installationId,context.ownAccess.personId]);
+        if(!row)return null;
+        const prepared=JSON.parse(row.payload) as PreparedProposal,job=jobs.get(row.job_id,context.installationId);
+        if(!job || jobs.name(row.job_id,context.installationId)!=='package.submit' || jobs.getResourceKey(row.job_id,context.installationId)!=='package:'+packageId || prepared.packageRevision.packageId!==packageId || prepared.packageRevision.revision!==row.revision || prepared.packageRevision.curatorPersonId!==context.ownAccess.personId)return null;
+        const proof=jobs.checkpoints(job.jobId,context.installationId).filter(checkpoint=>checkpoint.packageId===packageId && checkpoint.revision===row.revision && checkpoint.preparedCommit===prepared.commit);
+        return packageDeliverySchema.parse({packageRevision:prepared.packageRevision,preparedCommit:prepared.commit,job,pushState:proof.some(c=>c.stage==='git.push.confirmed')?'confirmed':proof.some(c=>c.stage==='git.push.intent')?'unknown':'prepared'});
+      },
       listOwnPackages(context:Identity) {
         if(context.repository!==repository) throw new WorkbenchHttpError(409,'COMMAND_CONTEXT_MISMATCH','Wrong repository');
         return sql.all<Row>('SELECT payload FROM wb_publishing_packages p WHERE installation_id=? AND person_id=? AND revision=(SELECT MAX(revision) FROM wb_publishing_packages q WHERE q.package_id=p.package_id) ORDER BY package_id',[context.installationId,context.ownAccess.personId]).map(row=>publicationPackageRecordSchema.parse(JSON.parse(row.payload)));

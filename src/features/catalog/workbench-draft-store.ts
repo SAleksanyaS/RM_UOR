@@ -42,6 +42,7 @@ export function createDraftStore({ repository, artifactDirectory }: { repository
     setProof(draftId: string, kind: string, value: object) { const updated = sql.run('UPDATE wb_drafts_proofs SET payload_json=? WHERE draft_id=? AND kind=?', [JSON.stringify(value), draftId, kind]); if (!updated.changes) sql.run('INSERT INTO wb_drafts_proofs VALUES(?,?,?)', [draftId, kind, JSON.stringify(value)]); },
     readProof<T>(draftId: string, kind: string): T | null { const row = sql.get<{ payload_json: string }>('SELECT payload_json FROM wb_drafts_proofs WHERE draft_id=? AND kind=?', [draftId, kind]); return row ? JSON.parse(row.payload_json) as T : null; },
     readDraftVersion,
+    clearProof(draftId:string,kind:string){sql.run('DELETE FROM wb_drafts_proofs WHERE draft_id=? AND kind=?',[draftId,kind]);},
     freeze(packageId: string, entityType: string, value: Header) {
       const ref = { entityType, id: value.id, revision: value.revision }; const previous = readDraftVersion(packageId, ref);
       if (previous) { if (stableJson(previous) !== stableJson(value)) throw new WorkbenchHttpError(409, 'REVISION_CONFLICT', 'Frozen draft version changed'); return; }
