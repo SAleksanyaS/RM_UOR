@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { access } from 'node:fs/promises';
-import { createServer } from 'node:http';
+import { createServer, type ServerResponse } from 'node:http';
 import { chromium, type BrowserContext, type Page } from 'playwright';
 import { okoWorkflowViewSchema, type OkoDictionaryMapping, type OkoWorkflowView, type OkoWorkspaceView } from '../../src/features/connectors/workbench-workflow-contracts';
 import type { createWorkbenchRuntime } from '../../src/server/workbench/bootstrap';
@@ -37,11 +37,12 @@ const sourceBytes = Buffer.from('\ufeff' + [['Код продукта', 'Про�
 const originalFileName = 'oko-operations-2026-10-30.csv';
 const dictionaryFields = ['key', 'productId', 'productName', 'clusterId', 'clusterName', 'ditId', 'ditName', 'clusterLeaderId', 'clusterLeaderName', 'productLeaderId', 'productLeaderName'] as const;
 const syntheticId = (number: number) => '00000000-0000-4000-8000-' + String(number).padStart(12, '0');
-const productLeaders = ['Ирина Волкова', 'Алексей Орлов', 'Мария Лебедева', 'Дмитрий Соколов', 'Елена Морозова', 'Сергей Белов', 'Анна Крылова'];
-const dictionaryBytes = Buffer.from('\ufeff' + [dictionaryFields.join(';'), ...sourceRows.slice(0, 7).map((row, index) => {
+const productLeaders = ['Ирина Волкова', 'Алексей Орлов', 'Мария Лебедева', 'Дмитрий Соколов', 'Елена Морозова', 'Сергей Белов', 'Анна Крылова', 'Николай Зайцев'];
+const dictionaryFile = (complete: boolean) => Buffer.from('\ufeff' + [dictionaryFields.join(';'), ...sourceRows.slice(0, complete ? 8 : 7).map((row, index) => {
   const corporate = index < 4;
   return [row[0], syntheticId(100 + index), row[1], syntheticId(corporate ? 200 : 201), corporate ? 'Корпоративные сервисы' : 'Клиентские сервисы', syntheticId(300), 'ДИТ операций · учебный пример', syntheticId(corporate ? 400 : 401), corporate ? 'Ольга Миронова' : 'Павел Громов', syntheticId(500 + index), productLeaders[index]].join(';');
 })].join('\r\n'));
+const dictionaryBytes = dictionaryFile(false);
 
 const delay = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
 
@@ -57,11 +58,22 @@ export async function createPersonalReferenceEnvironment(executablePath: string)
   let reportDownloads = 0;
   let closed = false;
   let preparing = false;
+  let exportMode: 'normal' | 'schema-error' | 'hold' | 'empty' = 'normal';
+  let loginGeneration = 0;
+  const heldDownloads = new Set<ServerResponse>();
   const report = createServer((request, response) => {
     if (request.method !== 'GET') { response.writeHead(405).end(); return; }
+    if (request.url === '/sign-in') { response.writeHead(302, { location: '/report', 'set-cookie': `synthetic-login=${loginGeneration}; Path=/; HttpOnly; SameSite=Lax` }).end(); return; }
+    if (request.url === '/login') {
+      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }).end('<!doctype html><html lang="ru"><meta charset="utf-8"><title>Синтетический ручной вход</title><body style="margin:100px 40px;font:18px sans-serif"><h1>Вход в учебный источник</h1><p>Локальный тест ручного шага. Пароли, OTP и сертификаты не используются.</p><a id="synthetic-login" href="/sign-in">Завершить тестовый вход</a></body></html>'); return;
+    }
+    if (loginGeneration && !(request.headers.cookie ?? '').split(';').some(value => value.trim() === `synthetic-login=${loginGeneration}`)) { response.writeHead(302, { location: '/login' }).end(); return; }
     if (request.url === '/export') {
       reportDownloads++;
-      response.writeHead(200, { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': `attachment; filename="${originalFileName}"`, 'content-length': sourceBytes.length, 'cache-control': 'no-store' }).end(sourceBytes);
+      const bytes = exportMode === 'schema-error' ? Buffer.from('Other;Format\r\nchanged;source') : exportMode === 'empty' ? Buffer.from('\ufeffКод продукта;Продукт;Объём;Дата\r\n') : sourceBytes;
+      response.writeHead(200, { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': `attachment; filename="${originalFileName}"`, 'content-length': bytes.length, 'cache-control': 'no-store' });
+      if (exportMode === 'hold') { heldDownloads.add(response); response.once('close', () => heldDownloads.delete(response)); response.write(bytes.subarray(0, Math.floor(bytes.length / 2))); }
+      else response.end(bytes);
       return;
     }
     if (request.url !== '/report') { response.writeHead(404).end(); return; }
@@ -74,6 +86,7 @@ export async function createPersonalReferenceEnvironment(executablePath: string)
     browserLauncher: {
       async launchPersistent(_profile, folder, options) {
         assert.equal(closed, false, 'Personal reference environment is closed');
+        assert.equal(options.chromiumSandbox, true, 'The real personal browser must keep the production sandbox');
         // Preserve production network/download controls. Only use the installed
         // executable and headless display for this automated native fixture.
         const context = await chromium.launchPersistentContext(folder, { ...options, executablePath, channel: undefined, headless: true });
@@ -83,13 +96,17 @@ export async function createPersonalReferenceEnvironment(executablePath: string)
     },
   };
 
-  async function nextManaged(index: number): Promise<Page> {
+  async function nextManagedPage(index: number): Promise<Page> {
     const deadline = Date.now() + 20000;
     while (!contexts[index]) {
       if (Date.now() > deadline) throw Error('Actual managed report browser did not open');
       await delay(30);
     }
     const page = contexts[index].pages()[0] ?? await contexts[index].newPage();
+    return page;
+  }
+  async function nextManaged(index: number): Promise<Page> {
+    const page = await nextManagedPage(index);
     await page.waitForURL(reportUrl, { timeout: 20000 });
     await page.locator('#report-ready').waitFor({ state: 'visible', timeout: 20000 });
     return page;
@@ -99,6 +116,8 @@ export async function createPersonalReferenceEnvironment(executablePath: string)
     if (closed) return;
     closed = true;
     await Promise.all(contexts.map(context => context.close().catch(() => {})));
+    for (const response of heldDownloads) response.destroy(); heldDownloads.clear();
+    report.closeAllConnections();
     await new Promise<void>((resolve, reject) => report.close(error => error ? reject(error) : resolve()));
   }
 
@@ -171,7 +190,7 @@ export async function createPersonalReferenceEnvironment(executablePath: string)
       mapping: { rowKeyColumns: ['Код продукта'], productKeyColumn: 'Код продукта', dimensionColumns: { product: 'Продукт' }, numberColumns: { value: 'Объём' }, dateColumn: 'Дата', unitColumn: null, fixedUnitCode: 'операции' } });
 
     const uploadBody = new FormData();
-    uploadBody.append('purpose', 'goal-import');
+    uploadBody.append('purpose', 'oko-directory');
     uploadBody.append('file', new Blob([new Uint8Array(dictionaryBytes)], { type: 'text/csv' }), 'synthetic-personal-directory.csv');
     const upload = await request.read<{ fileHandle: string }>('/api/v1/files', { method: 'POST', body: uploadBody });
     assert.ok(upload.fileHandle);
@@ -198,5 +217,12 @@ export async function createPersonalReferenceEnvironment(executablePath: string)
     return { workflowId: view.workflowId, resultId: result.resultId, rowCount: result.rowCount, unresolvedRows: result.unresolvedRows, view, original, enriched, evidence: { nativeBrowserLaunches: contexts.length, reportDownloads } };
   }
 
-  return { providers, prepare, close };
+  return { providers, prepare, close, hooks: {
+    reportUrl, reportOrigin, sourceBytes: Buffer.from(sourceBytes), dictionaryBytes: Buffer.from(dictionaryBytes), correctedDictionaryBytes: dictionaryFile(true), dictionaryFields, originalFileName,
+    nextManagedPage, nextManaged,
+    counts: () => ({ nativeBrowserLaunches: contexts.length, reportDownloads, pendingDownloads: heldDownloads.size }),
+    setExportMode(mode: typeof exportMode) { exportMode = mode; },
+    requireManualLogin() { loginGeneration++; },
+    clearManualLogin() { loginGeneration = 0; },
+  } };
 }

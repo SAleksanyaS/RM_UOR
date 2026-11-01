@@ -91,9 +91,9 @@ runuser -u nobody -- env \
 
 Для текущего доказательства копия: `/tmp/uor-native-sandbox-iwlXWD`. Каталоги содержат только исходный код, уже установленные зависимости, браузер и синтетические данные. Browser stderr содержит предупреждения DBus, NSS home и фоновых TLS-запросов этой headless среды; localhost assertions прошли без отключения TLS. Это не проверка банковского SSO, сертификатов, СберБраузера, Edge/Windows или GUI конкретного рабочего места. Windows-ветка завершения PID tree также требует отдельной среды.
 
-## Следующий независимый шаг
+## Отдельное сквозное доказательство
 
-Реальная сквозная UI-запись первичной настройки/справочника/исправления/повтора, manual-auth/cancel/error screenshots и daily path выполняются отдельно через `scripts/design-reference/completion-runtime.ts` и `completion-oko-flow.ts`. Этот журнал будет дополнен их фактическими результатами. Приведённые выше 136 tests и native2 tests сами по себе не являются этим сквозным UI доказательством.
+Реальная сквозная UI-запись первичной настройки/справочника/исправления/повтора, manual-auth/cancel/error screenshots и daily path выполняется через `scripts/design-reference/completion-runtime.ts` и `completion-oko-flow.ts`. Фактический успешный проход приведён ниже. Приведённые выше 136 tests и native2 tests сами по себе не являются этим сквозным UI доказательством.
 
 ## Границы, обнаруженные первым реальным сквозным проходом
 
@@ -144,3 +144,77 @@ runuser -u nobody -- env \
 ```
 
 Логи: `redesign/oko-session-cookie-native-red.log`, `oko-session-cookie-service-red.log`, `oko-session-cookie-native-green.log`, `oko-session-exact-cleanup-red.log`, `oko-session-exact-cleanup-green.log`, `oko-session-cookie-loader-guard-green.log`. Остальные source faults в E2E независимы: после доказанного session-only continuation synthetic source возвращается к исходному публичному режиму перед schema/empty/cancel tests; никакие ответы приложения не подменяются.
+
+## Подпись скачанной, но ещё не принятой записи
+
+Commit `7ef5f9d06f1ed40a0ac3bd780743bf53d9cdbceb` уточняет два UI-состояния: завершённое native download ещё не означает сохранённые шаги сценария. Надпись о принятой записи требует одновременно сохранённых steps и columns. На новом mount без steps доступно явное действие «Получить записанные шаги»; чтение не отправляет `record.finish`. RED: один pending-case failed при одном passed saved-case. GREEN: **8/8 wizard tests, 2.30s, exit0**. Логи: `redesign/oko-pending-record-label-red.log` и `redesign/oko-pending-record-label-green.log`; команда — `node node_modules/vitest/vitest.mjs run src/features/connectors/workbench/BrowserScenarioWizard.test.tsx --maxWorkers=2` на указанном Node22.16.
+
+## Реальный сквозной проход на production SHA 7ef5f9d
+
+**11/11 checks PASS: 10 функциональных проверок и отдельная проверка готовности/возврата роли.** Это проход на точном `7ef5f9d06f1ed40a0ac3bd780743bf53d9cdbceb`, до последующей визуальной коррекции цвета failed/cancelled. Его функциональный результат и исходные изображения сохраняются неизменными; они не выдаются за снимки последней CSS-версии. После обнаруженного зелёного фона failed-status финальная визуальная проверка выполняется отдельно на соответствующем checkpoint.
+
+| Действие | Наблюдаемый результат |
+| --- | --- |
+| Первый вход reader и личная настройка | Создан собственный сценарий, сохранён личный профиль; общие права не расширены |
+| Native picker и recorder | Реально выбран `#report-ready`, записан шаг `download #export`; свёрнутая настройка сохранила собственное автозавершение |
+| Mapping и первый справочник | Реальные 8 строк, 1 нераспознанный продукт; понятное действие вместо одного `UNMAPPED_PRODUCT` |
+| Исправление справочника и оба скачивания | 8 строк, 0 замечаний; получены реальные original/enriched CSV, предыдущий результат не изменён |
+| Ежедневное повторение | Новый результат без повторной настройки; recipe hash и скачанные байты совпали |
+| Ручной вход | Тот же job продолжен в том же native context с session-only cookie, без извлечения или переноса cookies |
+| Изменённая схема источника | `SOURCE_SCHEMA_CHANGED`, прежний результат сохранён |
+| Отмена незавершённой native download | Реальный частичный HTTP-ответ закрыт, job отменён, прежний результат сохранён |
+| Header-only CSV | Реальный parser отказал: job `failed`, `OPERATION_FAILED`; прежние 8 строк сохранены. Это не успешный нулевой результат |
+| Потеря реального ответа команды | После `route.fetch` ответ отброшен через `route.abort`; восстановлена исходная квитанция, создан ровно один replay |
+| Финальная готовность | Последний результат доступен, роль снова curator; незавершённых downloads нет |
+
+Фактическая среда: Node **v22.16.0**, Chrome **156.0.8078.79**, пользователь nobody, `chromiumSandbox:true`. Записано **20 PNG**, MP4 из **76 реальных CDP frames**; в JSON нет browser errors/dialogs. За этот свежий проход выполнено **11 native launches**, **9 report downloads**, итоговые **pendingDownloads=0**. Видео составлено из настоящих screencast frames; длительные промежутки между ними ограничены для просмотра. Никаких искусственных DTO, ответов успеха или UI-счётчиков нет.
+
+Original CSV: 565 bytes, SHA256 `9cb5a16423c80914a039d30b1f487d6ec370251a9c744abb38303fe0fd41aea2`. Enriched CSV: 4571 bytes, SHA256 `7391c906ea39468962fc40b7bba34c6f1c9cb00fc65a22e6acff15eb7e300b27`. Те же hashes проверены после daily replay. Сохранённый recipe hash: `da6ab69a3cb2dde35e74c31a9188699a8a1eb3bc77385ee257c49f30be97f132`.
+
+Стабильные файлы этой сессии вне репозитория:
+
+- `completion/evidence/oko-2026-11-01T12-25-32-283Z/completion-oko.json`, `completion-oko.mp4`, PNG и четыре скачанных synthetic CSV.
+- `completion/evidence/runtime.json`, `source-sync.json`, `oko-latest.json`.
+- Корень этих путей: `/workspace/scratch/ab925b2abe56`. Внутренние пути исходного JSON сохраняют `/tmp` происхождение и не переписаны задним числом.
+
+`source-sync.json` подтверждает побайтовое совпадение **696 production/config файлов** с `7ef5f9d`: `src`, `index.html`, `oko.html`, `vite.config.ts`, `tsconfig.json`, `package.json`, `package-lock.json`. Browser profiles, runtime database и личные конфигурации в каталог передаваемых evidence не копировались. Ранние неуспешные проходы остаются отдельными JSON с их фактическим отказом и не считаются этим GREEN.
+
+### Воспроизведение и передача живого стенда
+
+В описанную выше собственную non-root copy дополнительно копируются `scripts`, `tests`, `index.html`, `oko.html`, `vite.config.ts`, `tsconfig.json`, `package-lock.json`; `src` и уже установленные `node_modules` должны соответствовать проверяемому checkpoint. `node_modules/.vite-temp` и synthetic `data` доступны пользователю nobody. Штатный `chrome-sandbox` сохраняет `root:root 4755`, Chrome executable и его parent — 755. Права исходного workspace не меняются. Runtime всегда создаёт новую synthetic database, настоящий временный Git main/bare и восемь целей; `calculation.prepare` выполняет production API.
+
+Из `/tmp/uor-native-sandbox-iwlXWD` фактически запущено:
+
+```sh
+runuser -u nobody -- env \
+  TMPDIR=/tmp/uor-native-sandbox-iwlXWD/data \
+  XDG_CONFIG_HOME=/tmp/uor-native-sandbox-iwlXWD/data/config \
+  XDG_CACHE_HOME=/tmp/uor-native-sandbox-iwlXWD/data/cache \
+  UOR_TEST_BROWSER_EXECUTABLE=/tmp/uor-native-sandbox-iwlXWD/chrome/chrome \
+  UOR_COMPLETION_OUTPUT=/tmp/uor-native-sandbox-iwlXWD/data/completion/evidence \
+  UOR_SOURCE_WORKTREE=/workspace/scratch/ab925b2abe56/work/RM_UOR-redesign \
+  UOR_SOURCE_REVISION=7ef5f9d06f1ed40a0ac3bd780743bf53d9cdbceb \
+  /tmp/uor-native-sandbox-iwlXWD/node --import tsx scripts/design-reference/completion-runtime.ts
+```
+
+После `COMPLETION_READY` процесс остаётся живым для независимого UI driver. Команда stdin `status` читает metadata; `oko` запускает новый реальный проход и новый evidence-каталог; `quit` закрывает только принадлежащие fixture браузеры, listeners, runtime и временный Git. При повторе `oko` в существующем runtime создаётся новый личный сценарий, счётчики источника остаются накопительными, а исходный empty-install экран не повторяется. Команда `checkpoint <sha>` только записывает metadata: её можно использовать после реальной синхронизации и независимой проверки совпадения файлов, она сама ничего не копирует и не доказывает.
+
+Для свежего first-setup доказательства нужен новый runtime и отдельный output parent; для одной CSS-коррекции достаточно повторного `oko` на согласованном живом стенде после точного копирования. На момент передачи этот стенд работает в exec session **70106**; его сохраняют до окончания независимого UI capture.
+
+### Проверка самих helpers
+
+Strict TypeScript для трёх принадлежащих этому этапу helpers завершился **exit0**, без diagnostics. Лог: `completion/logs/oko-helpers-tsc.log`.
+
+```sh
+PATH=/workspace/scratch/ab925b2abe56/redesign/runtime/node-v22.16.0-linux-x64/bin:$PATH \
+node node_modules/typescript/bin/tsc \
+  --noEmit --strict --target ES2022 --lib ES2022,DOM,DOM.Iterable \
+  --module ESNext --moduleResolution Bundler --jsx react-jsx \
+  --esModuleInterop --skipLibCheck --resolveJsonModule \
+  --allowImportingTsExtensions --types node,vite/client \
+  scripts/design-reference/completion-runtime.ts \
+  scripts/design-reference/completion-oko-flow.ts \
+  scripts/design-reference/personal-fixture.ts
+```
+
+Этот раздел не объявляет полный suite успешным. Единственный общий прогон, его адресные последующие исправления и итоговая сборка учитываются отдельно. Chrome/localhost доказательство также не заменяет приёмку банковского SSO, сертификатов, Windows/Edge или СберБраузера.
