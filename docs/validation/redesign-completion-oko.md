@@ -218,3 +218,11 @@ node node_modules/typescript/bin/tsc \
 ```
 
 Этот раздел не объявляет полный suite успешным. Единственный общий прогон, его адресные последующие исправления и итоговая сборка учитываются отдельно. Chrome/localhost доказательство также не заменяет приёмку банковского SSO, сертификатов, Windows/Edge или СберБраузера.
+
+## Финальный coordinator checkpoint после общего прогона
+
+Первый описанный выше runtime на7ef5f9d закрыт; session70106 больше не является действующим стендом. Координатор поднял ровно одну replacement copy наdda5f21 с новой пустой синтетической базой. Финальный проход11/11 выполнен в native Chrome156.0.8078.79 / Node22.16.0 под nobody, sandbox=true; browserErrors0, fatalError отсутствует. Зафиксированы11native launches,9source downloads, pending downloads0. Источники, команды, четыре скачанныхCSV и SHA-256 находятся в `completion/evidence/final-oko/completion-oko.json`;23PNG включают отдельные viewport состояния ручного входа, отказа и ежедневного результата. Итоговый MP4 содержит79реальных CDP frames с сокращением длительных ожиданий.
+
+Этот проход включает семантические цвета commit3a81761. Computed styles пяти наблюдавшихся состояний совпадают с явным status mapping; ошибка больше не имеет оформления успешной операции. Production-ui.css SHA-256 `ab2e2e822a3ef97da1e739acb2ba5ee9dd646223bfd7f225e3596cc7af0b4593`, PersonalOperationStatus.tsx `d63bba7f3723864150db29dbe346317bc875169a7434c47f61d961996953e0a6`.
+
+После этого native flow UI-владелец отдельно воспроизвёл и исправил только flex shrink бренда при text200; normal/text2003/3PASS. ОКО заново из-за этой однострочной CSS-правки не запускался. `completion/evidence/final-ui-source-overlay.json` подтверждает454/454 совпадений non-test production/config с93b15e8; четыре явно названных test-only файла runtime не обновлялись. Metadata не переписана. Все файлы скопированы в evidence, replacement runtime штатно завершён командойquit. Банк, Windows, native headed login и корпоративные сертификаты этим Linux headless доказательством не подтверждаются.

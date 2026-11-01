@@ -12,7 +12,7 @@
 
 ## Проверки
 
-Фактические результаты финальных gates записываются в [журнал завершения](../validation/redesign-completion.md). Исторические результаты прошлого кандидата0.5.0 сохранены в [прежнем акте](workbench-candidate.md) и не выдаются за новый полный прогон.
+Фактические результаты финальных gates записаны в [журнал завершения](../validation/redesign-completion.md). Исторические результаты прошлого кандидата0.5.0 сохранены в [прежнем акте](workbench-candidate.md) и не выдаются за новый полный прогон.
 
 Owning evidence: [формы и точность оснований](../validation/redesign-completion-forms.md), [публикация](../validation/redesign-completion-publishing.md), [личный ОКО](../validation/redesign-completion-oko.md), [UI и карта функций](../validation/redesign-completion-ui.md), [зависимости и SQLite](../validation/redesign-dependencies.md).
 

@@ -40,10 +40,10 @@
 
 **Interfaces:** existing GoalReadRow, execution/data/package read models, allowedCommands; сохраняются URL/exact refs и callbacks. Root owns goal setup + DashboardView; connector owner owns personal OKO. CSS requests передаются UI-owner.
 
-- [ ] Привести списки, таблицы, формы, notices/empty/loading, диалоги и служебные действия к утверждённой системе без потери функций.
-- [ ] Сохранить предметное сравнение и отдельные состояния публикации, human labels/доступное действие, backend errors.
-- [ ] Проверить owning behavior tests; для CSS использовать реальные снимки и геометрию, не tests повторяющие markup.
-- [ ] Обновить карту использованного/адаптированного/заменённого и проверить light/dark/system.
+- [x] Привести списки, таблицы, формы, notices/empty/loading, диалоги и служебные действия к утверждённой системе без потери функций.
+- [x] Сохранить предметное сравнение и отдельные состояния публикации, human labels/доступное действие, backend errors.
+- [x] Проверить owning behavior tests; для CSS использовать реальные снимки и геометрию, не tests повторяющие markup.
+- [x] Обновить карту использованного/адаптированного/заменённого и проверить light/dark/system.
 
 ## Task2: публикация и историческая целостность
 
@@ -51,11 +51,11 @@
 
 **Interfaces:** общий historical input builder использует сохранённую basis; общий candidate validator связывает sourceOid/targetOid/digest. Export signature сообщается root/UI перед потреблением. Внешний enforcement - независимое доказательство.
 
-- [ ] RED/GREEN F03/F04: T0 preview переживает T1/new facts/definition; чужой private fact/capture не участвует, собственные/common разрешены.
-- [ ] RED/GREEN F02: та же proposal ветка/PR после движения main, обычный FF push, точный delta/parent, старые capsule неизменны, конфликт требует решения.
-- [ ] RED/GREEN F01: весь точный будущий кандидат проверяется до внешнего принятия; перемена target аннулирует доказательство; unsupported gate явно виден.
-- [ ] RED/GREEN F15: id!=packageId отвергается schema/repository/restore без частичных записей; старые несовместимые данные диагностируются без переименования.
-- [ ] Owning suite и журнал с точными границами; внешний банковский merge не симулируется успешным.
+- [x] RED/GREEN F03/F04: T0 preview переживает T1/new facts/definition; чужой private fact/capture не участвует, собственные/common разрешены.
+- [x] RED/GREEN F02: та же proposal ветка/PR после движения main, обычный FF push, точный delta/parent, старые capsule неизменны, конфликт требует решения.
+- [x] RED/GREEN F01: весь точный будущий кандидат проверяется до внешнего принятия; перемена target аннулирует доказательство; unsupported gate явно виден.
+- [x] RED/GREEN F15: id!=packageId отвергается schema/repository/restore без частичных записей; старые несовместимые данные диагностируются без переименования.
+- [x] Owning suite и журнал с точными границами; внешний банковский merge не симулируется успешным.
 
 ## Task3: квитанции, compound save и несохранённый ввод
 
@@ -63,11 +63,11 @@
 
 **Interfaces:** WorkbenchClient.command/reconcileCommand, CommandResult.editToken/result, existing server drafts. Receipt является подтверждением записи независимо от следующего GET. Старый commandId сохраняется до разрешения неопределённости.
 
-- [ ] RED F12: successful receipt + failed preferences.get сохраняет подтверждение; retry отправляет GET без второй mutation. Lost mutation response остаётся отдельным состоянием.
-- [ ] GREEN F12, owning tests включая owner/unmount guards.
-- [ ] RED F13: неизвестный N-й шаг сохраняет ID/ввод/подтверждённый прогресс; recovery применяет реальный receipt и продолжает один раз.
-- [ ] GREEN F13 с openEntry/readback, reopen server drafts и защитой ухода с несохранённым вводом; не обещать транзакцию всех шагов.
-- [ ] Точные сохранённые значения/пустые данные/формы/ошибки в UI; передать классы UI-owner.
+- [x] RED F12: successful receipt + failed preferences.get сохраняет подтверждение; retry отправляет GET без второй mutation. Lost mutation response остаётся отдельным состоянием.
+- [x] GREEN F12, owning tests включая owner/unmount guards.
+- [x] RED F13: неизвестный N-й шаг сохраняет ID/ввод/подтверждённый прогресс; recovery применяет реальный receipt и продолжает один раз.
+- [x] GREEN F13 с openEntry/readback, reopen server drafts и защитой ухода с несохранённым вводом; не обещать транзакцию всех шагов.
+- [x] Точные сохранённые значения/пустые данные/формы/ошибки в UI; передать классы UI-owner.
 
 ## Task4: личный ОКО и browser reliability
 
@@ -75,28 +75,28 @@
 
 **Interfaces:** personal oko.workflow namespace изолирован от common source.browser; existing provider recovery, parsing/enrichment/immutable download. Shared browser launch требует sandbox; fallback запрещён.
 
-- [ ] RED/GREEN reader own setup/replay/results, foreign owner denied, common curator setup/publication не расширены.
-- [ ] Довести первоначальную запись/сопоставление/справочник/исправление/повтор и стабильные failed/cancel/manualauth/unknown состояния через существующие команды.
-- [ ] RED/GREEN F11 chromiumSandbox:true; настоящий Chrome/Edge launch где позволяет ОС, точная диагностика platform denial без отключения защиты.
-- [ ] RED/GREEN E35 launch rejection и wrapper timeout закрывают только owned child/listener.
-- [ ] Owning tests и журнал; реальные банковские SSO/ГОСТ/сертификаты не объявлять проверенными.
+- [x] RED/GREEN reader own setup/replay/results, foreign owner denied, common curator setup/publication не расширены.
+- [x] Довести первоначальную запись/сопоставление/справочник/исправление/повтор и стабильные failed/cancel/manualauth/unknown состояния через существующие команды.
+- [x] RED/GREEN F11 chromiumSandbox:true; настоящий Chrome/Edge launch где позволяет ОС, точная диагностика platform denial без отключения защиты.
+- [x] RED/GREEN E35 launch rejection и wrapper timeout закрывают только owned child/listener.
+- [x] Owning tests и журнал; реальные банковские SSO/ГОСТ/сертификаты не объявлять проверенными.
 
 ## Task5: интеграция, dependencies и системная приёмка
 
 **Owner:** root; agents provide bounded fixes within own domain.
 
-- [ ] Read-only свежий npm audit, таблица reachability prod/dev/unreachable, совместимые updates после остановки параллельных tests. Сохранить совместимость Node22.16.
-- [ ] Проверить реальную SQLite version и условия WAL-reset; single-writer lease сохраняется. Обозначить доступную исправленную runtime сборку отдельно от разрешения менять корпоративный Node.
-- [ ] Настоящий entrypoint + отдельные synthetic fixtures: все страницы, first setup/daily ОКО, manualauth/error, draft/preview/maintenance; desktop1366 и1440,1024,768,360,320, themes/text scale.
-- [ ] Один review всей изменённой ветки с узкими владельцами фиксов; meaningful regression по важным findings. Не повторять широкий audit.
-- [ ] Один полный npm test после стабилизации; при отказах исправить причины и повторять затронутое, не весь suite автоматически. npm run build.
+- [x] Read-only свежий npm audit, таблица reachability prod/dev/unreachable, совместимые updates после остановки параллельных tests. Сохранить совместимость Node22.16.
+- [x] Проверить реальную SQLite version и условия WAL-reset; single-writer lease сохраняется. Обозначить доступную исправленную runtime сборку отдельно от разрешения менять корпоративный Node.
+- [x] Настоящий entrypoint + отдельные synthetic fixtures: все страницы, first setup/daily ОКО, manualauth/error, draft/preview/maintenance; desktop1366 и1440,1024,768,360,320, themes/text scale.
+- [x] Один review всей изменённой ветки с узкими владельцами фиксов; meaningful regression по важным findings. Не повторять широкий audit.
+- [x] Один полный npm test после стабилизации; при отказах исправить причины и повторять затронутое, не весь suite автоматически. npm run build.
 
 ## Task6: проверяемая поставка
 
-- [ ] Актуальные MASTER_SPEC/module-map/guides/remaining-work/release notes и журнал результатов.
-- [ ] Чистый source ZIP без runtime/secrets/dependencies и локальный git bundle/patch от ac299a5; проверить распаковку и штатный запуск в новой пустой пользовательской папке.
-- [ ] Проверить update/restore scenario на отдельной копии синтетической базы, включая сохранение данных и откат, без обращения к Windows preview владельца.
-- [ ] Финальные screenshots/video и самостоятельный отчёт с функциями/проверками/ограничениями. Сохранить пользовательские материалы и передать пакет без нового вопроса о продолжении.
+- [x] Актуальные MASTER_SPEC/module-map/guides/remaining-work/release notes и журнал результатов.
+- [x] Чистый source ZIP без runtime/secrets/dependencies и локальный git bundle/patch от ac299a5; проверить распаковку и штатный запуск в новой пустой пользовательской папке.
+- [x] Проверить update/restore scenario на отдельной копии синтетической базы, включая сохранение данных и откат, без обращения к Windows preview владельца.
+- [x] Финальные screenshots/video и самостоятельный отчёт с функциями/проверками/ограничениями. Сохранить пользовательские материалы и передать пакет без нового вопроса о продолжении.
 
 ## Pre-flight и решения
 
@@ -105,3 +105,7 @@ Ruling: визуальное согласование уже получено ф
 Ruling: parallel workers реализуют три независимых слоя с фиксированными файлами, root удерживает compound save/integration/release. User spec требует узкой параллельности, поэтому per-task fresh-review cycles не используются.
 
 Ruling: требование полного suite на каждом TDD-шаге из skill не применяется: пользователь явно требует один full run после стабилизации; промежуточные gates адресные.
+
+## Завершение
+
+Production checkpoint93b15e8266a0119d89c36e7c2afad0a3a623d053. Отметки означают выполненные действия и явно ограниченные проверки из журнала, а не банковскую/Windows приёмку. Единственный full suite завершился1947PASS/52FAIL/3SKIP; все52 отказа затем закрыты адресными результатами. Исходный RED сохранён. Production build и чистый install/build/двойной startup прошли. Итоговый docs-only delivery commit связан с проверенным кодом отдельным побайтовым gate. Финальные файлы и visual QA перечислены во внешнем evidence-пакете.
