@@ -1,0 +1,50 @@
+import { afterEach, expect, it } from 'vitest';
+import { createNativeBrowserFixture } from './fixtures/workbench/native-browser';
+import { fixtureId, makeHeader } from './fixtures/workbench/factories';
+
+const closes: Array<() => Promise<void>> = [];
+afterEach(async () => { for (const close of closes.splice(0).reverse()) await close(); });
+it('same_scenario_requires_own_profile_and_authentication', async () => {
+  const f = await createNativeBrowserFixture(); closes.push(f.close);
+  const login = await f.runtime.openLogin(f.input, new AbortController().signal);
+  expect(await f.runtime.observeLogin!({ owner: f.owner, handleId: login.handleId })).toBe(false);
+  await f.login();
+  expect(await f.runtime.observeLogin!({ owner: f.owner, handleId: login.handleId })).toBe(true);
+  await f.runtime.closeOwned(f.owner);
+  const reopened = await f.runtime.openLogin(f.input, new AbortController().signal);
+  expect(await f.runtime.observeLogin!({ owner: f.owner, handleId: reopened.handleId })).toBe(true);
+  await f.runtime.closeOwned(f.owner);
+  const other = { ...f.owner, installationId: fixtureId(950002) };
+  const second = await f.runtime.openLogin({ ...f.input, owner: other }, new AbortController().signal);
+  expect(await f.runtime.observeLogin!({ owner: other, handleId: second.handleId })).toBe(false);
+  expect(await f.page().context().cookies()).toEqual([]);
+  await f.runtime.closeOwned(other);
+  expect(f.openContexts()).toBe(0);
+}, 60000);
+
+it('blocks_foreign_origin_and_secret_recording_in_real_browser', async () => {
+  const f = await createNativeBrowserFixture(); closes.push(f.close);
+  const recording = await f.runtime.startRecording(f.input, new AbortController().signal);
+  await f.login();
+  await f.page().getByLabel('Период', { exact: true }).fill('2026-10');
+  await f.page().getByLabel('Состав', { exact: true }).selectOption('all');
+  await f.page().getByRole('button', { name: 'Выгрузить CSV', exact: true }).click({ noWaitAfter: true });
+  await f.report.waitForEvent('export-requested'); f.report.release('download');
+  const result = await f.runtime.waitForCompletion({ owner: f.owner, handleId: recording.handleId });
+  expect(result.hasDownload).toBe(true); expect(result.steps.at(-1)?.action).toBe('download');
+  expect(JSON.stringify(result)).not.toMatch(/synthetic-password|oko_fixture|password/i);
+  expect((await f.runtime.readRecordingDownload({ owner: f.owner, handleId: recording.handleId })).bytes.toString().trimEnd().split('\n')).toHaveLength(2001);
+  expect(result.screenshotHandles.length).toBeGreaterThan(0);
+  await expect(f.runtime.screenshot({ owner: { ...f.owner, installationId: fixtureId(950003) }, recordingId: recording.handleId, handleId: result.screenshotHandles[0] })).rejects.toMatchObject({ statusCode: 404 });
+  const screenshot = await f.runtime.screenshot({ owner: f.owner, recordingId: recording.handleId, handleId: result.screenshotHandles[0] });
+  expect(Buffer.from(screenshot.bytes).subarray(1, 4).toString()).toBe('PNG');
+  const session = await f.runtime.openLogin({ ...f.input, startUrl: f.report.origin + '/security' }, new AbortController().signal);
+  await f.page().getByRole('button', { name: 'Проверить ограничения origin' }).click();
+  await f.page().locator('[data-testid="security-complete"]').waitFor();
+  await expect(f.page().goto(f.report.origin + '/redirect-foreign')).rejects.toThrow();
+  expect(f.report.requests().filter(url => url.startsWith(f.report.forbiddenOrigin))).toEqual([]);
+  expect(f.launchOptions().every(option => option.serviceWorkers === 'block' && option.ignoreHTTPSErrors === false)).toBe(true);
+  await f.runtime.closeOwned(f.owner);
+  await expect(f.runtime.replay({ ...f.input, scenario: { ...makeHeader(950004), sourceId: fixtureId(12), startUrl: f.input.startUrl, authenticatedSelector: f.input.authenticatedSelector, steps: [{ action: 'evaluate', script: 'alert(1)' }], parameters: {}, expectedExport: { format: 'csv', requiredColumns: ['Key'] } } as never }, new AbortController().signal)).rejects.toThrow();
+  expect(session.state).toBe('open'); expect(f.openContexts()).toBe(0);
+}, 60000);

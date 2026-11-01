@@ -8,8 +8,10 @@ import { ConnectorError, type BrowserStep, type PrivateProfile } from './contrac
 import type { BrowserHelperOptions } from './browser';
 import { browserProfilePath, checkedUrl, withProfileQueue, type Downloaded } from './transport';
 import { resolveRecordedLocator } from './workbench-browser-locators';
-import type { Clock, VersionRef } from '../../domain/workbench/primitives';
-import type { SourceDefinition } from '../../domain/workbench/entities';
+import type { Clock } from '../../domain/workbench/primitives';
+import type { DraftService } from '../catalog/workbench-drafts';
+import type { AccessPolicyService } from '../identity/workbench-access-policy';
+import { resolveBrowserSource, type BrowserSourceBinding } from './workbench-browser-binding';
 import type { WorkbenchRepository } from '../../server/storage/workbench-repository';
 import type { CommandContext } from '../../server/workbench/command-registry';
 import type { QueryContext } from '../../server/workbench/query-registry';
@@ -17,7 +19,7 @@ import type { JobStore } from '../../server/workbench/jobs';
 import { WorkbenchHttpError } from '../../server/workbench/protocol';
 import { canUseCapability } from '../identity/workbench-access-policy';
 import type { BrowserProfileService } from './workbench-browser-profile';
-import type { BrowserRuntimePort, RecordedBrowserScenario } from './workbench-browser-runtime';
+import type { BrowserRuntimePort, BrowserRecordingStatus, RecordedBrowserScenario } from './workbench-browser-runtime';
 
 type RecordState = { id: string; runtime: string; owner: string; context: BrowserContext; startUrl: string; selector: string;
   steps: RecordedBrowserStep[]; screenshots: string[]; queue: Promise<void>; downloads: Set<Promise<void>>; completed: boolean;
@@ -202,32 +204,64 @@ export async function finishWorkbenchRecording(runtime: string, owner: string, i
   } finally { clearTimeout(record.timer); if (!record.closed) { record.closed = true; await record.context.close().catch(() => {}); record.release(); record.end(); } }
 }
 
+export type BrowserRecordingReview = RecordedBrowserScenario & { bindingProblem?: string | null };
 export interface BrowserRecorderService {
-  start(context: CommandContext, input: { sourceRef: VersionRef; startUrl: string; authenticatedSelector: string }): Promise<{ recordingId: string; state: 'recording' }>;
-  finish(context: CommandContext, input: { recordingId: string; save: boolean }): Promise<RecordedBrowserScenario>;
+  start(context: CommandContext, input: BrowserSourceBinding & { startUrl: string; authenticatedSelector: string }): Promise<{ recordingId: string; state: 'recording' }>;
+  selectMarker(context: CommandContext, input: BrowserSourceBinding & { startUrl: string }): Promise<{ selector: string; label: string }>;
+  status(context: QueryContext, recordingId: string): Promise<BrowserRecordingStatus>;
+  cancel(context: CommandContext, recordingId: string): Promise<{ recordingId: string; cancelled: true }>;
+  finish(context: CommandContext, input: { recordingId: string; save: boolean }): Promise<BrowserRecordingReview>;
   screenshot(context: QueryContext, recordingId: string, handleId: string): Promise<{ bytes: Uint8Array; mediaType: 'image/png' }>;
 }
 /** Profiles are an explicit private dependency; portable repository rows cannot resolve personal browser settings. */
-export function createBrowserRecorderService({ runtime, repository, profiles }: { runtime: BrowserRuntimePort; repository: WorkbenchRepository; jobs: JobStore; clock: Clock; profiles: BrowserProfileService }): BrowserRecorderService {
-  const sessions = new Map<string, { owner: string; result?: RecordedBrowserScenario; timer: NodeJS.Timeout }>();
+export function createBrowserRecorderService({ runtime, repository, profiles, drafts, accessPolicy }: { runtime: BrowserRuntimePort; repository: WorkbenchRepository; jobs: JobStore; clock: Clock; profiles: BrowserProfileService; drafts?: DraftService; accessPolicy?: AccessPolicyService }): BrowserRecorderService {
+  const sessions = new Map<string, { owner: string; input: BrowserSourceBinding; profileRevision: string | null; result?: RecordedBrowserScenario; timer: NodeJS.Timeout }>();
   const owner = (context: QueryContext) => ({ installationId: context.installationId, profilePersonId: context.ownAccess.personId });
   const key = (context: QueryContext) => `${context.installationId}/${context.ownAccess.personId ?? 'unassigned'}`;
   const find = (context: QueryContext, id: string) => { const session = sessions.get(id); if (!session || session.owner !== key(context)) throw new WorkbenchHttpError(404, 'RECORDING_NOT_FOUND', 'Recording not found'); return session; };
+  const checked = async (context: QueryContext, input: BrowserSourceBinding, expectedProfile?: string | null) => {
+    const access = accessPolicy ? await accessPolicy.resolveOwnAccess() : context.ownAccess;
+    if (access.personId !== context.ownAccess.personId || !canUseCapability(access, 'uor.prepare')) throw new WorkbenchHttpError(403, 'COMMAND_FORBIDDEN', 'Recording requires preparation capability');
+    const source = resolveBrowserSource({ ...context, repository, ownAccess: access }, input, drafts);
+    const profile = await profiles.getOwn(context, source.id);
+    if (!profile.configured || !profile.profile) throw new WorkbenchHttpError(409, 'BROWSER_CONFIGURATION_REQUIRED', 'Configure your own browser profile');
+    if (expectedProfile !== undefined && profile.revision !== expectedProfile) throw new WorkbenchHttpError(409, 'SOURCE_CONFIGURATION_CHANGED', 'Personal browser settings changed');
+    return profile;
+  };
   return {
+    async selectMarker(context, input) {
+      const profile = await checked(context, input); checkedUrl(input.startUrl, profile.profile!);
+      if (!runtime.selectMarker) throw new WorkbenchHttpError(409, 'BROWSER_CONFIGURATION_REQUIRED', 'Marker selection is unavailable');
+      const result = await runtime.selectMarker({ owner: owner(context), profile: profile.profile!, startUrl: input.startUrl }, AbortSignal.timeout(120000));
+      await checked(context, input, profile.revision); return result;
+    },
     async start(context, input) {
-      if (!canUseCapability(context.ownAccess, 'uor.prepare')) throw new WorkbenchHttpError(403, 'COMMAND_FORBIDDEN', 'Recording requires preparation capability');
-      const source = input.sourceRef.entityType === 'source_definition' ? repository.readPublishedHead<SourceDefinition>({ entityType: input.sourceRef.entityType, id: input.sourceRef.id }) : null;
-      if (!source || source.revision !== input.sourceRef.revision || source.kind !== 'qlik') throw new WorkbenchHttpError(409, 'SOURCE_CHANGED', 'Choose the current published OKO source');
-      const profile = await profiles.getOwn(context, source.id);
-      if (!profile.configured || !profile.profile) throw new WorkbenchHttpError(409, 'BROWSER_CONFIGURATION_REQUIRED', 'Configure your own browser profile');
-      const handle = await runtime.startRecording({ owner: owner(context), profile: profile.profile, startUrl: input.startUrl, authenticatedSelector: input.authenticatedSelector }, new AbortController().signal);
+      const profile = await checked(context, input); checkedUrl(input.startUrl, profile.profile!);
+      const handle = await runtime.startRecording({ owner: owner(context), profile: profile.profile!, startUrl: input.startUrl, authenticatedSelector: input.authenticatedSelector }, new AbortController().signal);
+      try { await checked(context, input, profile.revision); }
+      catch (error) { await runtime.cancelRecording?.({ handleId: handle.handleId, owner: owner(context) }); throw error; }
       const timer = setTimeout(() => sessions.delete(handle.handleId), 30 * 60_000); timer.unref();
-      sessions.set(handle.handleId, { owner: key(context), timer }); return { recordingId: handle.handleId, state: 'recording' };
+      sessions.set(handle.handleId, { owner: key(context), input: structuredClone(input), profileRevision: profile.revision, timer }); return { recordingId: handle.handleId, state: 'recording' };
+    },
+    async status(context, recordingId) {
+      const session = find(context, recordingId);
+      if (session.result) return { state: session.result.hasDownload ? 'completed' : 'idle', problem: null };
+      if (!runtime.readRecordingStatus) throw new WorkbenchHttpError(409, 'RECORDING_STATUS_UNAVAILABLE', 'Recording status is unavailable');
+      return runtime.readRecordingStatus({ handleId: recordingId, owner: owner(context) });
+    },
+    async cancel(context, recordingId) {
+      find(context, recordingId);
+      if (!runtime.cancelRecording) throw new WorkbenchHttpError(409, 'RECORDING_CANCEL_UNAVAILABLE', 'Recording cancellation is unavailable');
+      await runtime.cancelRecording({ handleId: recordingId, owner: owner(context) });
+      return { recordingId, cancelled: true };
     },
     async finish(context, input) {
       const session = find(context, input.recordingId);
       if (input.save) throw new WorkbenchHttpError(422, 'SCENARIO_REVIEW_REQUIRED', 'Review parameters and export before saving a shared draft');
-      session.result ??= await runtime.finish({ handleId: input.recordingId, owner: owner(context), save: false }); return structuredClone(session.result);
+      let bindingProblem: string | null = null;
+      const verify = async () => { try { await checked(context, session.input, session.profileRevision); } catch (error) { if (error instanceof WorkbenchHttpError) bindingProblem = error.code; else throw error; } };
+      await verify(); session.result ??= await runtime.finish({ handleId: input.recordingId, owner: owner(context), save: false }); await verify();
+      return { ...structuredClone(session.result), ...(bindingProblem ? { bindingProblem } : {}) };
     },
     async screenshot(context, recordingId, handleId) {
       const session = find(context, recordingId);

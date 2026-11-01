@@ -23,6 +23,7 @@ export interface WorkbenchHttpPort {
   meta(request: LocalRequest): Promise<Meta>;
   query(name: string, input: AnyQueryRequest, request: LocalRequest): Promise<ApiSuccess<unknown>>;
   browserResult?(resultId: UUIDv4, kind: 'original' | 'enriched', request: LocalRequest): Promise<BrowserResultArtifact>;
+  browserScreenshot?(recordingId: UUIDv4, handleId: UUIDv4, request: LocalRequest): Promise<{ bytes: Uint8Array; mediaType: 'image/png' }>;
   command(input: CommandRequest, request: LocalRequest): Promise<ApiSuccess<CommandResult | JobAccepted>>;
   reconcileCommand?(id: UUIDv4, request: LocalRequest): Promise<ApiSuccess<CommandReconciliation>>;
   job(id: UUIDv4, request: LocalRequest): Promise<ApiSuccess<JobSnapshot>>;
@@ -150,6 +151,13 @@ export async function registerWorkbenchRoutes(app: FastifyInstance, application:
       return reply.header('content-type', artifact.mimeType).header('content-length', artifact.bytes)
         .header('content-disposition', `attachment; filename="evidence"; filename*=UTF-8''${encodeURIComponent(artifact.name).replace(/['()*]/g, char => '%' + char.charCodeAt(0).toString(16))}`)
         .header('x-content-sha256', artifact.sha256).header('cache-control', 'no-store').header('x-content-type-options', 'nosniff').send(artifact.stream);
+    });
+    api.get<{ Params: { recordingId: string; handleId: string } }>('/browser/recordings/:recordingId/screenshots/:handleId', async (request, reply) => {
+      const r = local(request), recordingId = uuidSchema.safeParse(request.params.recordingId), handleId = uuidSchema.safeParse(request.params.handleId);
+      if (!recordingId.success || !handleId.success || !application.browserScreenshot) throw new WorkbenchHttpError(404, 'SCREENSHOT_NOT_FOUND', 'Screenshot not found');
+      const result = await application.browserScreenshot(recordingId.data, handleId.data, r);
+      if (result.mediaType !== 'image/png' || !(result.bytes instanceof Uint8Array) || result.bytes.length < 8 || result.bytes.length > 10 * 1024 * 1024 || !Buffer.from(result.bytes.subarray(0, 8)).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) throw new WorkbenchHttpError(422, 'INVALID_SCREENSHOT', 'Invalid screenshot');
+      return reply.header('content-type', 'image/png').header('content-length', result.bytes.length).header('cache-control', 'no-store').header('x-content-type-options', 'nosniff').send(Buffer.from(result.bytes));
     });
     api.get<{ Params: { resultId: string; kind: string } }>('/browser/results/:resultId/:kind', async (request, reply) => {
       const r = local(request); const id = uuidSchema.safeParse(request.params.resultId);

@@ -1,5 +1,6 @@
-import { registerConfigurationQueries } from '../../../features/catalog/workbench-configuration-query';
+import { composeBrowserFixture, type BrowserFixtureOptions, type BrowserTesting } from './browser-scenarios';
 import { createFileStore, defaultFileLimits } from '../files';
+import { registerConfigurationQueries } from '../../../features/catalog/workbench-configuration-query';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
@@ -36,7 +37,7 @@ import { createExecutionService, registerExecutionCommands } from '../../../feat
 import { createExecutionStore } from '../../../features/execution/workbench-execution-store';
 
 export type WorkbenchTestScenario = 'empty' | GoalScenario | 'partial-file' | 'publication-ready' | 'offline-draft' | 'organization-only';
-export async function createWorkbenchTestApplication(options: { role: 'viewer' | 'curator' | 'chief'; scenario: WorkbenchTestScenario; clock?: string; clientOrigin?: string }): Promise<{ app: FastifyInstance; repository: WorkbenchRepository; refs: Record<string, VersionRef>; publishingTesting?: PublishingTesting; close(): Promise<void> }> {
+export async function createWorkbenchTestApplication(options: { role: 'viewer' | 'curator' | 'chief'; scenario: WorkbenchTestScenario; clock?: string; clientOrigin?: string; browserFixture?: BrowserFixtureOptions }): Promise<{ app: FastifyInstance; repository: WorkbenchRepository; refs: Record<string, VersionRef>; publishingTesting?: PublishingTesting; browserTesting?: BrowserTesting; close(): Promise<void> }> {
 
   const root = mkdtempSync(path.join(tmpdir(), 'uor-workbench-test-'));
   const repository = createWorkbenchRepository({ filename: ':memory:', artifactRoot: root });
@@ -80,10 +81,11 @@ export async function createWorkbenchTestApplication(options: { role: 'viewer' |
     registerConfigurationCommands(commands, { drafts, preferences });
     if (options.scenario === 'partial-file') composeDataCommands({ repository, files, jobs, clock, sources, commands, accessPolicy });
     const queries = new QueryRegistry(); registerConfigurationQueries(queries, repository); registerPreferencesQueries(queries, preferences); registerPrivateCalculationPreviewQuery(queries, drafts); registerPrivateManualTipQuery(queries, drafts);
+    const browserTesting = options.browserFixture ? await composeBrowserFixture({ options: options.browserFixture, root, repository, drafts, commands, queries, clock, jobs, accessPolicy, own, refs, sources, context: defaultContext }) : undefined;
     const notifications = createNotificationService({ repository, provider: { async current() { throw Error('Test read must not poll'); } }, preferences: id => ({ notificationPersonId: preferences.get(id).notificationPersonId ?? null }) });
     registerNotificationCommands(commands, notifications);
     app = await createWorkbenchApp({ files, repository, clock, hostname: () => 'test-workbench-host', installationId, accessPolicy, commands, queries, jobs, modules: [], sessions: createLocalSessionStore({ clock }), allowedOrigins: [options.clientOrigin ?? 'http://127.0.0.1:5173'], queryPorts: { repository, index: createWorkbenchReadIndex(repository), drafts, publishing: publishing.readPort, sources, notifications, jobs, preferences }, readState: { defaultContext: async () => preferences.get(installationId).context ?? defaultContext, publishedCommit: () => options.scenario !== 'empty' ? inputCommit : null } });
-    return { app, repository, refs, publishingTesting: publicationFixture?.testing, close };
+    return { app, repository, refs, publishingTesting: publicationFixture?.testing, browserTesting, close };
   } catch (error) { await close(); throw error; }
 }
 const inputCommit = 'b'.repeat(40);

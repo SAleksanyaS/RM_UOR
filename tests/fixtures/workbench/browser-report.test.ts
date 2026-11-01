@@ -1,0 +1,43 @@
+import { afterEach, expect, it } from 'vitest';
+import { startBrowserReportFixture } from './browser-report';
+
+const closes: Array<() => Promise<void>> = [];
+afterEach(async () => { for (const close of closes.splice(0).reverse()) await close(); });
+it('serves only a synthetic authenticated report and gates its complete 2000-row download by events', async () => {
+  const fixture = await startBrowserReportFixture(); closes.push(fixture.close);
+  const login = await fetch(fixture.origin + '/report');
+  expect(await login.text()).toContain('type="password"');
+  const entered = await fetch(fixture.origin + '/login', { method: 'POST', body: 'password=synthetic-password', redirect: 'manual' });
+  expect(entered.status).toBe(303);
+  const cookie = entered.headers.get('set-cookie')!.split(';')[0];
+  expect(await (await fetch(fixture.origin + '/report', { headers: { cookie } })).text()).toContain('data-testid="report-ready"');
+  let finished = false;
+  const downloading = fetch(fixture.origin + '/export?period=2026-10&scope=all', { headers: { cookie } }).then(async response => { finished = true; return { response, text: await response.text() }; });
+  await fixture.waitForEvent('export-requested');
+  expect(finished).toBe(false);
+  fixture.release('download');
+  const downloaded = await downloading;
+  expect(downloaded.response.headers.get('content-disposition')).toContain('attachment');
+  const lines = downloaded.text.trimEnd().split('\n');
+  expect(lines).toHaveLength(2001);
+  expect(new Set(lines.slice(1).map(line => line.split(';')[0])).size).toBe(2000);
+  expect(lines[0]).toBe('Key;Product;Leader;Amount;Date');
+  expect(fixture.deliveries()).toEqual([expect.objectContaining({ period: '2026-10', scope: 'all', declaredRows: 2000, deliveredRows: 2000, payloadHash: expect.stringMatching(/^sha256:[a-f0-9]{64}$/), complete: true })]);
+  expect(fixture.requests().some(url => url.startsWith(fixture.forbiddenOrigin))).toBe(false);
+  expect(fixture.requests().join('\n')).not.toContain('synthetic-password');
+});
+it('supports explicit bad-export and expiry cases with idempotent owned server closure', async () => {
+  const fixture = await startBrowserReportFixture(); closes.push(fixture.close);
+  expect((await fetch(fixture.origin + '/export', { redirect: 'manual' })).status).toBe(401);
+  const entered = await fetch(fixture.origin + '/login', { method: 'POST', redirect: 'manual' });
+  const cookie = entered.headers.get('set-cookie')!.split(';')[0];
+  fixture.setExportMode('truncated');
+  const truncated = fetch(fixture.origin + '/export', { headers: { cookie } });
+  await fixture.waitForEvent('export-requested'); fixture.release('download');
+  expect((await (await truncated).text()).trimEnd().split('\n')).toHaveLength(1001);
+  expect(fixture.deliveries().at(-1)).toMatchObject({ declaredRows: 2000, deliveredRows: 1000, complete: false });
+  fixture.setExportMode('expired');
+  const expired = await fetch(fixture.origin + '/export', { headers: { cookie }, redirect: 'manual' });
+  expect(expired.status).toBe(401);
+  await fixture.close(); await fixture.close();
+});

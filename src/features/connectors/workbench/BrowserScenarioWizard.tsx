@@ -1,3 +1,4 @@
+import { SharedBrowserScenarioWizard, type SharedBrowserScenarioProps } from './SharedBrowserScenarioWizard';
 import React, { useEffect, useRef, useState } from 'react';
 import type { SourceParsingProfile } from '../../../domain/workbench/entities/sources';
 import type { OkoDictionaryMapping, OkoMapping } from '../workbench-workflow-contracts';
@@ -20,7 +21,7 @@ export function PreviewTable({ rows, columns, label }: { rows: Record<string, st
 function PairEditor({ label, value, onChange, columns }: { label: string; value: ColumnPair[]; onChange(value: ColumnPair[]): void; columns: string[] }) {
   return <fieldset className="oko-pairs"><legend>{label}</legend>{value.map((pair, index) => <div className="oko-pair" key={index}><div className="oko-field"><label htmlFor={label+index}>Имя поля {index + 1}</label><input id={label+index} value={pair.name} onChange={event => onChange(value.map((item, i) => i === index ? { ...item, name: event.target.value } : item))}/></div><ColumnSelect label={`Столбец «${pair.name || index + 1}»`} value={pair.column} columns={columns} onChange={column => onChange(value.map((item, i) => i === index ? { ...item, column } : item))}/><button type="button" className="oko-quiet" aria-label={`Удалить поле ${pair.name || index + 1}`} onClick={() => onChange(value.filter((_, i) => i !== index))}>Удалить</button></div>)}<button type="button" className="oko-quiet" onClick={() => onChange([...value, { name: '', column: '' }])}>Добавить поле</button></fieldset>;
 }
-export function WorkbenchBrowserScenarioWizard() {
+function PersonalBrowserScenarioWizard() {
   const { current: workflow, session, run, client, busy, job } = useWorkbench();
   if (!workflow) return null;
   return <WorkflowForm key={workflow.workflowId} personId={session?.personId ?? null} workflow={workflow} prepare={session?.role !== 'viewer' && (session?.allowedCommands.includes('source.browser.record.start') ?? false)} run={run} client={client} busy={busy} job={job}/>;
@@ -95,3 +96,5 @@ function WorkflowForm({ workflow: w, personId, prepare, run, client, busy, job }
     <section className="oko-card oko-result" aria-labelledby="oko-result-title"><div className="oko-section-title"><span>✓</span><h2 id="oko-result-title">Последний результат</h2></div>{w.result ? <><div className="oko-result-stats"><div><strong>{w.result.rowCount.toLocaleString('ru-RU')}</strong><span>строк в файле</span></div><div><strong>{w.result.unresolvedRows.toLocaleString('ru-RU')}</strong><span>требуют сопоставления</span></div><div><strong>{w.result.sourceDate ?? 'Не указана'}</strong><span>дата источника</span></div></div><p className="oko-muted">Получено {new Date(w.result.capturedAt).toLocaleString('ru-RU')}. Наличие файла само по себе не подтверждает полноту охвата.</p><div className="oko-actions"><a className="oko-button" href={`/api/v1/browser/results/${encodeURIComponent(w.result.resultId)}/original`} download>Скачать исходный файл</a><a className="oko-button oko-primary" href={`/api/v1/browser/results/${encodeURIComponent(w.result.resultId)}/enriched`} download>Скачать обогащённый CSV</a></div>{!!w.result.issues.length && <details open><summary>Замечания к данным ({w.result.issues.length})</summary><ul className="oko-warning">{w.result.issues.map((issue, index) => <li key={index}>{issue.message} <small>{issue.code} {issue.path}</small></li>)}</ul></details>}<PreviewTable rows={w.result.previewRows} label="Результат обогащения"/></> : <p className="oko-muted">После проверки здесь появятся строки, замечания и ссылки на исходный и обогащённый файлы.</p>}</section>
   </div>;
 }
+
+export function WorkbenchBrowserScenarioWizard(props: SharedBrowserScenarioProps | Record<string, never>) { return 'sourceRef' in props ? <SharedBrowserScenarioWizard {...props as SharedBrowserScenarioProps} /> : <PersonalBrowserScenarioWizard />; }

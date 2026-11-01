@@ -31,6 +31,7 @@ export type WorkbenchApplicationDeps = {
   readState?: { defaultContext(context: QueryContext): Promise<GlobalContext | null>; publishedCommit(): string | null };
   queryPorts?:WorkbenchReadPorts;
   browserResults?: { read(context: QueryContext, resultId: UUIDv4, kind: 'original' | 'enriched'): Promise<BrowserResultArtifact> };
+  browserRecordings?: { screenshot(context: QueryContext, recordingId: string, handleId: string): Promise<{ bytes: Uint8Array; mediaType: 'image/png' }> };
 };
 
 /** Startup uses the current installation and hostname, without restoring a session or an old grant. */
@@ -95,6 +96,11 @@ export function createWorkbenchApplication(deps: WorkbenchApplicationDeps): Work
       const ctx = await context(local);
       if (!deps.browserResults) throw new WorkbenchHttpError(404, 'RESULT_NOT_FOUND', 'Result not found');
       return deps.browserResults.read(ctx, resultId, kind);
+    },
+    async browserScreenshot(recordingId, handleId, local) {
+      const ctx = await context(local);
+      if (!deps.browserRecordings) throw new WorkbenchHttpError(404, 'SCREENSHOT_NOT_FOUND', 'Screenshot not found');
+      return deps.browserRecordings.screenshot(ctx, recordingId, handleId);
     },
     async command(request, local) {
       const ctx = await context(local);

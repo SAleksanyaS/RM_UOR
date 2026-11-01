@@ -19,6 +19,9 @@ export type BrowserReplayInput = { owner: BrowserOwner; profile: PrivateProfile;
 export type BrowserSessionHandle = { handleId: UUIDv4; state: 'open'; mode: 'login' | 'record' };
 export type RecordedBrowserScenario = { recordingId: UUIDv4; startUrl: string; authenticatedSelector: string; steps: RecordedBrowserStep[]; parameterNames: string[]; screenshotHandles: UUIDv4[]; hasDownload: boolean };
 export interface BrowserRuntimePort {
+  readRecordingStatus?(input: { owner: BrowserOwner; handleId: UUIDv4 }): Promise<BrowserRecordingStatus>;
+  selectMarker?(input: { owner: BrowserOwner; profile: PrivateProfile; startUrl: string }, signal: AbortSignal): Promise<{ selector: string; label: string }>;
+  cancelRecording?(input: { owner: BrowserOwner; handleId: UUIDv4 }): Promise<void>;
   /** A live owned report-boundary observation, never cookie/window-close evidence. */
   observeLogin?(input: { handleId: UUIDv4; owner: BrowserOwner }): Promise<boolean>;
   openLogin(input: BrowserLoginInput, signal: AbortSignal): Promise<BrowserSessionHandle>;
@@ -72,6 +75,11 @@ export function createBrowserRuntime({ runtimeRoot, launcher }: { runtimeRoot: s
     } finally { pending.delete(request); settled(); }
   };
   const runtime: BrowserWorkflowRuntimePort = {
+    async cancelRecording({ handleId, owner }) {
+      const handle = handles.get(handleId);
+      if (!handle || handle.owner !== browserOwnerKey(owner)) throw new WorkbenchHttpError(404, 'BROWSER_HANDLE_NOT_FOUND', 'Browser session not found');
+      await cancelRecording(handle.root, handle.owner, handle.recorderId); handles.delete(handleId);
+    },
     async observeLogin({ handleId, owner }) {
       const handle = handles.get(handleId);
       if (!handle || handle.owner !== browserOwnerKey(owner)) throw new WorkbenchHttpError(404, 'BROWSER_HANDLE_NOT_FOUND', 'Browser session not found');

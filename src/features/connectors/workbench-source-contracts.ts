@@ -14,8 +14,12 @@ import type { VersionRef, Sha256, UtcInstant } from '../../domain/workbench/prim
  * resolved exclusively from publishedAssignment, not supplied by this evidence. */
 export type BrowserExportBinding = { owner: BrowserOwner; sourceRef: VersionRef; mappingRef: VersionRef; scenarioHash: Sha256; payloadHash: Sha256 };
 export type BrowserExportEvidence = BrowserExportBinding & { publishedAssignment: VersionRef; observedAt: UtcInstant; expiresAt: UtcInstant; selectionVerified: boolean; allPagesExported: boolean; reportedRows: number };
+/** Private configuration proof only. It cannot be consumed by published source capture. */
+export type BrowserPreviewExportBinding = BrowserExportBinding & { assignment: { kind: 'own-draft'; packageId: string; assignmentRef: VersionRef; editToken: string } };
+export type BrowserPreviewExportEvidence = BrowserPreviewExportBinding & { observedAt: UtcInstant; expiresAt: UtcInstant; selectionVerified: boolean; allPagesExported: boolean; reportedRows: number };
 export type BrowserScenarioRuntimePort = BrowserRuntimePort & {
   inspectExport?(binding: BrowserExportBinding, signal: AbortSignal): Promise<BrowserExportEvidence | null>;
+  inspectPreviewExport?(binding: BrowserPreviewExportBinding, signal: AbortSignal): Promise<BrowserPreviewExportEvidence | null>;
 };
 
 export const sourceIssueSchema = z.strictObject({ code: z.string().min(1), stage: z.string().min(1), retryable: z.boolean(), message: z.string().min(1), rowKeys: z.array(z.string().min(1)), refs: z.array(entityRefSchema) });

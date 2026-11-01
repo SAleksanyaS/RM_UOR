@@ -1,8 +1,9 @@
+import { SharedBrowserProfileForm, type SharedBrowserProfileProps } from './SharedBrowserProfileForm';
 import React, { useState } from 'react';
 import type { PrivateProfile } from '../contracts';
 import type { OkoWorkflowView } from '../workbench-workflow-contracts';
 
-export function WorkbenchBrowserProfileForm({ workflow, reportUrl, busy, onSave }: { workflow: OkoWorkflowView; reportUrl: string; busy: boolean; onSave(profile: PrivateProfile): Promise<unknown> }) {
+export function PersonalBrowserProfileForm({ workflow, reportUrl, busy, onSave }: { workflow: OkoWorkflowView; reportUrl: string; busy: boolean; onSave(profile: PrivateProfile): Promise<unknown> }) {
   const saved = workflow.profile.profile;
   const [kind, setKind] = useState(saved?.browser?.channel === 'msedge' ? 'edge' : saved?.browser?.channel === 'chrome' ? 'chrome' : 'sber');
   const [executable, setExecutable] = useState(saved?.browser?.executablePath ?? '');
@@ -31,3 +32,5 @@ export function WorkbenchBrowserProfileForm({ workflow, reportUrl, busy, onSave 
     <button className="oko-primary" disabled={busy || !reportUrl.trim()} type="submit">Сохранить личный профиль</button>
   </form>;
 }
+
+export function WorkbenchBrowserProfileForm(props: SharedBrowserProfileProps | Parameters<typeof PersonalBrowserProfileForm>[0]) { return 'sourceRef' in props ? <SharedBrowserProfileForm {...props} /> : <PersonalBrowserProfileForm {...props} />; }

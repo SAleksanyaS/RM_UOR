@@ -1,1 +1,7 @@
 .oko-local-role{display:grid;grid-template-columns:auto minmax(110px,1fr);gap:3px 10px;align-items:center;margin-left:auto;font-size:13px}.oko-local-role select{border:1px solid #a8c8bf;border-radius:8px;padding:8px;background:#fff;color:#143c34}.oko-local-role small{grid-column:1/-1;color:#62736e;font-size:11px}@media(max-width:600px){.oko-header{flex-wrap:wrap;gap:12px}.oko-local-role{margin-left:0}.oko-user{margin-left:auto}}
+
+.wb-browser-wizard{max-width:100%;min-width:0;overflow-wrap:anywhere}.wb-browser-wizard section{padding-block:16px;border-bottom:1px solid #d6dedb}.wb-browser-wizard nav,.wb-browser-actions{display:flex;flex-wrap:wrap;gap:12px}.wb-browser-wizard label{display:grid;gap:6px;margin-block:12px;min-width:0}.wb-browser-wizard input,.wb-browser-wizard select,.wb-browser-wizard textarea{box-sizing:border-box;max-width:100%;width:100%;min-width:0;font:inherit;padding:8px}.wb-browser-wizard button{max-width:100%;white-space:normal;overflow-wrap:anywhere;margin:5px 8px 5px 0}.wb-browser-wizard :focus-visible{outline:3px solid #177663;outline-offset:3px}.wb-browser-wizard ol{padding-inline-start:24px}.wb-browser-wizard [role=alert]{color:#8d2525}.wb-browser-wizard table{border-collapse:collapse}.wb-browser-wizard td,.wb-browser-wizard th{padding:6px;text-align:left}
+
+.wb-browser-table{max-width:100%;overflow:auto;overscroll-behavior-inline:contain}.wb-browser-table table{min-width:0}
+
+.wb-browser-screenshot{display:block;max-width:100%;height:auto;margin-block:12px}

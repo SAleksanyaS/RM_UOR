@@ -28,6 +28,7 @@ export interface SourceStore {
   commitCapture(input: { installationId: string; binding: ResolvedCaptureBinding; request: CaptureRequest; raw: RawBatch; capture: Capture; facts: ObservedFact[]; retainedFactRefs?: VersionRef[]; issues: SourceIssue[] }): CaptureResult;
   readCapture(ref: VersionRef, installationId: string): SourceCaptureView | null;
   listOwnCaptures(owner:{installationId:string;profilePersonId:string|null}):SourceCaptureView[];
+  readOwnCaptureArtifact(owner:{installationId:string;profilePersonId:string|null},captureId:string):{view:SourceCaptureView;bytes:Uint8Array}|null;
   /** Read-only current owner+goal+saved-context+source evidence, including partial captures with no facts. */
   readLatestAttempt(input: { installationId: string; goalId: string }): SourceLatestAttempt | null;
   readFallback(input: { installationId: string; goalId: string }): SourceFallback;
@@ -107,6 +108,13 @@ export function createSourceStore({ repository }: { repository: WorkbenchReposit
     return { ...cfg, context: saved.context, businessTime: saved.context.time, adapterKey: adapter.adapterKey, profileRef: adapter.profileRef, configurationRevision: digest({ cfg, anchors, saved, adapter }) };
   };
   const evidenceFor = (ref: VersionRef, installationId: string): CaptureEvidence | null => { if (ref.entityType !== 'capture' || ref.revision !== 1) return null; const row = sql.get<{ value_json: string }>('SELECT value_json FROM wb_sources_captures WHERE installation_id=? AND capture_id=?', [installationId, ref.id]); return row ? JSON.parse(row.value_json) : null; };
+  // Central ownership seam shared by enumeration and exact artifact reads.
+  const ownCaptureView = (owner: { installationId: string; profilePersonId: string | null }, captureId: string): SourceCaptureView | null => {
+    const ref = { entityType: 'capture', id: captureId, revision: 1 };
+    const capture = repository.readVersion<Capture>(ref);
+    if (!capture || capture.actor.installationId !== owner.installationId || capture.actor.profilePersonId !== owner.profilePersonId) return null;
+    return store.readCapture(ref, owner.installationId);
+  };
   const latestAttemptFor = (installationId: string, binding: ResolvedCaptureBinding): SourceLatestAttempt | null => {
     const row = sql.get<{ capture_id: string }>('SELECT capture_id FROM wb_sources_attempts WHERE installation_id=? AND goal_id=? AND context_key=? AND source_id=?', [installationId, binding.goal.id, contextKey(binding.context), binding.source.id]);
     if (!row) return null;
@@ -146,11 +154,18 @@ export function createSourceStore({ repository }: { repository: WorkbenchReposit
     readCapture(ref, installationId) { const evidence = evidenceFor(ref, installationId); if (!evidence) return null; const capture = repository.readVersion<Capture>(ref); if (!capture) return null; return { capture, facts: evidence.factRefs.map(r => repository.readVersion<ObservedFact>(r) ?? fail()), issues: evidence.issues, coverage: evidence.raw.coverage, artifact: evidence.raw.artifact }; },
     listOwnCaptures(owner) {
       return sql.all<{capture_id:string}>('SELECT capture_id FROM wb_sources_captures WHERE installation_id=? ORDER BY capture_id',[owner.installationId]).flatMap(row=>{
-        const ref={entityType:'capture',id:row.capture_id,revision:1};
-        const capture=repository.readVersion<Capture>(ref);
-        if(!capture || capture.actor.installationId!==owner.installationId || capture.actor.profilePersonId!==owner.profilePersonId) return [];
-        const view=store.readCapture(ref,owner.installationId); return view?[view]:[];
+        const view=ownCaptureView(owner,row.capture_id); return view?[view]:[];
       });
+    },
+    readOwnCaptureArtifact(owner,captureId) {
+      uuidSchema.parse(captureId); uuidSchema.parse(owner.installationId); if(owner.profilePersonId!==null)uuidSchema.parse(owner.profilePersonId);
+      const selected=sql.get<{capture_id:string}>('SELECT capture_id FROM wb_sources_captures WHERE installation_id=? AND capture_id=?',[owner.installationId,captureId]);
+      const view=selected?ownCaptureView(owner,selected.capture_id):null;
+      if(!view || view.capture.result!=='accepted' || !view.artifact || view.capture.rawArtifactId!==view.artifact.artifactId || view.capture.payloadHash!==view.artifact.hash) return null;
+      store.assertArtifact(owner.installationId,view.artifact);
+      const row=sql.get<{bytes_value:Uint8Array}>('SELECT bytes_value FROM wb_sources_artifacts WHERE installation_id=? AND artifact_id=?',[owner.installationId,view.artifact.artifactId]);
+      if(!row)return fail('SOURCE_ARTIFACT_INVALID');
+      return {view,bytes:Uint8Array.from(row.bytes_value)};
     },
     readLatestAttempt({ installationId, goalId }) { return latestAttemptFor(installationId, resolve(installationId, goalId)); },
     readFallback({ installationId, goalId }) {

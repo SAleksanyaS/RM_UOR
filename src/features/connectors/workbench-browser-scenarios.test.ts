@@ -82,6 +82,80 @@ it('scenario_draft_save_requires_safe_parameters_and_download', async () => {
   for (const definition of [{ ...f.definition, parameters: { password: 'x' } }, { ...f.definition, actor: f.context.actor }, { ...f.definition, profile: {} }, { ...f.definition, startUrl: 'https://user:pass@report.example.invalid' }, { ...f.definition, startUrl: 'https://report.example.invalid/?token=x' }, { ...f.definition, steps: [{ action: 'eval', script: '1' }] }]) await expect(f.save(definition)).rejects.toMatchObject({ statusCode: 422 });
   expect((await f.save({ ...f.definition, parameters: {} })).problems).toContainEqual(expect.objectContaining({ code: 'PARAMETER_REQUIRED' }));
 });
+it('native recording authentication errors remain actionable job diagnostics', async () => {
+  const f = await fixture(); f.runtime.startRecording = async () => { throw new ConnectorError('manual_login_required', 'Private native details'); };
+  const commandId = fixtureId(912000); const accepted = await f.registry.execute({ commandId, name: 'source.browser.record.start', payload: { sourceRef: { entityType: 'source_definition', id: f.source.id, revision: 2 }, startUrl: f.definition.startUrl, authenticatedSelector: '#report' }, baseRevision: null }, { ...f.context, commandId });
+  if (!('jobId' in accepted)) throw Error('Expected recording job'); await f.registry.idle();
+  expect(f.jobs.get(accepted.jobId, f.context.installationId)).toMatchObject({ status: 'failed', error: { code: 'AUTH_REQUIRED' } });
+});
+it('review_I1_changed_profile_allows_incomplete_candidate_then_requires_new_proof', async () => {
+  const f = await fixture(); await f.save(); f.proof();
+  expect((await f.test()).result).toMatchObject({ complete: true });
+  expect((await f.save()).complete).toBe(true);
+  const own = await f.profiles.getOwn(f.context, f.source.id);
+  await f.profiles.set(f.context, { sourceId: f.source.id, profileId: own.profileId!, profile: { ...own.profile!, timeoutMs: 9000 }, expectedRevision: own.revision });
+  const candidate = { ...f.definition, parameters: { period: '2026-11' } };
+  expect(await f.save(candidate)).toMatchObject({ complete: false, problems: expect.arrayContaining([expect.objectContaining({ code: 'SCENARIO_TEST_REQUIRED' })]) });
+  expect(f.packageProblems()).toContainEqual(expect.objectContaining({ code: 'SCENARIO_TEST_REQUIRED' }));
+  expect((await f.save(f.definition)).complete).toBe(false);
+  expect(f.packageProblems()).toContainEqual(expect.objectContaining({ code: 'SCENARIO_TEST_REQUIRED' }));
+  expect((await f.save(candidate)).complete).toBe(false);
+  expect((await f.test()).result).toMatchObject({ complete: true });
+  expect((await f.save(candidate)).complete).toBe(true);
+  expect(f.packageProblems()).toEqual([]);
+});
+
+it('a brand new goal source and own assignment can prove their exact private closure before first publication', async () => {
+  const f = await fixture(false);
+  const goal = await f.open('core_goal_definition'), source = await f.open('source_definition'), mapping = await f.open('source_field_mapping'), assignment = await f.open('goal_assignment'), metric = await f.open('metric_definition'), method = await f.open('method_version');
+  const metricSaved = await f.execute('metric.draft.save', { draftId: metric.draftId, definition: business(f.input.metrics[0]) });
+  const metricRef = (metricSaved.result as { versionRef: import('../../domain/workbench/primitives').VersionRef }).versionRef;
+  if (f.input.method.mode !== 'numeric') throw Error('Numeric fixture');
+  const methodSaved = await f.execute('method.draft.save', { draftId: method.draftId, definition: { ...business(f.input.method), rules: f.input.method.rules.map(rule => ({ ...rule, metricRef })) } });
+  const goalSaved = await f.execute('goal.draft.save', { draftId: goal.draftId, definition: { ...business(f.input.goal), title: 'Новая цель ОКО', sourceId: source.objectId } });
+  const mappingSaved = await f.execute('fieldMapping.draft.save', { draftId: mapping.draftId, definition: { ...business(f.mapping), sourceId: source.objectId, metricFields: f.mapping.metricFields.map(field => ({ ...field, metricId: metric.objectId })) } });
+  const assignmentSaved = await f.execute('assignment.draft.save', { draftId: assignment.draftId, definition: { ...business(f.input.assignment), goalId: goal.objectId, methodBinding: { kind: 'standalone', methodRef: (methodSaved.result as { versionRef: unknown }).versionRef } } });
+  const definition = { ...f.definition, sourceId: source.objectId };
+  const scenarioSaved = await f.execute('source.browserScenario.draft.save', { draftId: f.draft.draftId, definition });
+  await f.execute('source.draft.save', { draftId: source.draftId, definition: { ...business(f.source), goalId: goal.objectId, mappingRef: (mappingSaved.result as { versionRef: unknown }).versionRef, browserScenarioRef: (scenarioSaved.result as { versionRef: unknown }).versionRef } });
+  const profile = await f.profiles.getOwn(f.context, f.source.id);
+  await f.profiles.set(f.context, { sourceId: source.objectId, profileId: 'synthetic', profile: profile.profile!, expectedRevision: profile.revision });
+  const assignmentRef = (assignmentSaved.result as { versionRef: import('../../domain/workbench/primitives').VersionRef }).versionRef;
+  let serial = 911000;
+  const testPrivate = async (target = assignmentRef, baseRevision = f.token()) => {
+    const commandId = fixtureId(serial++); const accepted = await f.registry.execute({ commandId, name: 'source.browser.record.test', payload: { draftId: f.draft.draftId, assignmentRef: target }, baseRevision }, { ...f.context, commandId });
+    if (!('jobId' in accepted)) throw Error('Expected test job'); await f.registry.idle(); return f.jobs.get(accepted.jobId, f.context.installationId)!;
+  };
+  expect((await testPrivate()).result).toMatchObject({ complete: false, problems: expect.arrayContaining([expect.objectContaining({ code: 'EXPORT_COVERAGE_UNVERIFIED' })]) });
+  expect((await testPrivate(assignmentRef, 'stale')).error?.code).toBe('REVISION_CONFLICT');
+  expect((await testPrivate(ref('goal_assignment', f.input.assignment))).error?.code).toBe('DRAFT_REFERENCE_MISMATCH');
+  const observed = (input: Record<string, unknown>) => ({ ...input, observedAt: f.clock.now(), expiresAt: '2026-10-23T12:10:00Z', selectionVerified: true, allPagesExported: true, reportedRows: 1 });
+  Object.assign(f.runtime, { inspectPreviewExport: async (input: Record<string, unknown>) => ({ ...observed(input), assignment: { ...(input.assignment as object), packageId: fixtureId(919999) } }) });
+  expect((await testPrivate()).result).toMatchObject({ complete: false, problems: expect.arrayContaining([expect.objectContaining({ code: 'EXPORT_COVERAGE_UNVERIFIED' })]) });
+  Object.assign(f.runtime, { inspectPreviewExport: async (input: Record<string, unknown>) => observed(input) });
+  const person = f.context.ownAccess.personId; f.context.ownAccess.personId = fixtureId(919998); f.context.actor.profilePersonId = fixtureId(919998);
+  expect((await testPrivate()).error?.code).toBe('DRAFT_NOT_FOUND'); f.context.ownAccess.personId = person; f.context.actor.profilePersonId = person;
+  const commandId = fixtureId(910001);
+  const accepted = await f.registry.execute({ commandId, name: 'source.browser.record.test', payload: { draftId: f.draft.draftId, assignmentRef }, baseRevision: f.token() }, { ...f.context, commandId });
+  if (!('jobId' in accepted)) throw Error('Expected test job'); await f.registry.idle();
+  expect(f.jobs.get(accepted.jobId, f.context.installationId)).toMatchObject({ status: 'succeeded', result: { complete: true, acceptedPreviewRows: 1 } });
+  expect(f.repository.readPublishedHead({ entityType: 'core_goal_definition', id: goal.objectId })).toBeNull();
+  expect(f.repository.readPublishedHead({ entityType: 'goal_assignment', id: assignment.objectId })).toBeNull();
+  expect(f.repository.readPublishedHead({ entityType: 'method_version', id: method.objectId })).toBeNull();
+  expect(f.repository.readPublishedHead({ entityType: 'metric_definition', id: metric.objectId })).toBeNull();
+  expect((await f.execute('source.browserScenario.draft.save', { draftId: f.draft.draftId, definition })).result).toMatchObject({ complete: true });
+  const artifacts = createPackageArtifactStore({ artifactRoot: path.join(f.root, 'new-goal-packages') });
+  const main = { repositoryId: 'synthetic', commit: 'a'.repeat(40), files: new Map(f.repository.exportWorkspaceCore().filter(v => v.entityType !== 'publication_anchor').map(({ entityType, value }) => [`records/${entityType}/${value.id}/${value.revision}.json`, canonicalBytes(value)])) };
+  const publisher = new PublishingService({ repository: f.repository, clock: f.clock, drafts: f.service, artifacts, git: { async readMain() { return main; } }, accessPolicy: f.policy, jobs: f.jobs, jobSink: f.jobs, publication: { mode: 'demo-only', classifyRecord: () => true } }); registerPublishingCommands(f.registry, publisher);
+  const previewId = fixtureId(910002); const preview = await f.registry.execute({ commandId: previewId, name: 'package.preview', baseRevision: f.token(), payload: { packageId: f.packageId() } }, { ...f.context, commandId: previewId });
+  if (!('jobId' in preview)) throw Error('Expected package job'); await f.registry.idle();
+  expect(f.jobs.get(preview.jobId, f.context.installationId)).toMatchObject({ status: 'succeeded', result: { errors: [] } });
+  const own = f.service.readOwnEntry(f.context, assignment.draftId);
+  await f.execute('assignment.draft.save', { draftId: assignment.draftId, definition: { ...own.definition, expectedPopulation: [{ kind: 'dit', id: fixtureId(999) }] } });
+  expect((await f.execute('source.browserScenario.draft.save', { draftId: f.draft.draftId, definition })).result).toMatchObject({ complete: false });
+  expect(f.repository.readPublishedHead({ entityType: 'source_definition', id: source.objectId })).toBeNull();
+  expect((goalSaved.result as { versionRef: unknown }).versionRef).toBeTruthy();
+});
 
 it('preview_requires_export_coverage_evidence_and_never_changes_accepted_state', async () => {
   const f = await fixture(); await f.save(); const before = f.repository.exportWorkspaceCore();

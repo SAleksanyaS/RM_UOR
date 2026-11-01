@@ -40,9 +40,20 @@ async function fixture(artifact?: { bytes: Uint8Array; name: string; mimeType: s
   artifactOwner = cookieHeader.split('=')[1];
   const csrf = initial.json().data.csrfToken;
   const post = (payload: unknown, extra: Record<string, string> = {}, url = '/api/v1/commands') => app.inject({ method: 'POST', url, payload: JSON.stringify(payload), headers: { host: '127.0.0.1', origin: 'http://127.0.0.1:5173', 'content-type': 'application/json', cookie: cookieHeader, 'x-csrf-token': csrf, ...extra } });
-  return { app, sessions, get, initial, post, commandSpy, cookieHeader, csrf };
+  return { app, sessions, get, initial, post, commandSpy, cookieHeader, csrf, port };
 }
 describe('workbench HTTP transport', () => {
+  it('protects recorder PNGs by session and origin and rejects malformed IDs, oversized or non-PNG bytes', async () => {
+    const f = await fixture(); let bytes = Buffer.from([137,80,78,71,13,10,26,10]);
+    f.port.browserScreenshot = async () => ({ bytes, mediaType: 'image/png' });
+    const url = `/api/v1/browser/recordings/${id}/screenshots/${id}`;
+    const get = (target = url, extra: Record<string,string> = {}) => f.app.inject({ method: 'GET', url: target, headers: { host: 'localhost', cookie: f.cookieHeader, ...extra } });
+    expect((await get(url, { cookie: '' })).statusCode).toBe(401); expect((await get(url, { origin: 'https://foreign.invalid' })).statusCode).toBe(403);
+    expect((await get(url.replace(id, 'invalid'))).statusCode).toBe(404);
+    const valid = await get(); expect(valid.statusCode).toBe(200); expect(valid.headers['content-type']).toBe('image/png'); expect(valid.headers['cache-control']).toBe('no-store'); expect(valid.headers['x-content-type-options']).toBe('nosniff');
+    bytes = Buffer.from('<html>not a screenshot</html>'); expect((await get()).statusCode).toBe(422);
+    bytes = Buffer.alloc(10*1024*1024+1); Buffer.from([137,80,78,71,13,10,26,10]).copy(bytes); expect((await get()).statusCode).toBe(422);
+  });
   it('serves verified own result bytes through the protected attachment route only', async () => {
     const bytes = Buffer.from('Product,Value\nA,92');
     const f = await fixture({ bytes, name: 'Отчёт.csv', mimeType: 'text/csv; charset=utf-8', sha256: createHash('sha256').update(bytes).digest('hex') });

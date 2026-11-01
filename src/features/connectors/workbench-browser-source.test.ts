@@ -79,6 +79,13 @@ async function restartCapture(f: Awaited<ReturnType<typeof fixture>>) {
   await registry.recoverPending(f.context.installationId, async identity => { resolved++; return { ...f.context, repository, commandId: identity.commandId }; }); await registry.idle();
   return { jobs, registry, resolved: () => resolved, retry: async (jobId: string, seed = 997000) => { const commandId = fixtureId(seed); const result = await registry.execute({ commandId, name: 'job.retry', payload: { jobId }, baseRevision: null }, { ...f.context, repository, commandId }); await registry.idle(); return result; } };
 }
+it('private preview evidence cannot authorize the published capture pipeline', async () => {
+  const f = await fixture(); f.proof(false);
+  Object.assign(f.runtime, { inspectPreviewExport: async (input: object) => ({ ...input, observedAt: f.clock.now(), expiresAt: '2026-10-23T12:10:00Z', selectionVerified: true, allPagesExported: true, reportedRows: 1 }) });
+  const job = await f.capture();
+  expect(job.status).toBe('failed'); expect(job.error?.code).toBe('EXPORT_COVERAGE_UNVERIFIED');
+  expect(f.fallback().captureRef).toBeNull();
+});
 it.each(['waiting_user', 'running'] as const)('review_I1_rebinds_only_explicit_browser_retry_after_restart: %s', async state => {
   const f = await fixture(); f.auth(false); const original = await f.capture();
   if (state === 'running') f.jobs.update(original.jobId, { status: 'running', stage: 'source.collect', warnings: [], nextAction: null });

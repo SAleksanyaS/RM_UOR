@@ -7,7 +7,7 @@ import { entityRefSchema, sha256Schema, utcInstantSchema, uuidSchema, versionRef
 import { goalAssignmentSchema, sourceDefinitionSchema, sourceFieldMappingSchema, templateSchema, methodVersionSchema, metricDefinitionSchema, directoryEntitySchema, directoryLinkSchema } from '../../domain/workbench/schemas';
 import type { WorkbenchRepository } from '../../server/storage/workbench-repository';
 import type { CommandContext } from '../../server/workbench/command-registry';
-import { commitCommandEffect, stableJson } from '../../server/workbench/command-store';
+import { commitCommandEffect, createCommandStore, stableJson } from '../../server/workbench/command-store';
 import { assertFileName, defaultFileLimits } from '../../server/workbench/files';
 import { fieldProblemSchema, fieldProblems, WorkbenchHttpError, type FieldProblem } from '../../server/workbench/protocol';
 import { businessDefinition, type DraftService, type DraftSaveResult, type PartialDraftInput, type DraftDirectoryInventory } from '../catalog/workbench-drafts';
@@ -15,16 +15,16 @@ import type { StoredDraft } from '../catalog/workbench-draft-store';
 import { parseWorkbenchTable, WorkbenchParserError } from '../tabular-import/workbench-parser';
 import type { BrowserProfileService } from './workbench-browser-profile';
 import { normalizeParsedWorkbenchTable } from './workbench-source-normalizer';
-import { enrichmentResultSchema, validateSourceConfiguration, type BrowserScenarioRuntimePort, type BrowserExportEvidence, type EnricherPort } from './workbench-source-contracts';
+import { enrichmentResultSchema, validateSourceConfiguration, type BrowserScenarioRuntimePort, type BrowserExportEvidence, type BrowserPreviewExportEvidence, type BrowserPreviewExportBinding, type EnricherPort } from './workbench-source-contracts';
 import { enrichSourceRows } from '../catalog/workbench-directory';
-import { canUseCapability } from '../identity/workbench-access-policy';
+import { canUseCapability, type AccessPolicyService } from '../identity/workbench-access-policy';
 import { ConnectorError } from './contracts';
 
-export const browserScenarioTestResultSchema = z.strictObject({ draftId: uuidSchema, scenarioRef: entityRefSchema, inputHash: sha256Schema, downloadedBytes: z.number().int().nonnegative(), acceptedPreviewRows: z.number().int().nonnegative(), rejectedPreviewRows: z.number().int().nonnegative(), complete: z.boolean(), problems: z.array(fieldProblemSchema) });
+export const browserScenarioTestResultSchema = z.strictObject({ draftId: uuidSchema, scenarioRef: entityRefSchema, inputHash: sha256Schema, downloadedBytes: z.number().int().nonnegative(), acceptedPreviewRows: z.number().int().nonnegative(), rejectedPreviewRows: z.number().int().nonnegative(), complete: z.boolean(), problems: z.array(fieldProblemSchema), columns: z.array(z.string()).max(100).optional(), previewRows: z.array(z.record(z.string(), z.string().nullable())).max(20).optional() });
 export type BrowserScenarioTestResult = z.infer<typeof browserScenarioTestResultSchema>;
 export interface BrowserScenarioService {
   save(context: CommandContext, input: { draftId: UUIDv4; definition: PartialDraftInput<BrowserScenarioDefinition> }): Promise<DraftSaveResult>;
-  test(context: CommandContext, input: { draftId: UUIDv4 }): Promise<BrowserScenarioTestResult>;
+  test(context: CommandContext, input: { draftId: UUIDv4; assignmentRef?: VersionRef }): Promise<BrowserScenarioTestResult>;
   resolvePublished(sourceRef: VersionRef): BrowserScenarioDefinition;
 }
 const ref = (entityType: string, value: Header): VersionRef => ({ entityType, id: value.id, revision: value.revision });
@@ -33,13 +33,15 @@ const problem = (code: string, path = '', ref: EntityRef | null = null): FieldPr
 const fail = (code: string, status = 422): never => { throw new WorkbenchHttpError(status, code, code); };
 const same = (a: unknown, b: unknown) => stableJson(a) === stableJson(b);
 const evidenceSchema = z.strictObject({ owner: z.strictObject({ installationId: uuidSchema, profilePersonId: uuidSchema.nullable() }), sourceRef: versionRefSchema, mappingRef: versionRefSchema, scenarioHash: sha256Schema, payloadHash: sha256Schema, publishedAssignment: versionRefSchema.refine(v => v.entityType === 'goal_assignment'), observedAt: utcInstantSchema, expiresAt: utcInstantSchema, selectionVerified: z.boolean(), allPagesExported: z.boolean(), reportedRows: z.number().int().nonnegative() });
+const previewEvidenceSchema = evidenceSchema.omit({ publishedAssignment: true }).extend({ assignment: z.strictObject({ kind: z.literal('own-draft'), packageId: uuidSchema, assignmentRef: versionRefSchema.refine(v => v.entityType === 'goal_assignment'), editToken: z.string().min(1) }) });
 type Binding = { source: SourceDefinition; mapping: SourceFieldMapping & { parsingProfile: NonNullable<SourceFieldMapping['parsingProfile']> }; goal: CoreGoalDefinition; directory: DraftDirectoryInventory | null; configurationHash: Sha256 };
-type TestReceipt = { inputHash: Sha256; configurationHash: Sha256 | null; payloadHash: Sha256 | null; assignmentHash: Sha256 | null; evidence: BrowserExportEvidence | null; result: BrowserScenarioTestResult; expiresAt: string };
+type TestReceipt = { profileRevision: string | null; inputHash: Sha256; configurationHash: Sha256 | null; payloadHash: Sha256 | null; assignmentHash: Sha256 | null; evidence: BrowserExportEvidence | BrowserPreviewExportEvidence | null; result: BrowserScenarioTestResult; expiresAt: string };
 
 /** Preview diagnostics are private append-only receipts, never source captures or portable entities. */
-export function createBrowserScenarioService({ repository, drafts, runtime, profiles, parser, enricher, clock }: {
-  repository: WorkbenchRepository; drafts: DraftService; runtime: BrowserScenarioRuntimePort; profiles: BrowserProfileService; parser: typeof parseWorkbenchTable; enricher: EnricherPort; clock: Clock;
+export function createBrowserScenarioService({ repository, drafts, runtime, profiles, parser, enricher, clock, accessPolicy }: {
+  repository: WorkbenchRepository; drafts: DraftService; runtime: BrowserScenarioRuntimePort; profiles: BrowserProfileService; parser: typeof parseWorkbenchTable; enricher: EnricherPort; clock: Clock; accessPolicy?: AccessPolicyService;
 }): BrowserScenarioService {
+  const assertPrepare = async (context: CommandContext) => { const access = accessPolicy ? await accessPolicy.resolveOwnAccess() : context.ownAccess; if (access.personId !== context.ownAccess.personId || !canUseCapability(access, 'uor.prepare')) return fail('COMMAND_FORBIDDEN', 403); };
   const sql = repository.sqlForModule('browser_scenarios', { trackStateRevision: false });
   sql.execMigration('v1', `CREATE TABLE wb_browser_scenarios_tests(sequence INTEGER PRIMARY KEY AUTOINCREMENT, installation_id TEXT NOT NULL, person_id TEXT NOT NULL, command_id TEXT NOT NULL, draft_id TEXT NOT NULL, receipt_json TEXT NOT NULL, UNIQUE(installation_id,command_id)); CREATE INDEX wb_browser_scenarios_tests_draft ON wb_browser_scenarios_tests(installation_id,person_id,draft_id,sequence);`);
   const published = <T extends Header>(value: T | null): T => {
@@ -80,7 +82,16 @@ export function createBrowserScenarioService({ repository, drafts, runtime, prof
     for (const step of steps ?? []) if ((step.action === 'fill' || step.action === 'select') && (!parameters || !Object.hasOwn(parameters, step.parameter))) problems.push(problem('PARAMETER_REQUIRED', '/parameters'));
     return problems;
   };
-  const assignmentFor = (evidence: BrowserExportEvidence, cfg: Binding): GoalAssignment => {
+  const assignmentFor = (evidence: BrowserExportEvidence | BrowserPreviewExportEvidence, cfg: Binding, read: (ref: EntityRef | VersionRef) => Header | null, entry: StoredDraft): GoalAssignment => {
+    if ('assignment' in evidence) {
+      const target = evidence.assignment;
+      if (target.packageId !== entry.packageId || target.assignmentRef.entityType !== 'goal_assignment') return fail('SCENARIO_TEST_REQUIRED');
+      const value = read({ entityType: 'goal_assignment', id: target.assignmentRef.id });
+      if (!value || value.id !== target.assignmentRef.id || value.revision !== target.assignmentRef.revision) return fail('SCENARIO_TEST_REQUIRED');
+      const assignment = goalAssignmentSchema.parse(value);
+      if (assignment.goalId !== cfg.goal.id || !assignment.expectedPopulation?.length) return fail('EXPORT_COVERAGE_UNVERIFIED');
+      return assignment;
+    }
     const assignment = goalAssignmentSchema.parse(published(repository.readVersion<GoalAssignment>(evidence.publishedAssignment)));
     const current = repository.readPublishedHead<GoalAssignment>({ entityType: 'goal_assignment', id: evidence.publishedAssignment.id });
     if (!current || !same(semantic('goal_assignment', current), semantic('goal_assignment', assignment)) || assignment.goalId !== cfg.goal.id || !assignment.expectedPopulation?.length) return fail('EXPORT_COVERAGE_UNVERIFIED');
@@ -104,7 +115,7 @@ export function createBrowserScenarioService({ repository, drafts, runtime, prof
     if (!cfg.directory || !receipt || receipt.inputHash !== inputHash(entry) || receipt.configurationHash !== cfg.configurationHash) return fail('SCENARIO_TEST_REQUIRED');
     if (Date.parse(receipt.expiresAt) <= Date.parse(clock.now())) return fail('SCENARIO_TEST_EXPIRED');
     if (!receipt.result.complete || !receipt.evidence || !receipt.payloadHash) return fail(receipt.result.problems[0]?.code ?? 'EXPORT_COVERAGE_UNVERIFIED');
-    const assignment = assignmentFor(receipt.evidence, cfg);
+    const assignment = assignmentFor(receipt.evidence, cfg, read, entry);
     const projected = read({ entityType: 'goal_assignment', id: assignment.id }); if (!projected || !same(semantic('goal_assignment', projected), semantic('goal_assignment', assignment))) return fail('SCENARIO_TEST_REQUIRED');
     const configuration = methodConfiguration(assignment, cfg, read);
     if (receipt.assignmentHash !== configuration.digest) return fail('SCENARIO_TEST_REQUIRED');
@@ -127,7 +138,18 @@ export function createBrowserScenarioService({ repository, drafts, runtime, prof
     validatePackage({ context, entry, value, resolve, directoryInventory }) { assertReceipt(context, { ...entry, versionRef: ref('browser_scenario', value) }, binding(browserScenarioDefinitionSchema.parse(value), resolve, directoryInventory ?? null), resolve); },
   });
   return {
-    async save(context, input) { return drafts.saveDefinition(context, input, ['browser_scenario']); },
+    async save(context, input) {
+      await assertPrepare(context);
+      const entry = drafts.readOwnEntry(context, input.draftId, ['browser_scenario']); const receipt = latest(context, input.draftId);
+      // Only a candidate claiming this receipt needs its personal profile. A changed
+      // candidate is staged incomplete by validateSave and must obtain a fresh test.
+      if (receipt && (receipt.result.complete || typeof receipt.profileRevision === 'string') && receipt.inputHash === inputHash({ ...entry, definition: input.definition })) {
+        const sourceId = input.definition.sourceId as string;
+        const profile = await profiles.getOwn(context, sourceId);
+        if (!profile.configured || receipt.profileRevision !== profile.revision) return fail('SCENARIO_TEST_REQUIRED', 409);
+      }
+      await assertPrepare(context); return drafts.saveDefinition(context, input, ['browser_scenario']);
+    },
     resolvePublished(sourceRef) {
       if (sourceRef.entityType !== 'source_definition') return fail('REFERENCE_TYPE_MISMATCH');
       const source = sourceDefinitionSchema.parse(published(repository.readVersion<SourceDefinition>(sourceRef)));
@@ -140,7 +162,19 @@ export function createBrowserScenarioService({ repository, drafts, runtime, prof
     async test(context, input) {
       const entry = structuredClone(drafts.readOwnEntry(context, uuidSchema.parse(input.draftId), ['browser_scenario']));
       const initialHash = inputHash(entry); const started = clock.now();
-      let cfg: Binding | null = null, payloadHash: Sha256 | null = null, evidence: BrowserExportEvidence | null = null, assignmentHash: Sha256 | null = null;
+      let previewAssignment: BrowserPreviewExportBinding['assignment'] | null = null;
+      if (input.assignmentRef) {
+        const pkg = drafts.readOwnPackage(context, entry.packageId);
+        const requested = createCommandStore(repository).get(context.installationId, context.commandId);
+        const expected = requested ? (JSON.parse(requested.request_json) as { baseRevision: string | null }).baseRevision : null;
+        const token = `draft:${pkg.packageId}:${pkg.revision}`;
+        if (expected !== token) return fail('REVISION_CONFLICT', 409);
+        const assignment = pkg.entries.find(value => value.entityRef.entityType === 'goal_assignment' && value.entityRef.id === input.assignmentRef!.id && value.versionRef.revision === input.assignmentRef!.revision);
+        if (!assignment || input.assignmentRef.entityType !== 'goal_assignment') return fail('DRAFT_REFERENCE_MISMATCH', 409);
+        previewAssignment = { kind: 'own-draft', packageId: pkg.packageId, assignmentRef: input.assignmentRef, editToken: token };
+      }
+      let profileRevision: string | null = null;
+      let cfg: Binding | null = null, payloadHash: Sha256 | null = null, evidence: BrowserExportEvidence | BrowserPreviewExportEvidence | null = null, assignmentHash: Sha256 | null = null;
       const result: BrowserScenarioTestResult = { draftId: input.draftId, scenarioRef: entry.entityRef, inputHash: initialHash, downloadedBytes: 0, acceptedPreviewRows: 0, rejectedPreviewRows: 0, complete: false, problems: structuralProblems(entry.definition) };
       try {
         const parsed = browserScenarioDefinitionSchema.safeParse({ ...entry.header, ...entry.definition });
@@ -149,6 +183,7 @@ export function createBrowserScenarioService({ repository, drafts, runtime, prof
         const scenario = parsed.data; cfg = binding(scenario, ownRead(context, entry), ownDirectory(context, entry));
         const profile = await profiles.getOwn(context, scenario.sourceId);
         if (!profile.configured || !profile.profile) return fail('BROWSER_CONFIGURATION_REQUIRED', 409);
+        profileRevision = profile.revision;
         const owner = { installationId: context.installationId, profilePersonId: context.ownAccess.personId };
         const signal = AbortSignal.timeout(120000);
         const download = await runtime.replay({ owner, profile: profile.profile, scenario }, signal); signal.throwIfAborted();
@@ -160,6 +195,7 @@ export function createBrowserScenarioService({ repository, drafts, runtime, prof
         payloadHash = 'sha256:' + createHash('sha256').update(bytes).digest('hex');
         const table = await parser({ bytes, name: download.name, parsingProfile: cfg.mapping.parsingProfile });
         if (scenario.expectedExport.requiredColumns.some(column => !table.columns.includes(column))) return fail('SOURCE_SCHEMA_CHANGED');
+        result.columns = table.columns; result.previewRows = table.rows.slice(0, 20).map(row => Object.fromEntries(Object.entries(row.cells).map(([column, cell]) => [column, cell.original])));
         const normalized = normalizeParsedWorkbenchTable({ table, mapping: cfg.mapping });
         const enriched = enrichmentResultSchema.parse(enricher.enrich({ rows: normalized.canonicalRows, directoryRevision: hash(directoryDefinition(cfg.directory)) }));
         // The injected adapter must agree with T16 on the exact frozen projected directory.
@@ -180,11 +216,12 @@ export function createBrowserScenarioService({ repository, drafts, runtime, prof
         result.rejectedPreviewRows = rejected.size; result.acceptedPreviewRows = normalized.rawRows.length - rejected.size;
         if (rejected.size && !result.problems.length) result.problems.push(problem('PREVIEW_ROWS_REJECTED', '/rows'));
         const exportBinding = { owner, sourceRef: ref('source_definition', cfg.source), mappingRef: ref('source_field_mapping', cfg.mapping), scenarioHash: initialHash, payloadHash };
-        const observedEvidence = evidenceSchema.safeParse(await runtime.inspectExport?.(exportBinding, signal));
+        const observedEvidence = previewAssignment ? previewEvidenceSchema.safeParse(await runtime.inspectPreviewExport?.({ ...exportBinding, assignment: previewAssignment }, signal)) : evidenceSchema.safeParse(await runtime.inspectExport?.(exportBinding, signal));
         if (!observedEvidence.success) return fail('EXPORT_COVERAGE_UNVERIFIED'); evidence = observedEvidence.data;
-        const { publishedAssignment, observedAt, expiresAt, selectionVerified, allPagesExported, reportedRows, ...receivedBinding } = evidence;
-        if (!same(exportBinding, receivedBinding) || !selectionVerified || !allPagesExported || reportedRows !== table.rows.length || Date.parse(observedAt) < Date.parse(started) || Date.parse(observedAt) > Date.parse(clock.now()) || Date.parse(expiresAt) <= Date.parse(clock.now()) || Date.parse(expiresAt) > Date.parse(observedAt) + 10 * 60_000) return fail('EXPORT_COVERAGE_UNVERIFIED');
-        const assignment = assignmentFor(evidence, cfg); const method = methodConfiguration(assignment, cfg, ownRead(context, entry)); method.validate(); assignmentHash = method.digest;
+        const { observedAt, expiresAt, selectionVerified, allPagesExported, reportedRows, ...withAssignment } = evidence;
+        const receivedBinding = 'publishedAssignment' in withAssignment ? (({ publishedAssignment: _assignment, ...rest }) => rest)(withAssignment) : withAssignment;
+        if (!same(previewAssignment ? { ...exportBinding, assignment: previewAssignment } : exportBinding, receivedBinding) || !selectionVerified || !allPagesExported || reportedRows !== table.rows.length || Date.parse(observedAt) < Date.parse(started) || Date.parse(observedAt) > Date.parse(clock.now()) || Date.parse(expiresAt) <= Date.parse(clock.now()) || Date.parse(expiresAt) > Date.parse(observedAt) + 10 * 60_000) return fail('EXPORT_COVERAGE_UNVERIFIED');
+        const assignment = assignmentFor(evidence, cfg, ownRead(context, entry), entry); const method = methodConfiguration(assignment, cfg, ownRead(context, entry)); method.validate(); assignmentHash = method.digest;
         if (assignment.expectedPopulation!.some(scope => !observed.has(stableJson(scope))) || enriched.rows.some(row => row.scope && !assignment.expectedPopulation!.some(scope => same(scope, row.scope)))) result.problems.push(problem('EXPECTED_POPULATION_INCOMPLETE'));
       } catch (error) {
         if (error instanceof WorkbenchHttpError) { if (!result.problems.some(p => p.code === error.code)) result.problems.push(problem(error.code)); }
@@ -193,12 +230,15 @@ export function createBrowserScenarioService({ repository, drafts, runtime, prof
         else result.problems.push(problem(error instanceof DOMException && error.name === 'AbortError' ? 'SOURCE_CANCELLED' : 'BROWSER_TEST_FAILED'));
       }
       // Awaited browser/parser work cannot bless edits or a changed published configuration.
+      await assertPrepare(context);
+      if (cfg && profileRevision !== (await profiles.getOwn(context, cfg.source.id)).revision) return fail('SCENARIO_TEST_STALE', 409);
+      if (previewAssignment) { const pkg = drafts.readOwnPackage(context, entry.packageId); if (`draft:${pkg.packageId}:${pkg.revision}` !== previewAssignment.editToken) return fail('SCENARIO_TEST_STALE', 409); }
       const current = drafts.readOwnEntry(context, input.draftId, ['browser_scenario']);
       if (!canUseCapability(context.ownAccess, 'uor.prepare') || initialHash !== inputHash(current)) return fail('SCENARIO_TEST_STALE', 409);
       if (cfg && cfg.configurationHash !== binding(browserScenarioDefinitionSchema.parse({ ...entry.header, ...entry.definition }), ownRead(context, current), ownDirectory(context, current)).configurationHash) return fail('SCENARIO_TEST_STALE', 409);
-      if (cfg && evidence && assignmentHash && assignmentHash !== methodConfiguration(assignmentFor(evidence, cfg), cfg, ownRead(context, current)).digest) return fail('SCENARIO_TEST_STALE', 409);
+      if (cfg && evidence && assignmentHash && assignmentHash !== methodConfiguration(assignmentFor(evidence, cfg, ownRead(context, current), current), cfg, ownRead(context, current)).digest) return fail('SCENARIO_TEST_STALE', 409);
       result.complete = result.problems.length === 0 && result.acceptedPreviewRows > 0;
-      const receipt: TestReceipt = { inputHash: initialHash, configurationHash: cfg?.configurationHash ?? null, payloadHash, assignmentHash, evidence, result, expiresAt: evidence?.expiresAt ?? new Date(Date.parse(clock.now()) + 10 * 60_000).toISOString() };
+      const receipt: TestReceipt = { profileRevision, inputHash: initialHash, configurationHash: cfg?.configurationHash ?? null, payloadHash, assignmentHash, evidence, result, expiresAt: evidence?.expiresAt ?? new Date(Date.parse(clock.now()) + 10 * 60_000).toISOString() };
       return commitCommandEffect(context, () => {
         sql.run('INSERT INTO wb_browser_scenarios_tests(installation_id,person_id,command_id,draft_id,receipt_json) VALUES(?,?,?,?,?)', [context.installationId, context.ownAccess.personId, context.commandId, input.draftId, stableJson(receipt)]);
         return { result, changedRefs: [], editToken: null };
