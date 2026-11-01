@@ -196,16 +196,16 @@ UI-тесты указывают `// @vitest-environment jsdom`, использ�
 
 **Interfaces:** schemas/form descriptors 17; команды dashboard/customField/customFieldValue draft.save и preferences.set. Новый вид блока — кодовый модуль следующего выпуска, не eval произвольной строки.
 
-- [ ] Написать `reorders_blocks_by_keyboard_and_validates_settings`, `field_value_uses_its_versioned_type`, `search_opens_archived_card_in_context`. Добавить Decimal-поле, ошибочная дата/строка не проходит numeric validator; правильное значение видно в таблице/фильтре, не меняет formula inputs.
+- [x] Написать `reorders_blocks_by_keyboard_and_validates_settings`, `field_value_uses_its_versioned_type`, `search_opens_archived_card_in_context`. Добавить Decimal-поле, ошибочная дата/строка не проходит numeric validator; правильное значение видно в таблице/фильтре, не меняет formula inputs.
   ```ts
   // После ввода "не число" в Decimal-поле и попытки проверки.
   expect(await screen.findByRole('alert')).toHaveProperty('textContent',expect.stringContaining('число'));
   expect(h.requests.filter(r=>r.body?.name==='package.submit')).toHaveLength(0);
   ```
-- [ ] RED: `npm test -- src/features/dashboards/workbench/dashboard-ui.test.tsx`.
-- [ ] Реализовать пять зарегистрированных блоков, точные layout/settings 17, клавиатурный порядок без обязательного drag. Общий dashboard — черновик/PR; личный вид — preferences. Search охватывает цели/продукты/лидеров/работы/решения; открывает canonical ref и контекст, не создаёт копию.
-- [ ] GREEN: тот же test + `npm run build`; viewer меняет личный вид, HTTP не даёт ему изменить общий dashboard.
-- [ ] `git add src/features/dashboards/workbench/DashboardBuilder.tsx src/features/dashboards/workbench/DashboardView.tsx src/features/dashboards/workbench/CustomFieldEditor.tsx src/features/search/workbench/GlobalSearch.tsx src/features/dashboards/workbench/dashboard-ui.test.tsx src/app/workbench/WorkbenchShell.tsx`; `git commit -m "feat(workbench): add dashboard builder fields and global search"`.
+- [x] RED: `npm test -- src/features/dashboards/workbench/dashboard-ui.test.tsx`.
+- [x] Реализовать пять зарегистрированных блоков, точные layout/settings 17, клавиатурный порядок без обязательного drag. Общий dashboard — черновик/PR; личный вид — preferences. Search охватывает цели/продукты/лидеров/работы/решения; открывает canonical ref и контекст, не создаёт копию.
+- [x] GREEN: тот же test + `npm run build`; viewer меняет личный вид, HTTP не даёт ему изменить общий dashboard.
+- [x] `git add src/features/dashboards/workbench/DashboardBuilder.tsx src/features/dashboards/workbench/DashboardView.tsx src/features/dashboards/workbench/CustomFieldEditor.tsx src/features/search/workbench/GlobalSearch.tsx src/features/dashboards/workbench/dashboard-ui.test.tsx src/app/workbench/WorkbenchShell.tsx`; `git commit -m "feat(workbench): add dashboard builder fields and global search"`.
 
 ### T38: Обновление, копия и перенос из интерфейса
 

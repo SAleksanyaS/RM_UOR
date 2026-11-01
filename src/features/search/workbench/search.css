@@ -1,0 +1,7 @@
+.wb-search { flex: 1 1 24rem; min-width: 0; }
+.wb-search form { display: flex; flex-wrap: wrap; gap: .5rem; align-items: end; }
+.wb-search label { flex: 1 1 12rem; }
+.wb-search input { display: block; width: 100%; min-height: 44px; }
+.wb-search section { border: 1px solid #a8c0b2; padding: .75rem; margin-top: .75rem; border-radius: .5rem; }
+.wb-search ul { padding-left: 1.25rem; }
+.wb-search a { display: inline-block; padding-block: .5rem; color: #005b43; }

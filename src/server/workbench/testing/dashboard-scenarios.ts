@@ -1,0 +1,20 @@
+import type { WorkbenchRepository } from '../../storage/workbench-repository';
+import type { VersionRef } from '../../../domain/workbench/primitives';
+import { fixtureId,makeHeader } from '../../../../tests/fixtures/workbench/factories';
+import type { CoreGoalDefinition } from '../../../domain/workbench/entities';
+/** Synthetic local fixtures, never bank or source verification. No HTTP interception. */
+export function seedDashboardScenario(repository:WorkbenchRepository,refs:Record<string,VersionRef>){
+ const goal=repository.readPublishedHead<CoreGoalDefinition>({entityType:refs.goal.entityType,id:refs.goal.id})!;
+ const header=(id:number)=>makeHeader(id,{publicationAnchorId:goal.publicationAnchorId});
+ const layout={w:6,h:2},assignmentRef={entityType:'goal_assignment',id:refs.assignment.id},metricRef=refs.metric;
+ const specs:Array<[string,Record<string,unknown>]>=[['metric-card',{layout,assignmentRef,metricRef,showTrend:true}],['goal-table',{layout,columns:['title','current','coverage','nextAction'],limit:20,attentionOnly:false}],['metric-trend',{layout,assignmentRef,metricRef,granularity:'friday'}],['execution-table',{layout,kind:'all',columns:['title','kind','owner','state','dueOn'],limit:20,attentionOnly:false}],['data-issues',{layout,kinds:['stale','incomplete','missing','unmapped','error'],limit:20}]];
+ repository.append('dashboard_def',{...header(900),title:'Обзор исполнения',blocks:specs.map(([kind,value],index)=>{const typeId=`uor.dashboard.${kind}.v1`;return {id:fixtureId(910+index),typeId,settings:{schemaId:typeId,schemaVersion:1,value}};}),filters:[{schemaId:'uor.dashboard.scope-filter.v1',schemaVersion:1,value:{levels:['cluster','product','team'],showGoal:true}}]},null);
+ const field={...header(920),name:'План затрат',entityTypes:['core_goal_definition'],valueType:'decimal' as const,enumValues:null};repository.append('custom_field_def',field,null);repository.append('custom_field_def',{...field,revision:2,valueType:'date'},1);
+ repository.append('custom_field_value',{...header(921),objectRef:{entityType:'core_goal_definition',id:goal.id},fieldRef:{entityType:'custom_field_def',id:field.id,revision:1},value:'12.5'},null);
+ const archived={...goal,...header(930),title:'Архив продукта',mode:'manual_status' as const,sourceId:fixtureId(932),lifecycle:'archived' as const,archiveReason:'Завершена'};repository.transaction(()=>{repository.append('source_definition',{...header(932),goalId:archived.id,kind:'manual_status',mappingRef:null,publicLocator:null},null);repository.append('core_goal_definition',archived,null);});repository.append('method_version',{...header(933),mode:'manual_status'},null);
+ const assignment=repository.readVersion<any>(refs.assignment)!;repository.append('goal_assignment',{...assignment,...header(931),goalId:archived.id,scope:{kind:'product',id:refs.productA.id},methodBinding:{kind:'standalone',methodRef:{entityType:'method_version',id:fixtureId(933),revision:1}},expectedPopulation:null},null);
+ repository.append('work',{...header(940),title:'Работа продукта',goalIds:[goal.id],responsibility:[{scope:{kind:'product',id:refs.productA.id},personId:goal.primaryCuratorPersonId}],state:'planned',dueOn:'2026-11-10',forecastOn:null,nextAction:'Согласовать план',reason:null,resultDescription:null,evidenceIds:[],risk:null,blocker:null},null);
+ repository.append('decision',{...header(941),workId:fixtureId(940),request:'Решение продукта',requestedFromPersonId:goal.primaryCuratorPersonId,dueOn:'2026-11-05',answer:null,answeredAt:null},null);
+ repository.append('directory_entity',{...header(942),kind:'person',name:'Лидер продукта',externalKeys:[]},null);repository.append('directory_link',{...header(943),kind:'leader',scope:{kind:'product',id:refs.productB.id},personId:fixtureId(942)},null);
+ return {dashboard:{entityType:'dashboard_def',id:fixtureId(900)},field:{entityType:'custom_field_def',id:field.id,revision:1},archived:{entityType:'core_goal_definition',id:archived.id},work:{entityType:'work',id:fixtureId(940)}};
+}

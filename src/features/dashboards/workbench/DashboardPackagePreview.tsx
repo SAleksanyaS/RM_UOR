@@ -1,0 +1,22 @@
+import { useEffect,useRef,useState } from 'react';
+import { useGlobalContext,useWorkbench } from '../../../app/workbench/context';
+import { WorkbenchApiError } from '../../../app/workbench/api-client';
+import { workbenchErrorMessage } from '../../../app/workbench/WorkbenchShell';
+import type { CommandRequest,CommandResult,JobSnapshot } from '../../../server/workbench/protocol';
+import type { WorkbenchReadModels } from '../../catalog/workbench-read-models';
+import { packagePreviewResultSchema,type PackagePreviewResult } from '../../publishing/workbench/contracts';
+import { configurationRequest } from './dashboard-ui';
+class DashboardPreviewConflict extends Error {}
+/** Validation reads the saved owner package; no client calculation or publication. */
+export function DashboardPackagePreview({packageId,draftId,version,dirty}:{packageId:string;draftId:string;version:number;dirty:boolean}){
+ const {client,session}=useWorkbench();const {context}=useGlobalContext();const [busy,setBusy]=useState(false),[error,setError]=useState<unknown>(null),[job,setJob]=useState<JobSnapshot|null>(null),[preview,setPreview]=useState<PackagePreviewResult|null>(null),[unknown,setUnknown]=useState(false);
+ const request=useRef<CommandRequest|null>(null),live=useRef(false),locked=useRef(false);
+ useEffect(()=>{live.current=true;return()=>{live.current=false;};},[client]);
+ const observe=async(id:string)=>{const response=await client.job(id);if(!live.current)return;setJob(response.data);if(response.data.status==='succeeded'){setPreview(packagePreviewResultSchema.parse(response.data.result));setBusy(false);}else if(!['running','queued'].includes(response.data.status)){setError(response.data.error?Error(response.data.error.message):Error('Проверка пакета не завершена'));setBusy(false);}return response.data;};
+ useEffect(()=>{if(!job||!['queued','running'].includes(job.status))return;let active=true;const timer=setTimeout(()=>{void observe(job.jobId).catch(failure=>{if(active&&live.current){setError(failure);setBusy(false);}});},100);return()=>{active=false;clearTimeout(timer);};},[job]);
+ const run=async()=>{if(locked.current||!context)return;locked.current=true;setBusy(true);setError(null);setPreview(null);try{
+  if(!request.current){const read=await client.query<WorkbenchReadModels['uor.package']>('uor.package',configurationRequest(context,{packageRef:{entityType:'publication_package',id:packageId}}));if(!live.current)return;const entry=read.data.entries.find(entry=>entry.draftId===draftId);if(!entry||entry.versionRef.revision!==version)throw new DashboardPreviewConflict('Черновик изменился. Откройте актуальный пакет.');request.current={commandId:crypto.randomUUID(),name:'package.preview',baseRevision:read.data.summary.editToken,payload:{packageId}};}
+  const response=await client.command<CommandResult>(request.current);if(!live.current)return;if('jobId'in response.data){await observe(response.data.jobId);}else throw Error('Сервер не вернул задание проверки пакета');request.current=null;setUnknown(false);
+ }catch(failure){if(live.current){const definite=failure instanceof DashboardPreviewConflict||failure instanceof WorkbenchApiError&&[403,409,422].includes(failure.status);if(definite)request.current=null;setUnknown(!definite);setError(failure);setBusy(false);}}finally{locked.current=false;}};
+ return <section aria-label="Проверка пакета дашборда"><p>Предпросмотр состава показывает порядок и настройки. Числа выводятся из опубликованного дашборда. Проверка ниже проверяет сохранённый пакет целиком.</p><button disabled={busy||dirty||!session?.allowedCommands.includes('package.preview')} onClick={()=>void run()}>{unknown?'Проверить результат проверки пакета':'Проверить пакет дашборда'}</button>{dirty&&<p>Сначала сохраните текущие настройки.</p>}{busy&&<p role="status">Проверяем пакет…</p>}{error!==null&&<p role="alert">{error instanceof DashboardPreviewConflict?error.message:workbenchErrorMessage(error)}</p>}{job&&!busy&&job.status!=='succeeded'&&<button onClick={()=>{void observe(job.jobId).catch(setError);}}>Обновить результат проверки</button>}{preview&&<><h3>Пакет дашборда проверен</h3><p>Редакция пакета {preview.packageRevision.revision} · ошибок: {preview.errors.length}</p>{preview.errors.map((problem,index)=><p role="alert" key={index}>{problem.code}: {problem.message}</p>)}{preview.warnings.map((problem,index)=><p key={index}>{problem.code}: {problem.message}</p>)}</>}</section>;
+}

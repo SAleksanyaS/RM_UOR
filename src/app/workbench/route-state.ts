@@ -64,6 +64,14 @@ export function readRouteState(input: string | URL, defaultContext: GlobalContex
   const snapshotId = resultMode === 'current' ? null : id('snapshot', explicitScope || selectionChanged ? null : defaultContext.snapshotId);
   return { pathname: url.pathname, context: globalContextSchema.parse({ scopePath: { ditId, clusterId, productId, teamId }, goalId, time, resultMode, snapshotId }), warnings };
 }
+/** Only the canonical execution types/one UUID selector can select a read-only card. */
+export function executionTargetFromUrl(input:string|URL):{entityType:'work'|'decision';id:string}|null {
+  const url=new URL(String(input),'http://localhost');
+  if(url.pathname!=='/execution'||url.searchParams.getAll('ref').length!==1)return null;
+  const parts=url.searchParams.get('ref')!.split('/');
+  const id=uuidSchema.safeParse(parts[1]);
+  return parts.length===2&&(parts[0]==='work'||parts[0]==='decision')&&id.success?{entityType:parts[0],id:id.data}:null;
+}
 /** Page selectors are separate from personal global context and survive startup canonicalization. */
 export function canonicalPageTarget(input: string | URL): string {
   const url = new URL(String(input), 'http://localhost');
@@ -78,6 +86,8 @@ export function canonicalPageTarget(input: string | URL): string {
       target.searchParams.set(kind + 'Revision', String(revision));
     }
   }
+  const executionTarget = executionTargetFromUrl(url);
+  if (executionTarget) target.searchParams.set('ref', executionTarget.entityType + '/' + executionTarget.id);
   target.hash = url.hash;
   return target.pathname + target.search + target.hash;
 }

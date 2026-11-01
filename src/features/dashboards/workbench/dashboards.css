@@ -1,0 +1,25 @@
+.wb-dashboards,.wb-dashboard-editor,.wb-custom-fields { min-width:0; }
+.wb-dashboards label,.wb-dashboard-editor label,.wb-custom-fields label { display:block; margin-block:.5rem; }
+.wb-dashboards input:not([type=checkbox]),.wb-dashboards select,.wb-dashboard-editor input:not([type=checkbox]),.wb-dashboard-editor select,.wb-dashboard-editor textarea,.wb-custom-fields input:not([type=checkbox]) { display:block; width:100%; max-width:36rem; min-height:44px; padding:.5rem; border:1px solid #698579; border-radius:.35rem; font:inherit; }
+.wb-dashboard-editor textarea { min-height:6rem; }
+.wb-dashboards fieldset,.wb-dashboard-editor fieldset,.wb-custom-fields fieldset { min-width:0; border:1px solid #9cb4a6; padding:.75rem; margin-block:1rem; border-radius:.5rem; }
+.wb-dashboard-editor { background:#fff; padding:1rem; border:1px solid #9cb4a6; border-radius:.75rem; }
+.wb-dashboard-actions { display:flex; flex-wrap:wrap; gap:.5rem; margin-block:.75rem; }
+.wb-dashboard-grid { display:grid; grid-template-columns:repeat(12,minmax(0,1fr)); gap:1rem; margin-block:1rem; }
+.wb-dashboard-block { min-width:0; background:#fff; padding:1rem; border:1px solid #bdd2c6; border-radius:.75rem; }
+.wb-dashboard-block h3 { margin-top:0; }
+.wb-dashboard-number { font-size:1.75rem; font-weight:650; }
+.wb-dashboard-table { max-width:100%; overflow-x:auto; }
+.wb-dashboard-table table { width:100%; border-collapse:collapse; font-size:.9rem; }
+.wb-dashboard-table th,.wb-dashboard-table td { padding:.5rem; text-align:left; vertical-align:top; border-bottom:1px solid #d0ded5; min-width:6rem; }
+.wb-dashboard-table a { color:#005b43; }
+.wb-dashboard-announcement:empty { display:none; }
+.wb-shell[data-density=compact] .wb-dashboard-block { padding:.5rem; }
+.wb-shell[data-density=compact] .wb-dashboard-table th,.wb-shell[data-density=compact] .wb-dashboard-table td { padding:.25rem; }
+.wb-shell[data-theme=dark] .wb-dashboard-block,.wb-shell[data-theme=dark] .wb-dashboard-editor { color:#e7f2ec; background:#233b30; }
+.wb-shell[data-theme=dark] .wb-dashboard-block a { color:#8ee7ba; }
+@media (max-width:640px) { .wb-dashboard-block { grid-column:1/-1!important; } .wb-dashboard-editor { padding:.5rem; } }
+@media (prefers-color-scheme:dark) {
+ .wb-shell[data-theme=system] .wb-dashboard-block,.wb-shell[data-theme=system] .wb-dashboard-editor { color:#e7f2ec; background:#233b30; }
+ .wb-shell[data-theme=system] .wb-dashboard-block a { color:#8ee7ba; }
+}

@@ -1,3 +1,4 @@
+import { registerConfigurationQueries } from '../../../features/catalog/workbench-configuration-query';
 import { createFileStore, defaultFileLimits } from '../files';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
@@ -78,7 +79,7 @@ export async function createWorkbenchTestApplication(options: { role: 'viewer' |
     registerExecutionCommands(commands, createExecutionService({ repository, drafts, store: createExecutionStore({ repository }), clock }));
     registerConfigurationCommands(commands, { drafts, preferences });
     if (options.scenario === 'partial-file') composeDataCommands({ repository, files, jobs, clock, sources, commands, accessPolicy });
-    const queries = new QueryRegistry(); registerPreferencesQueries(queries, preferences); registerPrivateCalculationPreviewQuery(queries, drafts); registerPrivateManualTipQuery(queries, drafts);
+    const queries = new QueryRegistry(); registerConfigurationQueries(queries, repository); registerPreferencesQueries(queries, preferences); registerPrivateCalculationPreviewQuery(queries, drafts); registerPrivateManualTipQuery(queries, drafts);
     const notifications = createNotificationService({ repository, provider: { async current() { throw Error('Test read must not poll'); } }, preferences: id => ({ notificationPersonId: preferences.get(id).notificationPersonId ?? null }) });
     registerNotificationCommands(commands, notifications);
     app = await createWorkbenchApp({ files, repository, clock, hostname: () => 'test-workbench-host', installationId, accessPolicy, commands, queries, jobs, modules: [], sessions: createLocalSessionStore({ clock }), allowedOrigins: [options.clientOrigin ?? 'http://127.0.0.1:5173'], queryPorts: { repository, index: createWorkbenchReadIndex(repository), drafts, publishing: publishing.readPort, sources, notifications, jobs, preferences }, readState: { defaultContext: async () => preferences.get(installationId).context ?? defaultContext, publishedCommit: () => options.scenario !== 'empty' ? inputCommit : null } });

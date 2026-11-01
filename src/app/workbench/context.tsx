@@ -4,7 +4,7 @@ import type { PreferencesRead } from '../../features/system/workbench-preference
 import { WorkbenchClient } from './api-client';
 import { canonicalPageTarget, goalContextForPath, readRouteState, routeUrl, updateGlobalContext, type ContextPatch, type WorkbenchRouteState } from './route-state';
 
-type WorkbenchValue = { client: WorkbenchClient; session: SessionView | null; preferences: PreferencesRead | null; loading: boolean; error: unknown; refreshSession(): Promise<void> };
+type WorkbenchValue = { client: WorkbenchClient; session: SessionView | null; preferences: PreferencesRead | null; loading: boolean; error: unknown; refreshSession(): Promise<void>; refreshPreferences(): Promise<PreferencesRead> };
 type GlobalContextValue = WorkbenchRouteState & { setContext(patch: ContextPatch): Promise<void>; navigate(pathname: string, options?: { replace?: boolean }): void; persistenceError: unknown };
 const Workbench = createContext<WorkbenchValue | null>(null);
 const Global = createContext<GlobalContextValue | null>(null);
@@ -41,6 +41,22 @@ export function WorkbenchProvider({ client, children }: { client: WorkbenchClien
     });
     owner.writes = work;
     return work.then(() => { if (isCurrent(owner)) setPersistenceError(null); }, failure => { if (isCurrent(owner)) setPersistenceError(failure); throw failure; });
+  }, [client, isCurrent]);
+  // Read back personal settings in the same queue as context writes. A view can
+  // unmount after its mutation commits; the current provider still needs the
+  // actual saved snapshot, while an obsolete client must never update it.
+  const refreshPreferences = useCallback((): Promise<PreferencesRead> => {
+    const owner = lifetime.current;
+    if (!isCurrent(owner) || owner.client !== client || !owner.ready) return Promise.reject(Error('Дождитесь завершения проверки рабочего места'));
+    const work = owner.writes.catch(() => undefined).then(async () => {
+      if (!isCurrent(owner) || !owner.ready) throw Error('Сеанс рабочего места изменился');
+      const response = await client.query<PreferencesRead>('preferences.get', { ...ownRequest, sort: [] });
+      if (!isCurrent(owner) || !owner.ready) throw Error('Сеанс рабочего места изменился');
+      setPreferences(response.data);
+      return response.data;
+    });
+    owner.writes = work.then(() => undefined, () => undefined);
+    return work;
   }, [client, isCurrent]);
   const refreshSession = useCallback(async () => {
     const owner = lifetime.current;
@@ -97,7 +113,7 @@ export function WorkbenchProvider({ client, children }: { client: WorkbenchClien
     applyRoute({ ...current, pathname: url.pathname, context });
     if (context?.goalId !== current.context?.goalId) void persist(context).catch(() => undefined);
   }, [applyRoute, persist]);
-  return <Workbench.Provider value={{ client, session, preferences, loading, error, refreshSession }}><Global.Provider value={{ ...route, setContext, navigate, persistenceError }}>{children}</Global.Provider></Workbench.Provider>;
+  return <Workbench.Provider value={{ client, session, preferences, loading, error, refreshSession, refreshPreferences }}><Global.Provider value={{ ...route, setContext, navigate, persistenceError }}>{children}</Global.Provider></Workbench.Provider>;
 }
 export function useWorkbench(): WorkbenchValue {
   const value = useContext(Workbench); if (!value) throw Error('WorkbenchProvider is required'); return value;

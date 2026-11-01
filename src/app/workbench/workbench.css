@@ -24,3 +24,14 @@
 .wb-table-scroll { max-width: 100%; overflow-x: auto; }
 .wb-table-scroll table { min-width: max-content; }
 @media (max-width: 480px) { .wb-navigation { display: grid; grid-template-columns: minmax(0, 1fr); } .wb-dialog-backdrop { padding: .25rem; } .wb-notifications { padding: .75rem; } }
+/* Persisted personal visuals belong to the shell, including routes that never
+   mount a dashboard. Dashboard-specific block styling remains in its feature. */
+.wb-shell[data-density=compact] .wb-main { padding: .75rem; }
+.wb-shell[data-theme=dark] { color: #e7f2ec; background: #182a23; }
+.wb-shell[data-theme=dark] .wb-header { background: #233b30; }
+.wb-shell[data-theme=dark] .wb-search a { color: #8ee7ba; }
+@media (prefers-color-scheme: dark) {
+  .wb-shell[data-theme=system] { color: #e7f2ec; background: #182a23; }
+  .wb-shell[data-theme=system] .wb-header { background: #233b30; }
+  .wb-shell[data-theme=system] .wb-search a { color: #8ee7ba; }
+}
