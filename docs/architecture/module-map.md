@@ -2,6 +2,8 @@
 
 Новый штатный запуск — локальный модульный монолит: React → HTTP v1 → команды/запросы → предметные сервисы → один активный SQLite и принадлежащие ему файлы. Проверенные общие определения распространяются через Git. Доступ, браузерный профиль и внешняя аутентификация остаются локальными.
 
+Завершение редизайна сохраняет эти границы. `app/workbench/use-unsaved-changes.ts` и `context.tsx` обслуживают единый guard; `features/goal-setup/workbench/draft-session.ts` восстанавливает неизвестный шаг по существующим квитанциям. `features/publishing/workbench/publication-validation.ts` переиспользует проверку полного графа для exact Git candidate и применения. `data.lineage` возвращает имена и единицы из точной сохранённой методики; текущий head не подменяет историю. [Результаты и ограничения](../validation/redesign-completion.md).
+
 | Область | Точки входа | Граница |
 | --- | --- | --- |
 | Штатный запуск | `scripts/dev.mjs`, `src/server/main.ts`, `server/workbench/bootstrap.ts`, `app/main.tsx`, `app/workbench/WorkbenchApp.tsx` | Новая оболочка и только новый API; прежний createApp не регистрируется. |

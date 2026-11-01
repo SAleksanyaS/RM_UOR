@@ -16,6 +16,15 @@ const topFiles = new Set(['.gitignore', '.nvmrc', '.node-version', 'AGENTS.md', 
 const currentDocs = new Set(['docs/MASTER_SPEC.md', 'docs/USER_GUIDE.md', 'docs/AI_PDLC_HANDOFF.md', 'docs/BANK_CONNECTORS_RUNBOOK.md', 'docs/ARCHIVE.md', 'docs/VALIDATION.md', 'docs/remaining-work.md', 'docs/remaining-by-environment.md', 'docs/OKO_WORKFLOW.md', 'docs/validation/workbench-acceptance.md', 'docs/releases/workbench-candidate.md']);
 // Exact public approved contracts and linked current plans only; no evidence/history glob.
 const approvedWorkbenchDocs = new Set([
+  "docs/superpowers/specs/2026-11-01-product-redesign.txt",
+  "docs/superpowers/plans/2026-11-01-product-redesign-completion.md",
+  "docs/releases/redesign-candidate.md",
+  "docs/validation/redesign-completion.md",
+  "docs/validation/redesign-completion-forms.md",
+  "docs/validation/redesign-completion-ui.md",
+  "docs/validation/redesign-completion-publishing.md",
+  "docs/validation/redesign-completion-oko.md",
+  "docs/validation/redesign-dependencies.md",
   "docs/superpowers/plans/2026-10-28-uor-workbench-rebuild.md",
   "docs/superpowers/specs/2026-10-28-uor-workbench/README.md",
   "docs/superpowers/specs/2026-10-28-uor-workbench/APPROVAL.md",

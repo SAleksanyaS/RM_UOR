@@ -1,6 +1,10 @@
 # Проверка локального кандидата Workbench 0.5.0
 
-## Текущее объединённое состояние — 2026-11-01
+## Кандидат редизайна — 2026-11-01
+
+Ветка `codex/uor-redesign-reference` продолжает базу `ac299a5`. Новый независимый review, полный прогон, браузерные материалы и чистая поставка учитываются в [журнале завершения](validation/redesign-completion.md) и [карточке поставки](releases/redesign-candidate.md). Результаты ниже относятся к предыдущему этапу и не засчитываются за проверки новых изменений.
+
+## Историческое объединённое состояние Workbench — до редизайна
 
 Ветка `codex/uor-workbench-rebuild`, текущая source revision **`a445c23385c9f32f4a284537d944c228430df11e`**. Предыдущая база **`fba0ce678c082b9dae1f576fbda87df86fb413c1`** прошла общий suite **260файлов/1892теста,exit0,668.70s**, старт2026-11-01 10:41:50MSK, лог `workbench-candidate-full-suite-final.log`; команда `npm test -- --fileParallelism --maxWorkers=2`. Сборка той базы exit0,Vite2.12s. Это pre-final-fix evidence, не новый полный suite a445c23. Подробные границы: [матрица приёмки](validation/workbench-acceptance.md), [кандидат0.5.0](releases/workbench-candidate.md).
 
