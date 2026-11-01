@@ -5,7 +5,8 @@ import type { GlobalContext, JobSnapshot } from '../../../src/server/workbench/p
 import { WorkbenchHttpError } from '../../../src/server/workbench/protocol';
 import { createAccessPolicyService } from '../../../src/features/identity/workbench-access-policy';
 import { createFakeBitbucket } from '../../../src/features/publishing/workbench/fake-bitbucket';
-import { buildPackageManifest, canonicalBytes } from '../../../src/features/publishing/workbench/package-manifest';
+import { buildPackageManifest, canonicalBytes, hashBytes } from '../../../src/features/publishing/workbench/package-manifest';
+import { syntheticCandidateInput } from '../../../src/features/publishing/workbench/testing/candidate-fixture';
 import { verifyPublicationAnchor } from '../../../src/features/publishing/workbench/publication-anchor';
 import { readMainProjection } from '../../../src/features/publishing/workbench/package-projection';
 import type { PreparedProposal, PublicationGitPort } from '../../../src/features/publishing/workbench/git-port';
@@ -66,11 +67,22 @@ export async function createPublicationScenario() {
     async prepare({ manifest, files, expectedRemoteHead }) {
       const key = manifest.packageRevision.contentHash, prior = prepared.get(key); if (prior) return prior.proposal;
       const revision = manifest.packageRevision, prefix = `published/workbench/packages/${revision.packageId}/${revision.revision}/`;
-      const tree = new Map<string, Uint8Array>([...files].map(([name, bytes]) => [prefix + name, new Uint8Array(bytes)])); tree.set(prefix + 'manifest.json', canonicalBytes(manifest));
+      const previous = expectedRemoteHead ? [...prepared.values()].find(value => value.proposal.commit === expectedRemoteHead) : null;
+      if (expectedRemoteHead && !previous) throw new WorkbenchHttpError(409, 'PREVIEW_STALE', 'Unknown synthetic proposal parent');
+      const tree = new Map<string, Uint8Array>([...main.files, ...(previous?.files ?? [])].map(([name, bytes]) => [name, new Uint8Array(bytes)]));
+      for (const [name, bytes] of files) tree.set(prefix + name, new Uint8Array(bytes));
+      tree.set(prefix + 'manifest.json', canonicalBytes(manifest));
       const proposal: PreparedProposal = { packageRevision: revision, branch: `uor/${revision.curatorPersonId}/${revision.packageId}`, checkout: path.join(curator.root, '.runtime/synthetic-external-checkout'), commit: createHash('sha1').update(key).digest('hex'), expectedRemoteHead };
       prepared.set(key, { proposal, files: tree }); return proposal;
     },
-    async verifyPrepared(value) { if ((remote.get(value.branch) ?? null) !== value.expectedRemoteHead) throw new WorkbenchHttpError(409, 'PREVIEW_STALE', 'Synthetic branch changed'); },
+    async verifyPrepared(value) {
+      const saved = prepared.get(value.packageRevision.contentHash);
+      if (!saved || hashBytes(canonicalBytes(saved.proposal)) !== hashBytes(canonicalBytes(value)) || value.packageRevision.baseCommit !== main.commit || (remote.get(value.branch) ?? null) !== value.expectedRemoteHead) throw new WorkbenchHttpError(409, 'PREVIEW_STALE', 'Synthetic prepared tree, target or branch changed');
+    },
+    async readCandidate(value) {
+      await git.verifyPrepared(value);
+      return syntheticCandidateInput(value, await git.readMain(), prepared.get(value.packageRevision.contentHash)!.files);
+    },
   };
   const terminal: TerminalRunner = {
     async openAuth() { authOpens++; gitAuthorized = true; },

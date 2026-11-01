@@ -3,7 +3,7 @@ import { spawn,execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createServer } from 'node:net';
 import { randomUUID } from 'node:crypto';
-import { readFile,writeFile,mkdtemp,rm } from 'node:fs/promises';
+import { readFile,writeFile,mkdtemp,rm,realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { afterEach,expect,it,vi } from 'vitest';
 import { gitStagingFixture,stagingCleanups } from '../../../../tests/fixtures/workbench/git-staging';
@@ -19,7 +19,15 @@ async function fixture(nativeLauncher=launcher) {
   const quoted="'"+trace.replaceAll('\\','/').replaceAll("'","'\\''")+"'";
   await writeFile(hook,'#!/bin/sh\nprintf "corporate_hook\\n" >> '+quoted+'\n"$UOR_NATIVE_NODE" "$UOR_NATIVE_HELPER" --gate\n',{mode:0o755});
   const original=await readFile(hook,'utf8');
-  const native=createNativeTerminalPort({gitExecutable:f.gitExecutable,nodeExecutable:process.execPath,helperPath:path.resolve('scripts/native-git-terminal.mjs'),privateRoot:path.join(f.root,'native-private'),launcher:nativeLauncher});
+  let privateRoot=path.join(f.root,'native-private');
+  if(process.platform!=='win32'){
+    // Unix sockets have a byte-length limit. Keep only the owned IPC root short;
+    // the repository fixture still exercises long Unicode paths under TMPDIR.
+    const temporaryBase=await realpath('/tmp');privateRoot=await mkdtemp(path.join(temporaryBase,'uor-native-port-'));
+    const owned=privateRoot;
+    stagingCleanups.push(async()=>{if(path.dirname(owned)!==temporaryBase||!path.basename(owned).startsWith('uor-native-port-')||await realpath(owned)!==owned)throw Error('Unsafe native IPC fixture cleanup');await rm(owned,{recursive:true,force:true});});
+  }
+  const native=createNativeTerminalPort({gitExecutable:f.gitExecutable,nodeExecutable:process.execPath,helperPath:path.resolve('scripts/native-git-terminal.mjs'),privateRoot,launcher:nativeLauncher});
   return {...f,provider,prepared,native,hook,original,trace,input:{cwd:prepared.checkout,args:['push','origin',prepared.commit+':refs/heads/'+prepared.branch],preparedCommit:prepared.commit,signal:new AbortController().signal}};
 }
 it('runs real native Git through the existing corporate hook then the IPC gate, without modifying that hook',async()=>{

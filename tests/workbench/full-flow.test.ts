@@ -51,6 +51,7 @@ it('full_capture_enrich_draft_pr_merge_apply_second_client', async () => {
     const commandId = randomUUID(), submit = { packageId: pkg.packageId, previewToken: pkg.preview.previewToken };
     const accepted = await curator.request.command('package.submit', submit, null, commandId);
     let job = await scenario.waitJob(curator, accepted.jobId);
+    expect(job.error).toBeNull();
     expect(job).toMatchObject({ status: 'waiting_user', stage: 'git.auth', warnings: [{ code: 'GIT_AUTH_REQUIRED' }] });
     expect(scenario.counts()).toMatchObject({ prepares: 1, pushes: 0, creates: 0 });
     const retained = await curator.request.query<any>('uor.package', { packageRef: { entityType: 'publication_package', id: pkg.packageId } }, context);
