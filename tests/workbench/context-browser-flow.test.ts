@@ -34,6 +34,7 @@ it('fresh_user_selects_published_scope_time_and_source_context_in_main_chrome', 
     await page.goto(f.origin + '/overview');
     await page.getByLabel('Режим работы', { exact: true }).selectOption('viewer');
     await expect.poll(async () => (await f.request.session()).role).toBe('viewer');
+    await page.getByText('Область и период', { exact: true }).click();
     await page.getByLabel('ДИТ', { exact: true }).selectOption(fixtureId(73000));
     await page.getByLabel('Кластер', { exact: true }).selectOption(fixtureId(73001));
     await page.getByLabel('Продукт', { exact: true }).selectOption(fixtureId(73002));

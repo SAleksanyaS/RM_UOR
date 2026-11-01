@@ -1,4 +1,4 @@
-import { useEffect,useRef,useState } from 'react';
+import { useEffect,useLayoutEffect,useRef,useState } from 'react';
 import { useWorkbench } from '../../../app/workbench/context';
 import { WorkbenchApiError } from '../../../app/workbench/api-client';
 import type { CommandResult,JobSnapshot,OwnQueryRequest } from '../../../server/workbench/protocol';
@@ -29,6 +29,7 @@ export function MaintenancePanel({onClose}:{onClose():void}) {
  function fail(value:unknown){if(value instanceof WorkbenchApiError){setError(errorText(value.problem.code,value.problem.message));if(value.problem.code==='RECOVERY_REQUIRED')setRecovery(true);}else setError('Результат операции неизвестен. Проверьте сохранённую операцию; повторная замена не отправляется.');}
  async function list(cursor:string|null=null){const generation=alive.current,sequence=++listSequence.current;try{const response=await client.query<BackupsRead>('backups.list',{...own,page:{limit:50,cursor}});if(generation===alive.current&&sequence===listSequence.current){setBackups(previous=>cursor&&previous?{...response.data,items:[...previous.items,...response.data.items]}:response.data);setListError(false);}}catch{if(generation===alive.current&&sequence===listSequence.current)setListError(true);}}
  useEffect(()=>{close.current?.focus();},[]);
+ useLayoutEffect(()=>{if(dialog.current&&!dialog.current.contains(document.activeElement))close.current?.focus();},[preview,job?.status]);
  useEffect(()=>{
   const generation=++alive.current;handled.current='';setOperation(null);setJob(null);setCheck(null);setError(null);setRecovery(false);setSending(false);setFile(null);setHandle(null);setPreview(null);setConfirmed(false);setBackups(null);setPollError(false);setReadingJob(false);
   if(session){try{const saved=JSON.parse(sessionStorage.getItem(storageKey)??'null') as Operation|null;if(saved&&/^[a-f0-9-]{36}$/.test(saved.commandId)&&['backup.create','backup.restore.preview','backup.restore.apply','publication.check','publication.apply'].includes(saved.name)&&(saved.jobId===null||/^[a-f0-9-]{36}$/.test(saved.jobId)))setOperation(saved);}catch{/* Malformed local hints never authorize a command. */}void list();}

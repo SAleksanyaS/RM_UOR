@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { tmpdir } from 'node:os';
 import { afterEach, expect, it } from 'vitest';
 import { z } from 'zod';
 import { createWorkbenchRepository } from '../storage/workbench-repository';
@@ -8,7 +9,7 @@ import type { AccessPolicyService, OwnAccessProfile } from '../../features/ident
 const cleanup:Array<()=>void>=[];
 afterEach(()=>{for(const close of cleanup.splice(0))close();});
 function fixture(){
- const repository=createWorkbenchRepository({filename:':memory:',artifactRoot:process.env.TEMP!}),clock={now:()=> '2026-10-28T10:00:00Z'},installationId=randomUUID(),a=randomUUID(),b=randomUUID();
+ const repository=createWorkbenchRepository({filename:':memory:',artifactRoot:tmpdir()}),clock={now:()=> '2026-10-28T10:00:00Z'},installationId=randomUUID(),a=randomUUID(),b=randomUUID();
  let personId:OwnAccessProfile['personId']=a;const access=():OwnAccessProfile=>({role:'curator',personId,displayName:'Synthetic',policyState:'verified',checkedAt:clock.now()});
  const policy:AccessPolicyService={resolveOwnAccess:async()=>access(),assertCommandAllowed:async()=>access(),assertFreshPublishAllowed:async()=>access()},jobs=createJobStore({repository,clock}),registry=createCommandRegistry({repository,jobs,accessPolicy:policy});cleanup.push(()=>repository.close());
  const context=(commandId:string):CommandContext=>({repository,clock,installationId,commandId,requestId:randomUUID(),ownAccess:access(),actor:{installationId,profilePersonId:personId,hostname:'synthetic'}});

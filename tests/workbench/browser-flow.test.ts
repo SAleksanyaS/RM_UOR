@@ -17,7 +17,12 @@ it('ui_keyboard_mobile_empty_personal_path_and_real_chrome', async () => {
   await f.page.getByRole('heading', { name: 'Новый отчёт ОКО' }).waitFor();
   expect((await f.request.session()).defaultContext).toBeNull();
   await f.page.getByLabel('Режим работы', { exact: true }).selectOption('viewer');
-  await f.page.getByRole('button', { name: 'Новый сценарий' }).waitFor({ state: 'hidden' });
+  await expect.poll(async () => (await f.request.session()).role).toBe('viewer');
+  expect(await f.page.getByRole('button', { name: 'Новый сценарий' }).isEnabled()).toBe(true);
+  const reader = await f.request.session();
+  expect(reader.allowedCommands).toContain('oko.workflow.open');
+  expect(reader.allowedCommands).not.toContain('source.browser.workflow.open');
+  expect(reader.allowedCommands).not.toContain('package.submit');
   await f.page.getByLabel('Режим работы', { exact: true }).selectOption('curator');
   await f.page.getByRole('button', { name: 'Новый сценарий' }).waitFor();
   await f.page.goto(f.origin + '/oko.html');

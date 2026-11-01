@@ -24,7 +24,7 @@ export async function createLocalBrowserRun(providers: WorkbenchRuntimeProviders
   try {
     host = await createServer({ configFile: path.join(codeRoot, 'vite.config.ts'), root: codeRoot, cacheDir: path.join(local.root, '.runtime/vite-cache'), server: { host: '127.0.0.1', port: local.ui, strictPort: true, proxy: { '/api': local.origin } } });
     await host.listen();
-    browser = await chromium.launch({ executablePath, headless: true });
+    browser = await chromium.launch({ executablePath, headless: true, chromiumSandbox: true });
     const context = await browser.newContext({ viewport: { width: 1024, height: 900 }, acceptDownloads: true });
     const page = await context.newPage(); page.setDefaultTimeout(15000);
     const errors: string[] = []; page.on('pageerror', error => errors.push(String(error)));

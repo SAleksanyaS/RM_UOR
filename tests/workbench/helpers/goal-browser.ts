@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
 import { chromium, type BrowserContext, type Page } from 'playwright';
 import { expect } from 'vitest';
-import { createLocalBrowserRun, downloadedBytes } from './browser';
+import { chromeExecutable, createLocalBrowserRun, downloadedBytes } from './browser';
 import { fixtureId, makeEntityGraph, makeHeader, makeNumericFixture, makePublicationAnchor } from '../../fixtures/workbench/factories';
 import type { DirectoryEntity, DirectoryLink, SourceDefinition, SourceFieldMapping, WorkbenchEntity } from '../../../src/domain/workbench/entities';
 import type { WorkbenchRepository } from '../../../src/server/storage/workbench-repository';
@@ -68,21 +68,25 @@ export async function responsiveProof(page: Page, artifact: (name: string) => st
 }
 
 export async function createGoalBrowserRun() {
+  const executablePath = await chromeExecutable();
   const report = await startGoalReport(), contexts = new Set<BrowserContext>(), launches: BrowserContext[] = [];
-  const launchWaiters: Array<{ after: number; resolve(context: BrowserContext): void }> = [];
+  const launchWaiters: Array<{ after: number; resolve(context: BrowserContext): void; reject(error: unknown): void }> = [];
+  let launchFailure: unknown = null;
   const mainFiles = new Map<string, Uint8Array>();
   const git: PublicationGitPort = { async readMain() { return { repositoryId: 'synthetic-goal-main', commit: 'a'.repeat(40), files: new Map(mainFiles) }; }, async prepare() { throw Error('New-goal preview must not publish'); }, async inspectRemote() { return null; }, async verifyPrepared() { throw Error('New-goal preview must not publish'); } };
   let f: Awaited<ReturnType<typeof createLocalBrowserRun>>;
   try { f = await createLocalBrowserRun({ git, classification: { mode: 'demo-only', classifyRecord: () => true }, browserLauncher: { async launchPersistent(_profile, folder, options) {
-    const context = await chromium.launchPersistentContext(folder, options); contexts.add(context); launches.push(context); context.once('close', () => contexts.delete(context));
+    try {
+    const context = await chromium.launchPersistentContext(folder, { ...options, executablePath, channel: undefined, headless: true }); contexts.add(context); launches.push(context); context.once('close', () => contexts.delete(context));
     for (let index = launchWaiters.length - 1; index >= 0; index--) if (launches.length > launchWaiters[index].after) { const waiter = launchWaiters.splice(index, 1)[0]; waiter.resolve(launches[waiter.after]); } return context;
+    } catch (error) { launchFailure = error; for (const waiter of launchWaiters.splice(0)) waiter.reject(error); throw error; }
   } } }); } catch (error) { await report.close(); throw error; }
   const organization = seedOrganization(f.runtime.deps.repository), page = f.page;
   const context = () => f.request.session().then(session => session.defaultContext!);
   const ownPackage = async () => { const ctx = await context(); const queue = await f.request.query<WorkbenchReadModels['uor.queue']>('uor.queue', {}, ctx); expect(queue.items).toHaveLength(1); return f.request.query<WorkbenchReadModels['uor.package']>('uor.package', { packageRef: queue.items[0].packageRef }, ctx); };
   const commands: Array<{ commandId: string; name: string; baseRevision: string | null; payload: any }> = [];
   page.on('request', request => { if (request.url().endsWith('/api/v1/commands') && request.method() === 'POST') commands.push(request.postDataJSON()); });
-  const launched = (after: number) => launches.length > after ? Promise.resolve(launches[after]) : new Promise<BrowserContext>(resolve => launchWaiters.push({ after, resolve }));
+  const launched = (after: number) => launches.length > after ? Promise.resolve(launches[after]) : launchFailure ? Promise.reject(launchFailure) : new Promise<BrowserContext>((resolve, reject) => launchWaiters.push({ after, resolve, reject }));
   const nativePage = () => { const value = launches.at(-1)?.pages()[0]; if (!value) throw Error('No actual native page'); return value; };
   const refreshMain = () => { mainFiles.clear(); for (const entry of f.runtime.deps.repository.readPublishedCatalog()) mainFiles.set(`records/${entry.entityType}/${entry.value.id}/${entry.value.revision}.json`, Buffer.from(JSON.stringify(entry.value))); };
   refreshMain();

@@ -1,7 +1,7 @@
 import { afterEach, expect, it } from 'vitest';
 import { chromium, type BrowserContext, type Page } from 'playwright';
 import { createHash } from 'node:crypto';
-import { createLocalBrowserRun, downloadedBytes } from './helpers/browser';
+import { chromeExecutable, createLocalBrowserRun, downloadedBytes } from './helpers/browser';
 import { rawPersonalReport, startPersonalReport } from './helpers/personal-report';
 import { fixtureId } from '../fixtures/workbench/factories';
 import type { OkoWorkspaceView } from '../../src/features/connectors/workbench-workflow-contracts';
@@ -12,13 +12,14 @@ const dictionaryColumns = ['key', 'productId', 'productName', 'clusterId', 'clus
 function dictionary(key: string, leader: string) { return Buffer.from(dictionaryColumns.join(';') + '\n' + [key, fixtureId(88001), 'Человеческий продукт', fixtureId(88002), 'Локальный кластер', fixtureId(88003), 'Локальный ДИТ', fixtureId(88004), 'Руководитель кластера', fixtureId(88005), leader].join(';') + '\n'); }
 
 it('personal_record_download_correct_directory_enrich_download_and_restart_in_chrome', async () => {
+  const executablePath = await chromeExecutable();
   const report = await startPersonalReport(); closes.push(report.close);
   const contexts = new Set<BrowserContext>(), launches: BrowserContext[] = [], waiters: Array<{ resolve(context: BrowserContext): void; reject(error: unknown): void }> = [];
   let launchFailure: unknown = null;
   closes.push(async () => { await Promise.all([...contexts].map(context => context.close())); });
   const f = await createLocalBrowserRun({ browserLauncher: { async launchPersistent(_profile, folder, options) {
     try {
-      const context = await chromium.launchPersistentContext(folder, options); contexts.add(context); launches.push(context);
+      const context = await chromium.launchPersistentContext(folder, { ...options, executablePath, channel: undefined, headless: true }); contexts.add(context); launches.push(context);
       context.once('close', () => contexts.delete(context)); for (const waiter of waiters.splice(0)) waiter.resolve(context); return context;
     } catch (error) { launchFailure = error; for (const waiter of waiters.splice(0)) waiter.reject(error); throw error; }
   } } }); closes.push(f.close);
@@ -82,9 +83,12 @@ it('personal_record_download_correct_directory_enrich_download_and_restart_in_ch
     };
     await upload('UNMATCHED-ALIAS', 'Руководитель продукта', true);
     const unresolved = await run(null); expect(unresolved.unresolvedRows).toBe(2);
-    await page.getByText(/UNMAPPED_PRODUCT/).first().waitFor();
+    expect(unresolved.issues.some(issue => issue.code === 'UNMAPPED_PRODUCT')).toBe(true);
+    await page.getByRole('button', { name: 'Показать замечания', exact: true }).click();
+    await page.getByText('Продукт не найден в справочнике. Проверьте ключ продукта в исходном файле и добавьте или исправьте его в справочнике.', { exact: true }).first().waitFor();
     await upload('ALIAS-A', 'Руководитель продукта', false);
     const enriched = await run(unresolved.resultId); expect(enriched.unresolvedRows).toBe(0);
+    await page.getByRole('button', { name: 'Все столбцы', exact: true }).click();
     await page.getByRole('region', { name: 'Результат обогащения', exact: true }).getByText('Руководитель продукта', { exact: true }).first().waitFor();
     let event = page.waitForEvent('download'); await page.getByRole('link', { name: 'Скачать исходный файл', exact: true }).click(); const original = await downloadedBytes(await event);
     expect(original).toEqual(rawPersonalReport); expect(original.toString()).not.toContain('Руководитель');
