@@ -28,7 +28,7 @@ it('bootstraps confirmed current heads and maintains them on entity/anchor commi
   expect(index.list('core_goal_definition')).toEqual([f.input.goal]);
   expect(index.list('core_goal_definition')).toEqual([f.input.goal]);
   expect(f.repository.getStateRevision()).toBe(initial);
-  const anchor=makePublicationAnchor({id:fixtureId(280001),packageId:fixtureId(280002),publicationState:'unconfirmed',mainCommit:null,verifiedAt:null,timeVerification:'unknown',mergedAt:null});
+  const anchor=makePublicationAnchor({id:fixtureId(280001),packageId:fixtureId(280001),publicationState:'unconfirmed',mainCommit:null,verifiedAt:null,timeVerification:'unknown',mergedAt:null});
   const next={...f.input.goal,revision:2,title:'Новая цель',publicationAnchorId:anchor.id};
   f.repository.transaction(()=>{f.repository.appendPublicationAnchor(anchor,null); f.repository.append('core_goal_definition',next,1);});
   expect(index.list('core_goal_definition')).toEqual([f.input.goal]);
@@ -187,7 +187,7 @@ it('binds history cursors to owner, revision and selected filters',async()=>{
   await expect(f.registry.execute('history.series',next,f.context)).rejects.toMatchObject({code:'CURSOR_STALE'});
 });
 it('keeps a confirmed unknown-date publication current and rejects a private foreign capture',async()=>{
-  const f=queryFixture();const anchor=makePublicationAnchor({id:fixtureId(286101),packageId:fixtureId(286102),mergedAt:null,timeVerification:'unknown'});
+  const f=queryFixture();const anchor=makePublicationAnchor({id:fixtureId(286101),packageId:fixtureId(286101),mergedAt:null,timeVerification:'unknown'});
   const goal={...f.input.goal,revision:2,publicationAnchorId:anchor.id};
   const capture={...f.input.captures[0],id:fixtureId(286103),publicationAnchorId:null,actor:{...f.context.actor,profilePersonId:fixtureId(286104)}};
   f.repository.transaction(()=>{f.repository.appendPublicationAnchor(anchor,null);f.repository.append('core_goal_definition',goal,1);f.repository.append('capture',capture,null);});
@@ -337,4 +337,18 @@ it('final_I1_lineage_hydrates_each_exact_capture_once_for_multiple_facts',async(
  const read=f.repository.readVersion;let reads=0;f.repository.readVersion=((reference:any)=>{if(reference.entityType==='capture')reads++;return read(reference);}) as typeof read;
  const line=await f.query('data.lineage',{resultRef:saved.resultRef}) as any;
  expect(line.facts).toHaveLength(2);expect(line.captures).toHaveLength(1);expect(reads).toBe(1);
+});
+
+
+it('lineage exposes metric names and units from the saved exact method, never newer heads',async()=>{
+ const input=makeNumericFixture({values:['250'],targets:['200']});
+ input.metrics[0].name='Подключённые команды';input.metrics[0].unit={code:'count',label:'команд'};
+ input.facts.forEach(fact=>{fact.unitCode='count';});input.captures.forEach(capture=>capture.canonicalRows.forEach(row=>{row.unitCode='count';}));
+ const f=queryFixture(input),saved=await f.prepare();
+ const metric=input.metrics[0];f.repository.append('metric_definition',{...metric,revision:2,name:'Сегодняшнее другое название',unit:{code:'count',label:'других единиц'}},1);
+ const line=await f.query('data.lineage',{resultRef:saved.resultRef}) as any;
+ expect(line.metrics).toEqual([metric]);
+ expect(line.metrics[0]).toMatchObject({revision:1,name:'Подключённые команды',unit:{code:'count',label:'команд'}});
+ const factOnly=await f.query('data.lineage',{factRef:{entityType:'observed_fact',id:input.facts[0].id,revision:1}}) as any;
+ expect(factOnly.metrics).toEqual([]); // An isolated fact has no exact metric revision: do not guess from current heads.
 });

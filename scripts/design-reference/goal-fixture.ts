@@ -4,7 +4,7 @@ import type { WorkbenchRepository } from '../../src/server/storage/workbench-rep
 import { fixtureId, makeEntityGraph, makeHeader, makeNumericFixture, makePublicationAnchor } from '../../tests/fixtures/workbench/factories';
 
 /** Synthetic reference data only. Call explicitly on a disposable, empty core. */
-export function seedGoalReference(repository: WorkbenchRepository): { ditId: UUIDv4; goalIds: UUIDv4[] } {
+export function seedGoalReference(repository: WorkbenchRepository, options: { includeNumericEdgeCases?: boolean } = {}): { ditId: UUIDv4; goalIds: UUIDv4[] } {
   if (repository.exportWorkspaceCore().length !== 0) {
     throw new Error('Design reference requires an empty disposable workbench; existing data was not changed');
   }
@@ -41,12 +41,19 @@ export function seedGoalReference(repository: WorkbenchRepository): { ditId: UUI
   ];
   links.forEach(value => add('directory_link', value));
 
-  const goals = [
+  type ReferenceGoal = { title:string; description:string; metric:string; value:string|null; target:string; unit:string; unitLabel:string; cluster:0|1; decrease:boolean; range?:readonly [string,string]; notApplicable?:boolean };
+  const goals: ReferenceGoal[] = [
     { title: 'Обращения решены в срок', description: 'Не менее 95% обращений закрываются в установленный срок.', metric: 'Доля обращений, решённых в срок', value: '87', target: '95', unit: 'percent', unitLabel: '%', cluster: 0, decrease: false },
     { title: 'Новые команды подключены к сервису', description: 'Подключить к сервису не менее 200 команд.', metric: 'Подключённые команды', value: '250', target: '200', unit: 'count', unitLabel: 'команд', cluster: 0, decrease: false },
     { title: 'Регламентные задания выполнены успешно', description: 'Не менее 98% заданий завершаются успешно. Значение ожидается из источника.', metric: 'Доля успешно выполненных заданий', value: null, target: '98', unit: 'percent', unitLabel: '%', cluster: 1, decrease: false },
     { title: 'Критические инциденты под контролем', description: 'Не более пяти критических инцидентов за отчётную дату.', metric: 'Критические инциденты', value: '3', target: '5', unit: 'count', unitLabel: 'инцидентов', cluster: 1, decrease: true },
-  ] as const;
+  ];
+  if (options.includeNumericEdgeCases) goals.push(
+    { title:'Срок обработки в допустимом диапазоне', description:'Требование — от 10 до 20 дней включительно.', metric:'Срок обработки', value:'15', target:'10', unit:'count', unitLabel:'дней', cluster:0, decrease:false, range:['10','20'] },
+    { title:'Проверки готовности пройдены', description:'Из 10 предусмотренных проверок необходимо пройти не менее восьми.', metric:'Выполненные проверки из 10 предусмотренных', value:'7', target:'8', unit:'count', unitLabel:'из 10', cluster:0, decrease:false },
+    { title:'Ноль критических инцидентов', description:'Измеренный ноль — полученное значение, отдельное от отсутствия данных.', metric:'Критические инциденты', value:'0', target:'5', unit:'count', unitLabel:'инцидентов', cluster:1, decrease:true },
+    { title:'Показатель временно не применяется', description:'Неприменимость явно обоснована для выбранной даты.', metric:'Контроль неработающего сервиса', value:null, target:'95', unit:'percent', unitLabel:'%', cluster:1, decrease:false, notApplicable:true },
+  );
   const goalIds: UUIDv4[] = [];
   for (const [index, goal] of goals.entries()) {
     const input = makeNumericFixture({
@@ -63,6 +70,11 @@ export function seedGoalReference(repository: WorkbenchRepository): { ditId: UUI
     input.metrics[0].unit = { code: goal.unit, label: goal.unitLabel };
     input.metrics[0].domain = goal.unit === 'count' ? 'nonnegative_integer' : 'nonnegative_decimal';
     if (input.method.mode !== 'numeric') throw new Error('Numeric fixture returned a nonnumeric method');
+    if (goal.range) {
+      input.method.rules[0].condition = { op:'range', min:goal.range[0], max:goal.range[1] };
+      input.method.rules[0].normalization = { kind:'binary_condition_v1' };
+    }
+    if (goal.notApplicable) input.applicability.push({ ...makeHeader((index + 1) * 100_000 + 400), assignmentId:input.assignment.id, metricId:input.metrics[0].id, period:{startInclusive:'2026-11-01',endExclusive:'2026-11-02'}, kind:'not_applicable', reason:'Синтетический сервис выведен из эксплуатации на выбранную дату.' });
     if (goal.decrease) {
       input.method.rules[0].condition = { op: 'lte', target: goal.target };
       input.method.rules[0].normalization = { kind: 'decrease_ratio_capped_v1', maxPercent: '200' };

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { AgreedSnapshot, CalculationResult, Capture, CoreGoalDefinition, EvaluationBasis, EvaluationInput, GoalAssignment, NumericEvaluation, ObservedFact, WorkbenchEntityMap, WorkbenchEntityType } from '../../domain/workbench/entities';
+import type { AgreedSnapshot, CalculationResult, Capture, CoreGoalDefinition, EvaluationBasis, EvaluationInput, MethodVersion, MetricDefinition, GoalAssignment, NumericEvaluation, ObservedFact, WorkbenchEntityMap, WorkbenchEntityType } from '../../domain/workbench/entities';
 import type { EntityRef, Header, VersionRef } from '../../domain/workbench/primitives';
 import { entityRefSchema, versionRefSchema, utcInstantSchema, uuidSchema, businessTimeSchema, exactNumberSchema } from '../../domain/workbench/primitives';
 import * as schemas from '../../domain/workbench/schemas';
@@ -76,7 +76,7 @@ export const workbenchOutputSchemas={
   'execution.list':pageOf(executionReadItemSchema),
   'execution.detail':z.strictObject({item:executionReadItemSchema,dependencies:z.array(schemas.workDependencySchema),decisions:z.array(schemas.decisionSchema)}),
   'data.captures':pageOf(captureItemSchema),'data.rows':pageOf(z.discriminatedUnion('layer',[rawItem,enrichedItem])),
-  'data.lineage':z.strictObject({basis:schemas.evaluationBasisSchema.nullable(),method:schemas.methodVersionSchema.nullable(),facts:z.array(schemas.observedFactSchema),captures:z.array(schemas.captureSchema),mappings:z.array(schemas.sourceFieldMappingSchema),directoryLinks:z.array(schemas.directoryLinkSchema)}),
+  'data.lineage':z.strictObject({basis:schemas.evaluationBasisSchema.nullable(),method:schemas.methodVersionSchema.nullable(),metrics:z.array(schemas.metricDefinitionSchema).optional(),facts:z.array(schemas.observedFactSchema),captures:z.array(schemas.captureSchema),mappings:z.array(schemas.sourceFieldMappingSchema),directoryLinks:z.array(schemas.directoryLinkSchema)}),
   'history.series':historyReadModelSchema,
   'snapshots.list':pageOf(z.strictObject({ref:versionRefSchema,snapshot:schemas.agreedSnapshotSchema,basis:schemas.evaluationBasisSchema,publication:schemas.publicationAnchorSchema})),
   'uor.queue':pageOf(packageSummarySchema),
@@ -347,7 +347,11 @@ export async function queryWorkbench(name:WorkbenchQueryName,request:QueryReques
     const pending=basis?[...basis.factRefs]:[filter.factRef as VersionRef];const facts:ObservedFact[]=[];const seen=new Set<string>();
     while(pending.length) {const reference=pending.pop()!;const key=JSON.stringify(reference);if(seen.has(key)) continue;seen.add(key);const fact=exact<ObservedFact>(reference,context);facts.push(fact);pending.push(...fact.lineage.inputFactRefs);}
     const unique=<T extends Header>(values:T[])=>[...new Map(values.map(v=>[`${v.id}/${v.revision}`,v])).values()];
-    return {basis,method:basis?exact(basis.methodRef,context):null,facts,captures:[...new Set(facts.map(f=>f.captureId))].map(id=>exact<Capture>({entityType:'capture',id,revision:1},context)),mappings:unique(facts.map(f=>exact<z.infer<typeof schemas.sourceFieldMappingSchema>>(f.lineage.mappingRef,context))),directoryLinks:unique(facts.flatMap(f=>f.lineage.directoryLinkRefs.map(r=>exact<z.infer<typeof schemas.directoryLinkSchema>>(r,context))))};
+    const method=basis?exact<MethodVersion>(basis.methodRef,context):null;
+    // A fact alone has no exact metric revision. Resolve labels only through the
+    // saved method, never through today's head of the metric catalog.
+    const metrics=method?.mode==='numeric'?unique(method.rules.map(rule=>exact<MetricDefinition>(rule.metricRef,context))):[];
+    return {basis,method,metrics,facts,captures:[...new Set(facts.map(f=>f.captureId))].map(id=>exact<Capture>({entityType:'capture',id,revision:1},context)),mappings:unique(facts.map(f=>exact<z.infer<typeof schemas.sourceFieldMappingSchema>>(f.lineage.mappingRef,context))),directoryLinks:unique(facts.flatMap(f=>f.lineage.directoryLinkRefs.map(r=>exact<z.infer<typeof schemas.directoryLinkSchema>>(r,context))))};
   }
   if(name==='history.series') {
     const assignments=assignmentsFor(request,ports);if(assignments.length!==1) return fail('ASSIGNMENT_SELECTION_REQUIRED');
