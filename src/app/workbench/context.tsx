@@ -9,7 +9,7 @@ type GlobalContextValue = WorkbenchRouteState & { setContext(patch: ContextPatch
 const Workbench = createContext<WorkbenchValue | null>(null);
 const Global = createContext<GlobalContextValue | null>(null);
 const ownRequest = { context: null, filter: {}, sort: [], page: { limit: 50, cursor: null } } as const;
-const locationUrl = () => window.location.pathname + window.location.search;
+const locationUrl = () => window.location.pathname + window.location.search + window.location.hash;
 type ProviderLifetime = { client: WorkbenchClient; active: boolean; ready: boolean; refresh: number; writes: Promise<void> };
 
 export function WorkbenchProvider({ client, children }: { client: WorkbenchClient; children: ReactNode }) {
@@ -101,7 +101,7 @@ export function WorkbenchProvider({ client, children }: { client: WorkbenchClien
     if (!current.context) throw Error('Получите опубликованный каталог из main');
     const context = updateGlobalContext(current.context, patch);
     const warnings = JSON.stringify(context.scopePath) !== JSON.stringify(current.context.scopePath) ? ['Вложенная область сброшена после изменения родительской области'] : [];
-    window.history.pushState(null, '', routeUrl(current.pathname, context));
+    window.history.pushState(null, '', routeUrl(current.pathname + window.location.hash, context));
     applyRoute({ ...current, context, warnings });
     await persist(context);
   }, [applyRoute, persist, client, isCurrent]);

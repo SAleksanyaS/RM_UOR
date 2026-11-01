@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { CalendarDays, ChevronDown, SlidersHorizontal, Building2 } from 'lucide-react';
 import type { WorkbenchReadModels } from '../../features/catalog/workbench-read-models';
 import type { ContextPatch } from './route-state';
 import { businessTimeFromRange } from './route-state';
@@ -8,7 +9,7 @@ import { workbenchErrorMessage } from './WorkbenchShell';
 type Options = WorkbenchReadModels['context.options'];
 export function GlobalContextControls() {
   const { session, loading: checking, refreshSession } = useWorkbench();
-  const { context, setContext } = useGlobalContext();
+  const { context, setContext, pathname } = useGlobalContext();
   // The response is the whole published catalog. Scope edits need not discard
   // the controls or their keyboard focus while personal preferences are saved.
   const options = useWorkbenchQuery<Options>('context.options', session?.defaultContext ? { context: session.defaultContext, filter: {}, sort: [], page: { limit: 200, cursor: null } } : null);
@@ -23,7 +24,7 @@ export function GlobalContextControls() {
     else { setStart(context.time.startInclusive); setEnd(context.time.endExclusive); }
     setError(null);
   }, [timeKey, session?.personId]);
-  if (!context) return null;
+  if (!context || pathname === '/data' && window.location.hash === '#personal-oko') return null;
   const apply = async (patch: ContextPatch) => {
     setError(null); setSaving(value => value + 1);
     try { await setContext(patch); } catch (failure) { setError(failure); }
@@ -38,7 +39,15 @@ export function GlobalContextControls() {
   }).sort((a, b) => a.name.localeCompare(b.name, 'ru') || a.id.localeCompare(b.id));
   const choices = (kind: 'dit' | 'cluster' | 'product' | 'team', parent: string | null, relation?: 'dit_cluster' | 'cluster_product' | 'product_team') => entities(kind, parent, relation).map(entity => <option key={entity.id} value={entity.id}>{entity.name}</option>);
   const disabled = checking || !data;
+  const nameFor = (id: string | null) => data?.entities.find(entity => entity.id === id)?.name;
+  const scopeLabel = nameFor(path.teamId ?? path.productId ?? path.clusterId ?? path.ditId) ?? 'Выбранная область';
+  const timeLabel = context.time.kind === 'as_of'
+    ? new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(new Date(context.time.date + 'T12:00:00Z'))
+    : `${context.time.startInclusive} — ${context.time.endExclusive} (не включая)`;
   return <section className="wb-context-controls" aria-label="Область и время">
+    <details className="wb-context-disclosure">
+      <summary><span className="wb-context-current"><Building2 size={16} aria-hidden="true" /><strong>{scopeLabel}</strong><ChevronDown size={14} aria-hidden="true" /></span><span className="wb-context-date"><CalendarDays size={16} aria-hidden="true" />{timeLabel}</span><span className="wb-context-filter"><SlidersHorizontal size={15} aria-hidden="true" />Область и период</span></summary>
+      <div className="wb-context-expanded">
     {options.loading && <p role="status">Загружаем опубликованные области…</p>}
     {options.error !== null && <p role="alert">{workbenchErrorMessage(options.error, 'read')} <button type="button" onClick={() => void refreshSession()}>Обновить области</button></p>}
     <div className="wb-context-scopes">
@@ -59,6 +68,8 @@ export function GlobalContextControls() {
       </>}
       <button type="submit" disabled={checking || saving > 0}>Применить время</button>
     </form>
+      </div>
+    </details>
     {saving > 0 && <p role="status">Сохраняем выбранный контекст…</p>}
     {error !== null && <p role="alert">{typeof error === 'string' ? error : workbenchErrorMessage(error)}</p>}
   </section>;

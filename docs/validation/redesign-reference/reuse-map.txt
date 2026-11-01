@@ -1,0 +1,84 @@
+РМ УОР — карта повторного использования для редизайна, этап 1
+Дата: 01.11.2026. Проверенный HEAD: ac299a5508dba60df7d4f5b8152fb7aaf4655223.
+База всех путей src/docs/public ниже: /workspace/scratch/ab925b2abe56/work/RM_UOR-redesign/.
+Источник требований: /workspace/scratch/ab925b2abe56/upload/Вставленный текст.txt.
+Это инвентаризация актуальной ветки по коду и исходным изображениям. Браузерное сравнение — отдельный следующий шаг. Старый аудит snapshot 3490 не использован как описание нынешней готовности. Приложение/зависимости этим шагом не изменялись, тесты не запускались.
+
+1. Что уже подключено
+
+WorkbenchApp.tsx:52–54 в src/app/workbench/ связывает штатную оболочку с пятью действующими разделами, деталями цели, общим поиском, обслуживанием и контекстом. Overview дополнительно содержит DashboardView (:23). Личный ОКО уже доступен внутри Data (:38–45), в том числе на пустом рабочем месте (:48–51). Это подтверждается текущими docs/MASTER_SPEC.md:3–21 и docs/architecture/module-map.md:7–23.
+
+Пять путей уже определены в src/app/workbench/WorkbenchNavigation.tsx:3–6:
+/overview — Обзор; /goals — Цели; /execution — Работы и решения; /data — Данные; /uor — Панель УОР.
+hasWorkbenchPreparation (:9–10) проверяет allowedCommands. Панель УОР следует этой проверке, а не только имени роли. Временное переключение режима сохраняется в WorkbenchApp.tsx:24–37; в дизайне достаточно вторичного меню пользователя.
+
+2. Карта функций: прежнее → актуальное → повторное использование → статус
+
+Функция | Прежний файл / место | Текущий файл / место | Что переносить | Статус
+Оболочка и бренд | src/app/Sidebar.tsx:10–13; workspace-shell.css:4–35,57–60 | src/app/workbench/WorkbenchShell.tsx:37–54; WorkbenchNavigation.tsx:3–18 | Структуру постоянной тёмной sidebar, compact/mobile, contain логотипа, нижнее обслуживание; текущие маршруты/capability/focus | Пересобрать представление; не подключать legacy Session/permissions.
+Общий контекст | src/app/App.tsx:39–93 и прежняя модель workspace | src/app/workbench/GlobalContextControls.tsx:14–64; route-state.ts; context.tsx | Точные связи ДИТ→кластер→продукт→команда, дату/период, URL/back, настройки | Работает; сделать компактной строкой с раскрытием условий.
+Обзор | src/features/overview/OverviewPage.tsx:20; director/DirectorPage.tsx:11 | src/features/overview/workbench/OverviewPage.tsx:7–21 | Текущий overview query, переходы к цели/работе/данным; прежние плотные сравнительные представления как визуальная идея | Работает; заменить поток статей таблицей приоритетов, без ложных KPI.
+Цели / каталог | src/app/App.tsx:96; features/catalog/GoalEditor.tsx:16 | src/features/overview/workbench/GoalsPage.tsx:9–28 | goal rows, cursor, scope, независимые состояния, точный режим результата | Работает; таблица и фильтры поверх текущего read model.
+Карточка цели | src/features/overview/GoalPage.tsx:15; GoalHistoryPanel.tsx:9 | src/features/overview/workbench/GoalDetailPage.tsx:12–66; ResultSummary.tsx:4–27; BasisInspector.tsx:10–26 | Факт, порог, методика, качество, подтверждение, история, exact drilldown | Работает; изменить иерархию, не упрощать числовой контракт до одного процента.
+Создание/изменение цели | src/features/catalog/GoalEditor.tsx:16; прежний goal-setup | src/features/goal-setup/workbench/GoalSetupWizard.tsx:22–282; MethodEditor.tsx:13; PopulationEditor.tsx:4; ApplicabilityEditor.tsx:3 | Сохранение собственного черновика, CAS, примеры, источник, незавершённые формы | Работает; формы переоформлять без новой модели сохранения.
+Руководители / матрица | src/features/overview/GoalLeaderMatrix.tsx:12; MatrixPage.tsx:9; LeaderPage.tsx:6; features/leaders/ClusterLeadersPage.tsx:9 | GoalReadRow.scopeName/leader; GlobalContextControls; DashboardView.tsx:48 | Имена и scope уже есть; матричное сравнение может стать видом Целей | Полного отдельного эквивалента старой матрицы сейчас в пяти путях нет; не объявлять восстановленным.
+Планы, работы, риски, решения | src/features/planning/PlanningPage.tsx:17; ExecutionPlanPanel.tsx:23; execution/ExecutionPage.tsx:92 | src/features/execution/workbench/ExecutionPage.tsx:12–53; WorkEditor.tsx:8; DecisionEditor.tsx:7; DependencyView.tsx:7 | Общая запись, ответственность, план/прогноз, риск/блокер, результат, зависимости и canonical anchor | Работает; плотная таблица + карточка, сохранить отдельность от достижения цели.
+Очередь УОР и публикация | src/features/execution/CuratorInboxPage.tsx:7; release/ReleasePage.tsx:29 | src/features/publishing/workbench/CuratorPanel.tsx:25–117; PackageDiff.tsx:6; PublishOperation.tsx:7 | Собственный пакет, точный preview, этапы отправки, recovery, расхождения | Работает в заявленных локальных пределах; единая очередь, не обещать готовый корпоративный binding.
+Источник цели / импорт | src/app/App.tsx:108; features/connectors/ConnectorPage.tsx:8; tabular-import/DataImportDialog.tsx:9 | src/features/sources/workbench/WorkbenchDataPage.tsx:24–145; SourceSetupWizard.tsx:18; MappingEditor.tsx:11; ImportPreview.tsx:14 | Настройку источника, просмотр допустимых строк, явное принятие, capture history | Работает; один Data workspace, источники цели отделены от личного ОКО по смыслу.
+Личный ОКО | src/app/oko/OkoApp.tsx:7–20, самостоятельный маршрут | src/app/workbench/WorkbenchApp.tsx:38–45 встраивает тот же OkoApp | OkoClient, Oko WorkbenchProvider, wizard handlers, recovery, результаты | Работает, но embedded всё ещё имеет собственные sidebar/main; извлечь presentational блоки, не третий pipeline.
+Запись / повтор / справочник / файлы | src/features/connectors/workbench/BrowserScenarioWizard.tsx:13–100 | Те же компоненты, встроенные в Data | ColumnSelect, PreviewTable, профиль, parsing, mapping, dictionary, run(job), download endpoints | Работает; показать результат первым для настроенного сценария, настройку раскрывать.
+Происхождение и исходные строки | Прежние source/evidence views | src/features/sources/workbench/LineagePanel.tsx:6; WorkbenchDataPage.tsx:128–145; overview/workbench/BasisInspector.tsx:10–26 | resultRef/factRef с revision, исходные и enriched слои, даты, версии методики/сопоставления | Работает; единый drawer «Почему такое число?» и путь в Data.
+Настраиваемый обзор и поля | src/features/knowledge/KnowledgeWorkspacePage.tsx:7 | src/features/dashboards/workbench/DashboardView.tsx:17–60; DashboardBuilder.tsx:11; CustomFieldEditor.tsx:16,60 | Зарегистрированные блоки/поля, таблицы/динамику, theme/density preferences | Работает; настройки вида убрать из первого смыслового экрана Обзора во вторичное меню.
+Поиск / уведомления | src/app/App.tsx, прежние inbox/changes | src/features/search/workbench/GlobalSearch.tsx:9–17; src/app/workbench/NotificationCenter.tsx:13–135 | Canonical ссылки, unread/read, подписки, фокус диалога, capability | Работает; компактная utility bar, сохранить focus/inert/returnFocus.
+Обслуживание / перенос | src/features/system/SystemPage.tsx:12; CodeUpdatePanel.tsx:4; operations/ChangesView.tsx:10 | src/features/workspace-maintenance/workbench/MaintenancePanel.tsx:17–85; RestorePreview.tsx:2 | Копия/restore/main apply, раздельные квитанции и статусы | Работает в актуальном контракте; нижнее меню, не шестой главный раздел.
+Отчёты / PPTX / еженедельный отчёт | src/features/reporting/ReportsPage.tsx:9; weekly-report/WeeklyReportPage.tsx:15 | Нет прямого production view в registry WorkbenchApp.tsx:52 | Только отдельно согласуемый будущий перенос сценария | Отложено; не выдавать наличие legacy файлов за интеграцию.
+Библиотека знаний / доказательств | src/features/knowledge/KnowledgeWorkspacePage.tsx:7; evidence/EvidenceLibraryPage.tsx:5 | Типизированные поля и evidence service существуют, отдельной legacy библиотеки в registry нет | Происхождение/файлы в текущем Data; информационный раздел отдельно по решению | Частичное функциональное соответствие; не заявлять старые страницы полностью возвращёнными.
+
+3. Точный контракт для Обзора и Цели
+
+src/features/catalog/workbench-read-models.ts:36–44: GoalReadRow = ref, goal, assignment, scopeName, leader, basisRef, resultRef, numericResult, manualStatus, needs_calculation, unavailableReason, displayValue, unit, publication, warnings, attestation, snapshot, nextActions.
+:73–79: overview = goals[] + execution[] + counts; goals.list = items/page; goals.detail = goal + rows + tabs(state/work/method/calculation/enriched/raw/history); data.lineage = basis/method/facts/captures/mappings/directoryLinks.
+
+Критично: :378 counts.goals — ВСЕ активные назначения, works/decisions — все соответствующие объекты области. Только counts.data фильтруется по partial capture. Подпись «требуют внимания» к этим счётчикам без фильтрации неверна. Текущий OverviewPage.tsx:15 фильтрует выводимые цели отдельно от counts.
+
+Критично: workbench-read-models.ts:194 displayValue/unit вычисляются из scorePercent; это балл методики, а не исходный измеренный факт. Для крупного числа нужен BasisInspector → data.lineage.facts[].value и unitCode, для требования — method.rules[].condition (gte/lte/eq/range). Несколько фактов/показателей нельзя без правила сжать в одно число. displayExact в goal-view-utils.tsx:13–16 сохраняет точные дроби и отсутствие данных.
+
+ResultSummary.tsx:7–25 уже разделяет manual status, score, preliminary score, calculation, achievement, freshness, coverage, missing population/metrics, attestation, leader, officialDueOn, next action. BasisInspector.tsx:15–18 уже разделяет businessTime факта, sourceUpdatedAt, capturedAt, direct/import, Git/local-cache и версии. Это основание новой иерархии, не повод заново создавать расчёт.
+
+GoalDetailPage.tsx:35–43 выбирает exact basis/method, не подменяет историю текущим справочником; :16–30 использует серверный history.series. goal-view-utils.tsx:28–50 сохраняет конкретный согласованный snapshot. use-goal-read.ts сохраняет подготовку отсутствующего current result и повтор неизвестной операции с прежним ID. Эти связи оставить целыми.
+
+4. Точный контракт для личного ОКО
+
+src/features/connectors/workbench-workflow-contracts.ts:18–27: workflow содержит workflowId/sourceId/revision/title/reportUrl/profile/recording/parsingProfile/mapping/dictionary/result/warnings. result содержит resultId, rowCount, unresolvedRows, issues[], previewRows[], originalDownload, enrichedDownload, capturedAt, sourceDate. workspace содержит список workflowId/title/revision и текущий workflow.
+
+src/features/connectors/workbench/WorkbenchProvider.tsx:6,13–48,78–87 удерживает selection, person ownership, pending command/job/release и reconciliation. client.ts:14–17,28–39 переводит aliases в prefix и даёт отдельный storageScope. WorkbenchApp.tsx:22 создаёт personal client с prefix 'oko.workflow'. Сохранить этот экземпляр/Provider при извлечении UI из OkoApp, не заменить прямыми fetch.
+
+BrowserScenarioWizard.tsx:13–22 уже даёт label/select и scrollable PreviewTable с caption и scope=col; :29–55 — локальные формы и существующие handlers; :63–95 — браузер/запись/сопоставление/справочник/повтор; :96 — результат, две загрузки, дата источника и время получения. Новая Data presentation может компоновать эти части без изменения сервисов. Личный файл не превращается в официальный факт или подтверждение цели (MASTER_SPEC:21).
+
+5. Рекомендации для первого визуального эталона
+
+Оболочка: 250–256px desktop sidebar, 76px compact, 56–64px utility bar. Светлая workspace, один спокойный зелёный акцент; тёмная sidebar с пятью строками и отдельным обслуживанием внизу. Постоянная подпись рабочего места/версии небольшая. Сохранить skip link, route heading focus, inert под overlays, keyboard и returnFocus из WorkbenchShell.tsx:24–30,38–54. Реальные expanded/compact/mobile состояния проверять после render, а не по CSS.
+
+Оба public/brand/*.png осмотрены визуально: 1254×1254 RGBA, объёмный зелёно-синий знак с белой подписью. В раскрытой sidebar можно использовать весь rm-uor.png в контейнере 72–80px с рядом расположенным текстом; компактный contain размер 48–52px проверять на читаемость. Не crop/object-fit:cover, не заменять самовольно кругом/буквой/новым знаком. uor-operations.png оставить для соответствующего контекста УОР, не как конкурирующий второй глобальный бренд. Прежний workspace-shell.css:15–16 уже применяет contain, но 13px и !important (:24) не переносить. Сам PNG не менялся.
+
+Обзор: заголовок и одна строка scope/date/result mode; затем 3–4 компактных счетчика с точными названиями; основной блок — таблица «Требует внимания» с объектом, причиной, ответственным, сроком, следующим действием. Фильтруемый список должен явно объяснять критерий. Справа/ниже — нужные решения и проблемы данных. Общие дашборды доступны отдельным видом, настройки темы/плотности не занимают верх экрана.
+
+Цель: название и scope → крупный ФАКТ + единица и порог → текст выполнения → отдельные метки полноты/свежести/подтверждения → ответственный/срок/следующее действие. «Почему такое число?» открывает точное основание и дату источника/получения, далее исходные строки. Методика, работы, данные, история сохраняют текущую навигацию и контекст. Демонстрационный count250≥200 допустим; не рисовать 125% «готовности» вместо count. Пустота,0,NA,предварительный результат различаются.
+
+Данные: один заголовок и режимы «Личные выгрузки ОКО / Источники целей». Список сохранённых сценариев — локальная колонка/selector внутри рабочей области, без второй глобальной sidebar и дополнительного h1. У выбранного настроенного сценария результат первым: строки/несопоставленные/даты, две загрузки, «Получить снова», таблица и замечания. «Настроить» раскрывает существующие этапы. Состояния входа, записи, получения, разбора, обогащения, частичного успеха и неизвестного результата команды отображать по данным Provider/job, не имитировать прогресс.
+
+Стили: сделать токены shell/surface/text/border/accent/semantic и общий комплект control/table/dialog/empty-state; заменить соответствующие правила, не добавлять очередной слой !important. production-ui.css:6–10 сейчас стилизует вложенный ОКО; :11–16 — большой context form. workbench.css:30–36 покрывает тёмную тему лишь части элементов, поэтому actual theme cascade проверяется на всех трёх эталонных экранах.
+
+6. Узкая проверка после реализации
+
+Уже существуют содержательные тестовые опоры: goal-views.test.tsx:23–207 (независимые области, missing не0, ручная цель, exact agreed, drilldown, stale response, потерянная команда); BrowserScenarioWizard.test.tsx:10–43 (права, сохранение формы, mapping, recovery); WorkbenchApp.test.tsx:11–23 (пустое место и личный ОКО, стабильная личность); WorkbenchShell.test.tsx:14–88 (navigation/focus/capabilities); route-state.test.ts:7–25 (scope/history/snapshot). Их не следует заменять snapshot-тестами оформления.
+
+Следующая визуальная проверка: реальные 1440×1000 и1366×768 с одинаковыми сценариями/состояниями; desktop sidebar целиком; таблица и главное действие в первом экране; keyboard/200%zoom/mobile; dark/system на тех же поверхностях. Прохождение tests/build не означает визуального одобрения. Корпоративный браузер и банковские интеграции этой задачей не проверяются.
+
+7. Исторический rendered reference (отдельное поручение, выполнено после карты)
+
+Создан только вспомогательный scripts/design-reference/legacy-reference.ts. Он поднимает фактический legacy App + createApp на loopback5812/5813, импортирует исходные SDDS/styles.css/workspace-shell.css и использует существующие catalog/demo.json + demo-snapshots.json. Свежая synthetic база: /workspace/scratch/ab925b2abe56/redesign/runtime/legacy-reference-2jGE8t/.runtime; никаких production/bootstrap или пользовательских данных. Публикация demo-only, repositoryUrl пустой, startupCheck=false. Vite cache также вне рабочей .runtime. После снимков браузер и серверы закрыты.
+
+Результат: Node22.16.0 + Chrome156.0.8078.79, actual читатель,12 демонстрационных целей,2 снимка; browserErrors=[] и blockedRequests=[]. Файлы /workspace/scratch/ab925b2abe56/redesign/evidence/legacy-overview-expanded-1440x1000.png и legacy-overview-expanded-1366x768.png; метаданные legacy-reference.json. Оба PNG открыты и визуально осмотрены. Это историческая композиция, не сравнение функциональной готовности с пустым новым runtime.
+
+Практический визуальный вывод: полный логотип в существующем contain76px узнаваем на тёмной sidebar; ширина250px и активная строка с тонкой зелёной полосой — пригодная исходная композиция. В старой длинной навигации при высоте768px третья группа требует внутренней прокрутки; пять целевых разделов устраняют эту перегрузку. Текущий исторический Обзор занимает почти весь первый экран двумя крупными панелями; реестр начинается ниже. Для нового эталона это основание сделать рабочую очередь заметнее и компактнее, а не копировать большие панели. Все цифры снимков — исходная demo fixture, не реальные результаты ДИТ.

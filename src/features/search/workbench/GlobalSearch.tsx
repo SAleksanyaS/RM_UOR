@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Search } from 'lucide-react';
 import { useGlobalContext, useWorkbenchQuery } from '../../../app/workbench/context';
 import { routeUrl } from '../../../app/workbench/route-state';
 import { workbenchErrorMessage } from '../../../app/workbench/WorkbenchShell';
@@ -8,7 +9,7 @@ import './search.css';
 const labels:Record<string,string>={core_goal_definition:'Цель',directory_entity:'Область или лидер',work:'Работа',decision:'Решение'};
 export function GlobalSearch(){
  const {context}=useGlobalContext();const [text,setText]=useState(''),[submitted,setSubmitted]=useState(''),[attempt,setAttempt]=useState(0);
- return <div className="wb-search"><form role="search" onSubmit={event=>{event.preventDefault();setSubmitted(text.trim());setAttempt(value=>value+1);}}><label>Поиск по рабочему месту<input type="search" maxLength={200} value={text} onChange={event=>setText(event.target.value)}/></label><button type="submit" disabled={!text.trim()}>Найти</button>{submitted&&<button type="button" onClick={()=>{setSubmitted('');setText('');}}>Закрыть результаты поиска</button>}</form>{context&&submitted&&<SearchResults key={JSON.stringify([context,submitted,attempt])} context={context} text={submitted} onRetry={()=>setAttempt(value=>value+1)} onOpen={()=>setSubmitted('')}/>}</div>;
+ return <div className="wb-search"><form role="search" onSubmit={event=>{event.preventDefault();setSubmitted(text.trim());setAttempt(value=>value+1);}}><label><span className="wb-visually-hidden">Поиск по рабочему месту</span><Search size={17} aria-hidden="true" /><input type="search" placeholder="Найти цель, работу или решение" maxLength={200} value={text} onChange={event=>setText(event.target.value)}/></label><button type="submit" disabled={!text.trim()}>Найти</button>{submitted&&<button type="button" onClick={()=>{setSubmitted('');setText('');}}>Закрыть результаты поиска</button>}</form>{context&&submitted&&<SearchResults key={JSON.stringify([context,submitted,attempt])} context={context} text={submitted} onRetry={()=>setAttempt(value=>value+1)} onOpen={()=>setSubmitted('')}/>}</div>;
 }
 function SearchResults({context,text,onRetry,onOpen}:{context:GlobalContext;text:string;onRetry():void;onOpen():void}){
  const [cursor,setCursor]=useState<string|null>(null),[items,setItems]=useState<SearchReadModel['items']>([]);

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { ArrowRight, CalendarDays, UserRound, ShieldCheck, Database, Settings2 } from 'lucide-react';
 import { useGlobalContext, useWorkbench, useWorkbenchQuery } from '../../../app/workbench/context';
 import type { GlobalContext } from '../../../server/workbench/protocol';
 import type { GoalReadRow, WorkbenchReadModels } from '../../catalog/workbench-read-models';
@@ -11,7 +12,22 @@ import { useGoalRead } from './use-goal-read';
 
 const tabs = ['Состояние', 'Работы и решения', 'Методика', 'Расчёт', 'Обогащённые данные', 'Исходные строки', 'История'] as const;
 function RowState({ row, basis, method, names, deliveries }: { row: GoalReadRow; basis?: EvaluationBasis; method?: MethodVersion; names: Record<string, string>; deliveries: Record<string, 'git' | 'local-cache'> }) {
-  return <section className="wb-goal-card" aria-label={row.scopeName ?? `Сохранённая область ${row.assignment.scope.id}`}><h3>{row.scopeName ?? row.assignment.scope.id}</h3><ResultSummary row={row} names={names} /><BasisInspector row={row} basis={basis} method={method} deliveries={deliveries} variant="summary" /></section>;
+  const result = row.numericResult;
+  const status = row.goal.mode === 'manual_status'
+    ? row.manualStatus ? ({ not_started: 'Не начата', in_progress: 'В работе', completed: 'Завершена' })[row.manualStatus.to] : 'Статус не задан'
+    : !result ? 'Нет данных' : ({ met: 'Условие выполнено', not_met: 'Условие не выполнено', unknown: 'Выполнение не определено', not_applicable: 'Не применимо' })[result.achievement];
+  const tone = result?.achievement === 'met' ? 'success' : result?.achievement === 'not_met' ? 'result' : 'data';
+  return <section className="wb-goal-card wb-goal-reference-card" aria-label={row.scopeName ?? `Сохранённая область ${row.assignment.scope.id}`}>
+    <header><span className="wb-eyebrow">Результат по области</span><h3>{row.scopeName ?? 'Историческое имя области не сохранено'}</h3></header>
+    <div className="wb-goal-result-layout">
+      <div className="wb-goal-measure"><BasisInspector row={row} basis={basis} method={method} deliveries={deliveries} variant="summary" /></div>
+      <div className="wb-goal-meaning"><span className={'wb-badge wb-badge-' + tone}>{status}</span>
+        <div className="wb-goal-quality"><span><Database size={15} aria-hidden="true" />{result ? ({ fresh: 'Данные актуальны', stale: 'Данные устарели', unknown: 'Актуальность не определена' })[result.freshness] : 'Основание требует проверки'}</span><span><ShieldCheck size={15} aria-hidden="true" />{row.attestation ? 'Подтверждено УОР' : 'Подтверждение УОР отсутствует'}</span></div>
+        <dl><div><dt><UserRound size={14} aria-hidden="true" />Ответственный</dt><dd>{row.leader?.name ?? (row.snapshot ? 'Историческое имя не сохранено' : 'Не назначен')}</dd></div><div><dt><CalendarDays size={14} aria-hidden="true" />Официальный срок</dt><dd>{row.assignment.officialDueOn ?? 'Не задан'}</dd></div></dl>
+      </div>
+    </div>
+    <details className="wb-goal-full-state"><summary>Полное состояние и точные расчётные значения</summary><ResultSummary row={row} names={names} supplemental /></details>
+  </section>;
 }
 function GoalHistory({ row, context, method }: { row: GoalReadRow; context: GlobalContext; method?: MethodVersion }) {
   const [position, setPosition] = useState<{ key: string; cursor: string | null }>({ key: '', cursor: null });
@@ -43,14 +59,14 @@ export function WorkbenchGoalDetailPage({ goalId }: { goalId: string }) {
     const basis = basisFor(row), ref = basis?.methodRef ?? (row.assignment.methodBinding.kind === 'standalone' ? row.assignment.methodBinding.methodRef : null);
     return data?.tabs.method.find(method => method.id === ref?.id && method.revision === ref.revision);
   };
-  return <section aria-label="Карточка цели">
-    {session?.allowedCommands.includes('goal.draft.save') && <button type="button" onClick={() => setSetup(true)}>Настроить цель</button>}
+  const settingsControl = session?.allowedCommands.includes('goal.draft.save') && <button type="button" className="wb-goal-settings" aria-label="Настроить цель" title="Настроить цель" onClick={() => setSetup(true)}><Settings2 size={17} aria-hidden="true" /><span>Настроить цель</span></button>;
+  return <section className="wb-goal-detail" aria-label="Карточка цели">
+    {!data && settingsControl}
     {setup && <WorkbenchGoalSetupWizard goalRef={{entityType:'core_goal_definition',id:goalId}} onClose={() => setSetup(false)} />}<ResultModeSelector goalId={goalId} selectedSnapshot={data?.rows[0]?.snapshot} /><QueryFeedback loading={query.loading} error={query.error} operation={query.errorOperation} />
-    {data && <><h2>{data.goal.title}</h2>{data.goal.description && <p>{data.goal.description}</p>}
-      <p>Области: {data.rows.map(row => row.scopeName ?? row.assignment.scope.id).join('; ')}</p><p>Дата данных: {data.tabs.enriched[0]?.capture.sourceUpdatedAt ?? 'Неизвестна'}</p>
-      <p>Официальные сроки: {data.rows.map(row => `${row.scopeName ?? row.assignment.scope.id}: ${row.assignment.officialDueOn ?? 'Не задан'}`).join('; ')}</p>
-      <p>Следующий предметный шаг: {data.tabs.work.some(item => item.kind === 'work') ? 'Проверить связанные работы' : 'Проверить состояние и основания'}</p>
+    {data && <><div className="wb-goal-title"><div className="wb-goal-title-heading"><div><span className="wb-eyebrow">Цель · {data.goal.mode === "numeric" ? "Числовой результат" : "Ручной статус"}</span><h2>{data.goal.title}</h2></div>{settingsControl}</div>{data.goal.description && <p>{data.goal.description}</p>}</div>
+      <div className="wb-goal-source-note"><Database size={14} aria-hidden="true" /><span>Дата данных: {data.tabs.enriched[0]?.capture.sourceUpdatedAt ?? 'Неизвестна'}</span><span>Основание доступно в исходных строках</span></div>
       <section aria-label="Сводка состояния цели" className="wb-goal-rows">{data.rows.map(row => <RowState key={row.ref.id} row={row} names={names} basis={basisFor(row)} method={methodFor(row)} deliveries={deliveries} />)}</section>
+      <div className="wb-goal-next-step"><div><span className="wb-eyebrow">Следующее действие</span><h3>{data.tabs.work.flatMap(item => item.kind === 'work' ? [item.value.nextAction] : [])[0] || 'Проверить состояние и основания цели'}</h3></div><ContextLink path="/execution" label="Работы и решения" /><ArrowRight size={16} aria-hidden="true" /></div>
       <div className="wb-goal-tabs" role="tablist" aria-label="Разделы цели">{tabs.map(label => <button key={label} id={'goal-tab-' + tabs.indexOf(label)} type="button" role="tab" aria-selected={tab === label} aria-controls="goal-tab-panel" onClick={() => setTab(label)}>{label}</button>)}</div>
       <div id="goal-tab-panel" role="tabpanel" aria-labelledby={'goal-tab-' + tabs.indexOf(tab)}>
         {!data.rows.length && <p>Нет назначений в выбранной области</p>}
