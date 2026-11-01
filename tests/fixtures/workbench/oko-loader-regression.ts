@@ -8,21 +8,30 @@ import path from 'node:path';
 import { chromium, type BrowserContext } from 'playwright';
 import { createBrowserRuntime } from '../../../src/features/connectors/workbench-browser-runtime';
 import { privateProfileSchema } from '../../../src/features/connectors/contracts';
+import { makeHeader, fixtureId } from './factories';
 
 const termination = new AbortController();
 process.once('SIGTERM', () => termination.abort(Error('Owned loader process is stopping')));
 
-for (const mode of ['picker', 'recorder'] as const) test(`${mode} init script executes in real Chrome/Edge with the production tsx loader`, { timeout: 20000 }, async context => {
+for (const mode of ['picker', 'recorder', 'session-continuation'] as const) test(`${mode} executes in real Chrome/Edge with the production tsx loader`, { timeout: 20000 }, async context => {
   const temp = await realpath(tmpdir()), root = await mkdtemp(path.join(temp, 'uor-oko-loader-'));
+  let holdExport = false, startedDownload!: () => void;
+  const downloadStarted = new Promise<void>(resolve => { startedDownload = resolve; });
   const server = createServer((request, response) => {
-    if (request.url === '/export') { response.writeHead(200, { 'content-type': 'text/csv', 'content-disposition': 'attachment; filename=report.csv' }).end('ID;Value\nr1;123456789012345.67'); return; }
+    if (mode === 'session-continuation') {
+      if (request.url === '/login') { response.writeHead(200, { 'content-type': 'text/html' }).end('<a id="sign-in" href="/sign-in">Complete synthetic login</a>'); return; }
+      if (request.url === '/sign-in') { response.writeHead(302, { location: '/report', 'set-cookie': 'synthetic-session=present; HttpOnly; SameSite=Lax; Path=/' }).end(); return; }
+      if (!(request.headers.cookie ?? '').includes('synthetic-session=present')) { response.writeHead(302, { location: '/login' }).end(); return; }
+    }
+    if (request.url === '/export') { response.writeHead(200, { 'content-type': 'text/csv', 'content-disposition': 'attachment; filename=report.csv' }); if(holdExport){response.write('ID;Value\n');startedDownload();}else response.end('ID;Value\nr1;123456789012345.67'); return; }
     response.setHeader('content-type', 'text/html'); response.end('<main style="margin-top:100px"><h1 id="ready">Report</h1><label for="period">Period</label><input id="period"><a id="export" href="/export">Export</a></main>');
   });
   const errors: string[] = [];
-  let managed: BrowserContext | undefined, launched!: () => void;
+  let managed: BrowserContext | undefined, launched!: () => void, launches = 0;
   const opening = new Promise<void>(resolve => { launched = resolve; });
   const runtime = createBrowserRuntime({ runtimeRoot: root, launcher: { launchPersistent: async (_profile, folder, options) => {
     if (process.env.UOR_LOADER_LAUNCH_FAILURE === '1') throw Error('Synthetic browser launch rejection');
+    assert.equal(options.chromiumSandbox, true); launches++;
     managed = await chromium.launchPersistentContext(folder, { ...options, headless: true, timeout: 10000 });
     managed.on('page', page => page.on('pageerror', error => errors.push(error.message)));
     managed.pages()[0].on('pageerror', error => errors.push(error.message)); launched(); return managed;
@@ -49,7 +58,7 @@ for (const mode of ['picker', 'recorder'] as const) test(`${mode} init script ex
       assert.deepEqual(errors, [], 'Picker page scripts must not depend on Node transform helpers');
       await page.locator('[data-uor-marker-picker]').waitFor({ timeout: 3000 }); await page.locator('#ready').click();
       assert.deepEqual(await selected, { selector: '#ready', label: 'ready' });
-    } else {
+    } else if (mode === 'recorder') {
       const handle = await runtime.startRecording(input, signal), page = managed!.pages()[0];
       assert.deepEqual(errors, [], 'Recorder page scripts must not depend on Node transform helpers');
       assert.equal(await page.evaluate(() => typeof (window as unknown as {__uorRecorderDrain: unknown}).__uorRecorderDrain), 'function');
@@ -57,6 +66,22 @@ for (const mode of ['picker', 'recorder'] as const) test(`${mode} init script ex
       const result = await runtime.waitForCompletion({ owner, handleId: handle.handleId });
       assert.equal(result.hasDownload, true); assert.deepEqual(result.steps.map(step => step.action), ['fill', 'download']);
       assert.deepEqual(result.parameterNames, ['field_period']); assert.equal(JSON.stringify(result).includes('October'), false);
+    } else {
+      const handle = await runtime.openLogin(input, signal), page = managed!.pages()[0];
+      await page.locator('#sign-in').click(); await page.locator('#ready').waitFor();
+      assert.equal((await managed!.cookies(origin)).find(cookie => cookie.name === 'synthetic-session')?.expires, -1, 'The synthetic authentication must remain session-only');
+      const scenario = { ...makeHeader(9001), sourceId: fixtureId(9002), startUrl: input.startUrl, authenticatedSelector: '#ready', steps: [{ action: 'download' as const, locator: { kind: 'css' as const, selector: '#export' } }], parameters: {}, expectedExport: { format: 'csv' as const, requiredColumns: ['ID', 'Value'] } };
+      const file = await runtime.replay({ owner, profile: input.profile, scenario, loginHandleId: handle.handleId }, AbortSignal.any([signal, AbortSignal.timeout(4000)]));
+      assert.equal(Buffer.from(file.bytes).toString(), 'ID;Value\nr1;123456789012345.67');
+      assert.equal(launches, 1, 'Continuation must use the authenticated native context without reopening the profile');
+      await assert.rejects(runtime.replay({ owner, profile: input.profile, scenario, loginHandleId: handle.handleId }, signal), { code: 'BROWSER_HANDLE_NOT_FOUND' });
+      holdExport = true;
+      const second = await runtime.openLogin(input, signal), secondPage = managed!.pages()[0];
+      await secondPage.locator('#sign-in').click(); await secondPage.locator('#ready').waitFor();
+      const cancelled = runtime.replay({ owner, profile: input.profile, scenario, loginHandleId: second.handleId }, AbortSignal.any([signal, AbortSignal.timeout(4000)])).then(() => null, error => error);
+      await Promise.race([downloadStarted, aborted]); await runtime.closeOwned(owner);
+      assert.equal((await cancelled)?.name, 'AbortError');
+      assert.equal(launches, 2, 'Cancel must close the existing login context rather than create an extra replay context');
     }
     };
     await Promise.race([exercise(), aborted]);

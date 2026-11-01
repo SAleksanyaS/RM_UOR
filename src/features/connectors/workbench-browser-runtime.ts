@@ -8,14 +8,14 @@ import type { BrowserScenarioDefinition, RecordedBrowserStep, UUIDv4 } from '../
 import { browserScenarioDefinitionSchema, uuidSchema } from '../../domain/workbench';
 import { WorkbenchHttpError } from '../../server/workbench/protocol';
 import { safeArtifactPath } from '../../server/workspace/paths';
-import { cancelRecording, executeBrowser, finishRecording, observeBrowserLogin, readRecordingScreenshot, startRecording, waitForRecordingComplete, type BrowserLauncherPort } from './browser';
+import { cancelRecording, executeBrowser, replayBrowserLogin, finishRecording, observeBrowserLogin, readRecordingScreenshot, startRecording, waitForRecordingComplete, type BrowserLauncherPort } from './browser';
 import { type BrowserStep, type PrivateProfile } from './contracts';
 import type { Downloaded } from './transport';
 export type { BrowserLauncherPort } from './browser';
 export type BrowserOwner = { installationId: UUIDv4; profilePersonId: UUIDv4 | null };
 export type BrowserLoginInput = { owner: BrowserOwner; profile: PrivateProfile; startUrl: string; authenticatedSelector: string };
 export type BrowserRecordInput = BrowserLoginInput;
-export type BrowserReplayInput = { owner: BrowserOwner; profile: PrivateProfile; scenario: BrowserScenarioDefinition };
+export type BrowserReplayInput = { owner: BrowserOwner; profile: PrivateProfile; scenario: BrowserScenarioDefinition; loginHandleId?: UUIDv4 };
 export type BrowserSessionHandle = { handleId: UUIDv4; state: 'open'; mode: 'login' | 'record' };
 export type RecordedBrowserScenario = { recordingId: UUIDv4; startUrl: string; authenticatedSelector: string; steps: RecordedBrowserStep[]; parameterNames: string[]; screenshotHandles: UUIDv4[]; hasDownload: boolean };
 export interface BrowserRuntimePort {
@@ -34,6 +34,7 @@ export interface BrowserRuntimePort {
 }
 export type BrowserRecordingStatus = { state: 'idle' | 'recording' | 'completed' | 'failed' | 'interrupted'; problem: { code: string; message: string } | null };
 export interface BrowserWorkflowRuntimePort extends BrowserRuntimePort {
+  cancelRecording(input: { owner: BrowserOwner; handleId: UUIDv4 }): Promise<void>;
   readRecordingStatus(input: { owner: BrowserOwner; handleId: UUIDv4 }): Promise<BrowserRecordingStatus>;
   readRecordingDownload(input: { owner: BrowserOwner; handleId: UUIDv4 }): Promise<Downloaded>;
   selectMarker(input: { owner: BrowserOwner; profile: PrivateProfile; startUrl: string }, signal: AbortSignal): Promise<{ selector: string; label: string }>;
@@ -57,7 +58,7 @@ function fromLegacy(step: BrowserStep): RecordedBrowserStep {
 }
 export type BrowserRuntimeLifecycle={pause():Promise<void>;resume():void;shutdown():Promise<void>};
 export function createBrowserRuntime({ runtimeRoot, launcher }: { runtimeRoot: string; launcher?: BrowserLauncherPort }): BrowserWorkflowRuntimePort & BrowserRuntimeLifecycle {
-  const handles = new Map<string, { owner: string; root: string; recorderId: string; input: BrowserLoginInput }>();
+  const handles = new Map<string, { owner: string; root: string; recorderId: string; input: BrowserLoginInput; mode: 'login' | 'record' }>();
   const recordingsToDispose=new Map<string,{root:string;owner:string}>();
   const finished = new Map<string, { owner: string; root: string; recorderId: string; result: RecordedBrowserScenario; timer: NodeJS.Timeout }>();
   const pending = new Set<{ owner: string; controller: AbortController; settled: Promise<void> }>();
@@ -84,7 +85,7 @@ export function createBrowserRuntime({ runtimeRoot, launcher }: { runtimeRoot: s
       const result = await startRecording(root, owner, input.profile, input.startUrl, mode === 'record', input.authenticatedSelector,
         () => { if (mode === 'login') handles.delete(handleId); else { const timer = setTimeout(() => {const handle=handles.get(handleId);handles.delete(handleId);retentionTimers.delete(timer);if(handle){recordingsToDispose.delete(handle.recorderId);void disposeWorkbenchRecording(handle.root,handle.owner,handle.recorderId).catch(()=>{});}}, 15 * 60_000); retentionTimers.add(timer);timer.unref(); } }, { launcher:trackedLauncher, signal: ownedSignal, workbenchRecording: mode === 'record' });
       recordingsToDispose.set(result.recordingId,{root,owner});
-      ownedSignal.throwIfAborted(); handles.set(handleId, { owner, root, recorderId: result.recordingId, input });
+      ownedSignal.throwIfAborted(); handles.set(handleId, { owner, root, recorderId: result.recordingId, input: structuredClone(input), mode });
       return { handleId, state: 'open', mode };
     } finally { pending.delete(request); settled(); }
   };
@@ -152,9 +153,23 @@ export function createBrowserRuntime({ runtimeRoot, launcher }: { runtimeRoot: s
     },
     async replay(input, signal) {
       assertAccepting(); const scenario = browserScenarioDefinitionSchema.parse(input.scenario),owner=browserOwnerKey(input.owner);
+      if (closing.has(owner)) throw new DOMException('Owner browser sessions are closing', 'AbortError');
       const controller=new AbortController();let settled!:()=>void;
       const request={owner,controller,settled:new Promise<void>(resolve=>{settled=resolve;})};pending.add(request);
-      try {return await executeBrowser(await browserOwnerRoot(runtimeRoot,input.owner),input.profile,{id:scenario.id,startUrl:scenario.startUrl,steps:[]},scenario.parameters,AbortSignal.any([signal,controller.signal]),{launcher:trackedLauncher,authenticatedSelector:scenario.authenticatedSelector,workbenchSteps:scenario.steps});}
+      try {
+        const ownedSignal=AbortSignal.any([signal,controller.signal]);ownedSignal.throwIfAborted();
+        const recipe={id:scenario.id,startUrl:scenario.startUrl,steps:[]},options={launcher:trackedLauncher,authenticatedSelector:scenario.authenticatedSelector,workbenchSteps:scenario.steps};
+        if(input.loginHandleId!==undefined){
+          const handle=handles.get(input.loginHandleId);
+          if(!handle||handle.owner!==owner||handle.mode!=='login')throw new WorkbenchHttpError(404,'BROWSER_HANDLE_NOT_FOUND','Own login context not found');
+          if(handle.input.startUrl!==scenario.startUrl||handle.input.authenticatedSelector!==scenario.authenticatedSelector||JSON.stringify(handle.input.profile)!==JSON.stringify(input.profile))throw new WorkbenchHttpError(409,'BROWSER_CONTEXT_MISMATCH','Login context belongs to different report or profile settings');
+          // Consume the capability once, without releasing its existing native queue lease.
+          handles.delete(input.loginHandleId);
+          try{return await replayBrowserLogin(owner,handle.recorderId,input.profile,recipe,scenario.parameters,ownedSignal,options);}
+          finally{recordingsToDispose.delete(handle.recorderId);await disposeWorkbenchRecording(handle.root,owner,handle.recorderId);}
+        }
+        return await executeBrowser(await browserOwnerRoot(runtimeRoot,input.owner),input.profile,recipe,scenario.parameters,ownedSignal,options);
+      }
       finally {pending.delete(request);settled();}
     },
     async screenshot({ recordingId, owner, handleId }) {

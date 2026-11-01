@@ -119,3 +119,28 @@ node node_modules/vitest/vitest.mjs run \
 ```
 
 Логи вне репозитория: `redesign/oko-parser-error-red.log`, `oko-parser-error-green.log`, `oko-upload-autofinish-red.log`, `oko-upload-autofinish-green-final.log`. Фактический non-root Chrome copy содержит штатный `chrome-sandbox` root:root4755; production `chromiumSandbox:true` сохранён.
+
+## Продолжение настоящего session-only SSO
+
+Первый полный проход достиг native login и затем снова получил `waiting_user`: после ручного входа service закрывал окно и запускал новый persistent context. Сессионная cookie `expires=-1` пропадала. Это воспроизведено отдельным real Chrome regression (RED, exit1,4.53s) и двумя service regressions. Cookie fixture не превращена в постоянную.
+
+Исправление использует тот же native context и ту же очередь профиля. Одноразовый server-only `loginHandleId` привязан к точному owner, исходным настройкам профиля, URL отчёта и authenticated marker; service передаёт его только исходному job/workflow. Повтор проверяет свежие права и исходную revision. Контекст закрывается после результата, ошибки, отмены или отказа preflight; cookies, storageState и токены не извлекаются и не переносятся. Параметры профиля сохранены как независимый снимок в памяти handle.
+
+GREEN: runtime/service **53/53 tests,2файла,7.01s** на Node22.16/Vitest4.1.12/maxWorkers2. Native Chrome156/Node22.16/nobody **3/3 PASS,3.07s**: picker,recorder,session-only continuation. Последний случай доказывает скачивание в том же контексте (`launches=1`), одноразовость handle, затем отмену второй реальной незавершённой выгрузки без нового replay context. Все три listeners закрыты. Отдельные guards проверяют отказ сменённым owner/profile/report/marker/handle, изменение исходного input object, fresh-authority loss и stale revision с cleanup. Это не доказательство банковского сервера или Windows/Edge.
+
+Независимая проверка уточнила cleanup: вызов `closeOwned` в success-finally мог остановить параллельный workflow того же владельца. Четыре regression cases сначала дали RED; теперь автоматическая очистка использует обязательный точный `cancelRecording({owner,handleId})`, а404 потреблённого handle означает уже закрытый context. Явная отмена/закрытие owner остаётся отдельной операцией. Повторные fixture guards:2/2PASS, native wrapper test исключён только из этого адресного запуска, не из общего suite.
+
+```sh
+node node_modules/vitest/vitest.mjs run \
+  src/features/connectors/workbench-browser-runtime.test.ts \
+  src/features/connectors/workbench-workflow-service.test.ts --maxWorkers=2
+# Подготовленная выше non-root copy, с текущими src/tests:
+runuser -u nobody -- env \
+  TMPDIR=/tmp/uor-native-sandbox-iwlXWD/data \
+  XDG_CONFIG_HOME=/tmp/uor-native-sandbox-iwlXWD/data/config \
+  XDG_CACHE_HOME=/tmp/uor-native-sandbox-iwlXWD/data/cache \
+  UOR_TEST_BROWSER_EXECUTABLE=/tmp/uor-native-sandbox-iwlXWD/chrome/chrome \
+  /tmp/uor-native-sandbox-iwlXWD/node --import tsx --test tests/fixtures/workbench/oko-loader-regression.ts
+```
+
+Логи: `redesign/oko-session-cookie-native-red.log`, `oko-session-cookie-service-red.log`, `oko-session-cookie-native-green.log`, `oko-session-exact-cleanup-red.log`, `oko-session-exact-cleanup-green.log`, `oko-session-cookie-loader-guard-green.log`. Остальные source faults в E2E независимы: после доказанного session-only continuation synthetic source возвращается к исходному публичному режиму перед schema/empty/cancel tests; никакие ответы приложения не подменяются.

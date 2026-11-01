@@ -67,7 +67,11 @@ export function createOkoWorkflowService(deps: OkoWorkflowDependencies) {
         handleId: string;
     }>();
     const browserOwners = new Map<string, BrowserOwner>(), controllers = new Map<AbortController, string>();
-    const authWindows = new Set<string>();
+    const authWindows = new Map<string, { handleId: string; owner: BrowserOwner }>();
+    const closeAuthWindow = async (auth: { handleId: string; owner: BrowserOwner }) => {
+        try { await runtime.cancelRecording(auth); }
+        catch (error) { if (!(error instanceof WorkbenchHttpError && error.statusCode === 404 && error.code === 'BROWSER_HANDLE_NOT_FOUND')) throw error; }
+    };
     let shuttingDown = false;
     const owner = (context: QueryContext) => `${context.installationId}/${context.ownAccess.personId ?? 'unassigned'}`;
     const cancellationGenerations = new Map<string, number>();
@@ -129,32 +133,34 @@ export function createOkoWorkflowService(deps: OkoWorkflowDependencies) {
         fail('SOURCE_SCHEMA_CHANGED', 'A mapped column is absent'); };
     const cancelled = (context: CommandContext, signal: AbortSignal) => { signal.throwIfAborted(); const job = jobs.findByCommand(context.commandId, context.installationId); if (job?.status === 'cancelled')
         throw new DOMException('Cancelled', 'AbortError'); };
-    const runControlled = async <T>(context: CommandContext, workflowId: string, action: (signal: AbortSignal) => Promise<T>) => { assertMutationActive(context);const controller = new AbortController(), job = jobs.findByCommand(context.commandId, context.installationId); controllers.set(controller, owner(context));if (job) {
+    const runControlled = async <T>(context: CommandContext, workflowId: string, action: (signal: AbortSignal, loginHandleId?: string) => Promise<T>, resumeLogin = false) => { assertMutationActive(context);const controller = new AbortController(), job = jobs.findByCommand(context.commandId, context.installationId), auth = authWindows.get(context.commandId); controllers.set(controller, owner(context));if (job) {
         jobs.registerControl(job.jobId, { cancel: async () => { controller.abort(); authWindows.delete(context.commandId); await runtime.closeOwned(browserOwner(context)); }, openAuth: undefined });
         jobs.update(job.jobId, { cancelAvailable: true });
     } try {
-        if (authWindows.delete(context.commandId)) { await freshPrepare(context); await runtime.closeOwned(browserOwner(context)); cancelled(context, controller.signal); }
+        if (auth) { authWindows.delete(context.commandId); await freshPrepare(context); cancelled(context, controller.signal); if (!resumeLogin) await closeAuthWindow(auth); cancelled(context, controller.signal); }
         if (job) jobs.update(job.jobId, { nextAction: null, error: null });
-        return await action(controller.signal);
+        return await action(controller.signal, resumeLogin ? auth?.handleId : undefined);
     } catch (error) {
         if (error instanceof ConnectorError && error.code === 'manual_login_required' && job) {
             cancelled(context, controller.signal); await freshPrepare(context); cancelled(context, controller.signal);
             jobs.registerStage('browser.auth');
             jobs.registerControl(job.jobId, { openAuth: () => serializeMutation(context, { workflowId }, async () => {
                 await freshPrepare(context); load(context, workflowId);
-                const draft = load(context, workflowId), profile = await ownProfile(context, draft), loginController = new AbortController();
+                const draft = load(context, workflowId), profile = await ownProfile(context, draft), loginController = new AbortController(), loginOwner = browserOwner(context);
+                let openedHandle: string | undefined;
                 controllers.set(loginController, owner(context));
                 try {
-                    await runtime.openLogin({ owner: browserOwner(context), profile: profile.profile!, startUrl: draft.view.reportUrl, authenticatedSelector: draft.view.marker?.selector ?? 'html' }, loginController.signal);
-                    await freshPrepare(context); cancelled(context, loginController.signal); authWindows.add(context.commandId);
+                    const handle = await runtime.openLogin({ owner: loginOwner, profile: profile.profile!, startUrl: draft.view.reportUrl, authenticatedSelector: draft.view.marker?.selector ?? 'html' }, loginController.signal);
+                    openedHandle = handle.handleId;
+                    await freshPrepare(context); cancelled(context, loginController.signal); authWindows.set(context.commandId, { handleId: handle.handleId, owner: loginOwner });
                     jobs.update(job.jobId, { retryAvailable: true, nextAction: { commandName: 'job.retry', payload: { jobId: job.jobId }, route: null, label: 'Вход выполнен — продолжить', enabled: true, disabledReason: null } });
-                } catch (loginError) { await runtime.closeOwned(browserOwner(context)); throw loginError; }
+                } catch (loginError) { if (openedHandle) await closeAuthWindow({ handleId: openedHandle, owner: loginOwner }); throw loginError; }
                 finally { controllers.delete(loginController); }
             }) });
             jobs.update(job.jobId, { status: 'waiting_user', stage: 'browser.auth', retryAvailable: false, error: null, warnings: [{ code: 'MANUAL_LOGIN_REQUIRED', message: 'Сессия ОКО истекла. Выполните вход в личном окне браузера и продолжите это задание.', retryable: true, details: [], operationId: job.jobId, provider: null }], nextAction: { commandName: 'job.openAuth', payload: { jobId: job.jobId }, route: null, label: 'Войти в ОКО', enabled: true, disabledReason: null } });
         }
         throw error;
-    } finally { controllers.delete(controller); } };
+    } finally { controllers.delete(controller); if (auth && resumeLogin) await closeAuthWindow(auth); } };
     const service = {
         async shutdown():Promise<void>{shuttingDown=true;for(const controller of controllers.keys())controller.abort();await Promise.all([...browserOwners.values()].map(value=>runtime.closeOwned(value)));live.clear();logins.clear();authWindows.clear();},
         async workspace(context: QueryContext, workflowId?: string): Promise<OkoWorkspaceView> { const drafts = store.list<Draft>(owner(context)); return { workflows: drafts.map(d => ({ workflowId: d.view.workflowId, title: d.view.title, revision: d.revision })), current: workflowId ? await view(context, load(context, workflowId)) : drafts.length ? await view(context, drafts[0]) : null, setup: deps.setup?.() ?? { hostname: '', registryConfigured: false, message: 'Hostname registry setup is unavailable' } }; },
@@ -262,10 +268,10 @@ export function createOkoWorkflowService(deps: OkoWorkflowDependencies) {
             if (!draft.view.mapping || !draft.view.marker || !draft.format || draft.view.recording.state !== 'completed')
                 fail('SCENARIO_REVIEW_REQUIRED', 'Complete the recording and mapping first', 409);
             const profile = await ownProfile(context, draft);
-            return runControlled(context, input.workflowId, async (signal) => {
+            return runControlled(context, input.workflowId, async (signal, loginHandleId) => {
                 // This private runtime DTO is never appended as a shared/published entity.
                 const scenario = { schemaVersion: 1 as const, id: draft.view.workflowId, revision: 1, recordedAt: clock.now(), actor: context.actor, publicationAnchorId: null, sourceId: draft.view.sourceId, startUrl: draft.view.reportUrl, authenticatedSelector: draft.view.marker!.selector, steps: draft.view.recording.steps, parameters: draft.view.parameters, expectedExport: { format: draft.format!, requiredColumns: draft.view.columns } };
-                const download = await runtime.replay({ owner: browserOwner(context), profile: profile.profile!, scenario }, signal);
+                const download = await runtime.replay({ owner: browserOwner(context), profile: profile.profile!, scenario, ...(loginHandleId ? { loginHandleId } : {}) }, signal);
                 cancelled(context, signal);
                 const table = await parseWorkbenchTable({ bytes: download.bytes, name: download.name, parsingProfile: draft.view.parsingProfile });
                 if (table.format !== draft.format || draft.view.columns.some(column => !table.columns.includes(column)))
@@ -284,7 +290,7 @@ export function createOkoWorkflowService(deps: OkoWorkflowDependencies) {
                 await deps.recheckGuard?.(context);
                 cancelled(context, signal);
                 return commitCommandEffect(context, () => { cancelled(context, signal); store.putResult(owner(context), resultId, { original, enriched }); draft.view.result = result; persist(context, draft); return { result: { ...structuredClone(draft.view), profile: safeProfile }, changedRefs: [], editToken: null }; }).result;
-            });
+            }, true);
         },
         hasResult(context: QueryContext, resultId: string):boolean { return uuidSchema.safeParse(resultId).success && store.hasResult(owner(context),resultId); },
         async readResult(context: QueryContext, resultId: string, kind: 'original' | 'enriched') { uuidSchema.parse(resultId); const stored = store.getResult<StoredResult>(owner(context), resultId); if (!stored || !['original', 'enriched'].includes(kind) || kind==='original'&&store.originalOmitted(owner(context),resultId))
@@ -296,7 +302,10 @@ export function createOkoWorkflowService(deps: OkoWorkflowDependencies) {
     const prepareMethods = new Set<string>(['open', 'marker', 'start', 'finish', 'saveMapping', 'directoryPreview', 'directoryApply', 'test']);
     for (const name of ['open', 'setProfile', 'loginOpen', 'loginFinish', 'marker', 'start', 'finish', 'saveMapping', 'directoryPreview', 'directoryApply', 'test'] as const) {
         const original = service[name] as (context: CommandContext, input: { workflowId?: string }) => Promise<unknown>;
-        (service as unknown as Record<string, unknown>)[name] = (context: CommandContext, input: { workflowId?: string }) => serializeMutation(context, input, async () => { if (prepareMethods.has(name)) await freshPrepare(context); return original(context, input); });
+        (service as unknown as Record<string, unknown>)[name] = (context: CommandContext, input: { workflowId?: string }) => serializeMutation(context, input, async () => {
+            try { if (prepareMethods.has(name)) await freshPrepare(context); return await original(context, input); }
+            catch (error) { const auth = authWindows.get(context.commandId); if (auth && name === 'test') { authWindows.delete(context.commandId); await closeAuthWindow(auth); } throw error; }
+        });
     }
     const cancel = service.cancel;
     service.cancel = async (context, input) => { load(context, input.workflowId); const ownerKey = owner(context); cancellationGenerations.set(ownerKey, (cancellationGenerations.get(ownerKey) ?? 0) + 1); for (const [controller, key] of controllers) if (key === ownerKey) controller.abort(); await runtime.closeOwned(browserOwner(context)); return serializeMutation(context, input, () => cancel(context, input)); };

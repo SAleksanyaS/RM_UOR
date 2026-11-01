@@ -117,8 +117,10 @@ async function waitForBrowserExport(context: BrowserContext, page: Page, locator
   }
 }
 export async function executeBrowser(runtime: string, profile: PrivateProfile, scenario: BrowserScenario, parameters: Record<string, string>, signal: AbortSignal, options: BrowserHelperOptions = {}): Promise<Downloaded> {
-  return withProfileQueue(await browserProfilePath(runtime, profile), signal, async () => {
-    const context = await openBrowser(runtime, profile, options); let closing: Promise<void> | undefined;
+  return withProfileQueue(await browserProfilePath(runtime, profile), signal, async () => executeBrowserContext(await openBrowser(runtime, profile, options), profile, scenario, parameters, signal, options));
+}
+async function executeBrowserContext(context: BrowserContext, profile: PrivateProfile, scenario: BrowserScenario, parameters: Record<string, string>, signal: AbortSignal, options: BrowserHelperOptions): Promise<Downloaded> {
+    let closing: Promise<void> | undefined;
     const close = () => closing ??= context.close().catch(() => {}), abort = () => { void close(); }; signal.addEventListener('abort', abort, { once: true });
     const totalTimer=setTimeout(()=>{const limit=browserLimits.get(context)!;limit.error=new ConnectorError('timeout','Истекло общее время браузерного сбора');void close();},Math.min(120000,profile.timeoutMs*4));
     try {
@@ -157,11 +159,17 @@ export async function executeBrowser(runtime: string, profile: PrivateProfile, s
       if (!downloaded) throw new ConnectorError('incomplete', 'Сценарий не получил файл. Добавьте действие download'); return downloaded;
     } catch(error){if(signal.aborted)signal.throwIfAborted();throw browserLimits.get(context)?.error??error;}
     finally { clearTimeout(totalTimer);signal.removeEventListener('abort', abort); await close(); }
-  });
 }
 
-interface Recording { id: string; owner: string; context: BrowserContext; scenario: BrowserScenario; release: () => void; expires: NodeJS.Timeout; parameters: Record<string, string>; screenshots: string[]; pendingDownload?:boolean }
+interface Recording { id: string; owner: string; context: BrowserContext; scenario: BrowserScenario; observing: boolean; release: () => void; expires: NodeJS.Timeout; parameters: Record<string, string>; screenshots: string[]; pendingDownload?:boolean }
 const recordings = new Map<string, Recording>();
+/** The login keeps its profile queue lease until this same native context closes.
+ * Authentication never leaves the browser as cookies, storage state or recipe data. */
+export async function replayBrowserLogin(owner: string, id: string, profile: PrivateProfile, scenario: BrowserScenario, parameters: Record<string, string>, signal: AbortSignal, options: BrowserHelperOptions): Promise<Downloaded> {
+  const record = recordings.get(id);
+  if (!record || record.owner !== owner || record.observing || record.scenario.startUrl !== scenario.startUrl) throw new ConnectorError('access_denied', 'Own report login context is unavailable');
+  return executeBrowserContext(record.context, profile, scenario, parameters, signal, options);
+}
 export async function observeBrowserLogin(owner: string, id: string, profile: PrivateProfile, selector: string, startUrl: string): Promise<boolean> {
   const record = recordings.get(id);
   if (!record || record.owner !== owner) throw new ConnectorError('access_denied', 'Browser session is unavailable');
@@ -187,7 +195,7 @@ export async function startRecording(runtime: string, owner: string, profile: Pr
       const ownedContext=context,abort=()=>{void ownedContext.close();};signal.addEventListener('abort',abort,{once:true});
       context.once('close',()=>signal.removeEventListener('abort',abort));signal.throwIfAborted();
       let release!: () => void; const done = new Promise<void>(resolve => { release = resolve; });
-      const record: Recording = { id, owner, context, scenario: { id: `scenario-${id}`, startUrl, steps: [] }, release, expires: setTimeout(() => release(), 15 * 60_000), parameters: {}, screenshots: [] };
+      const record: Recording = { id, owner, context, scenario: { id: `scenario-${id}`, startUrl, steps: [] }, observing: observe, release, expires: setTimeout(() => release(), 15 * 60_000), parameters: {}, screenshots: [] };
       const sourceOrigin = new URL(startUrl).origin;
       if(observe){
       await context.exposeBinding('__uorRecord', async ({ page, frame }, event: unknown) => {

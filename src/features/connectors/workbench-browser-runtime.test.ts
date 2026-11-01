@@ -41,6 +41,24 @@ it('requires the visible authenticated marker before replaying actions', async (
   const context = fakeContext(); const runtime = createBrowserRuntime({ runtimeRoot: root, launcher: { launchPersistent: async () => context } });
   await expect(runtime.replay({ owner, profile, scenario: { ...makeHeader(1), sourceId: fixtureId(2), startUrl: 'https://report.example.invalid/report', authenticatedSelector: '#ready', steps: [{ action: 'download', locator: { kind: 'css', selector: '#export' } }], parameters: {}, expectedExport: { format: 'csv', requiredColumns: ['Value'] } } }, new AbortController().signal)).rejects.toMatchObject({ code: 'manual_login_required' });
 });
+it.each(['owner','profile','report','marker','handle','mutated-input'] as const)('rejects a login continuation with a different %s without opening or closing another context',async mismatch=>{
+ const root=await mkdtemp(path.join(os.tmpdir(),'uor-browser-runtime-'));roots.push(root);let launches=0,closed=false;
+ const runtime=createBrowserRuntime({runtimeRoot:root,launcher:{async launchPersistent(){launches++;const context=fakeContext();context.once('close',()=>closed=true);return context;}}});
+ const input={owner,profile:{...profile},startUrl:'https://report.example.invalid/report',authenticatedSelector:'#ready'};
+ try{
+  const login=await runtime.openLogin(input,new AbortController().signal);
+  const scenario={...makeHeader(9010),sourceId:fixtureId(9011),startUrl:input.startUrl,authenticatedSelector:'#ready',steps:[{action:'download' as const,locator:{kind:'css' as const,selector:'#export'}}],parameters:{},expectedExport:{format:'csv' as const,requiredColumns:['Value']}};
+  const request={owner,profile,scenario,loginHandleId:login.handleId};
+  if(mismatch==='owner')request.owner={...owner,profilePersonId:fixtureId(9012)};
+  if(mismatch==='profile')request.profile={...profile,maxBytes:profile.maxBytes-1};
+  if(mismatch==='report')request.scenario={...scenario,startUrl:'https://report.example.invalid/other-report'};
+  if(mismatch==='marker')request.scenario={...scenario,authenticatedSelector:'#different'};
+  if(mismatch==='handle')request.loginHandleId=fixtureId(9013);
+  if(mismatch==='mutated-input'){input.profile.maxBytes--;request.profile=input.profile;}
+  await expect(runtime.replay(request,AbortSignal.timeout(300))).rejects.toMatchObject({code:mismatch==='owner'||mismatch==='handle'?'BROWSER_HANDLE_NOT_FOUND':'BROWSER_CONTEXT_MISMATCH'});
+  expect(launches).toBe(1);expect(closed).toBe(false);
+ }finally{await runtime.shutdown();}
+});
 it('closing one owner cancels its queued opens before another managed window can launch', async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'uor-browser-runtime-')); roots.push(root);
   let launches = 0; const runtime = createBrowserRuntime({ runtimeRoot: root, launcher: { launchPersistent: async () => { launches++; return fakeContext(); } } });

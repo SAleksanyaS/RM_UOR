@@ -46,9 +46,10 @@ it('launch failure closes the picker and recorder fixture listeners without wait
   expect(output.code).toBe(1);
   expect(output.text).toContain('UOR_LOADER_CLEANUP picker listener=closed');
   expect(output.text).toContain('UOR_LOADER_CLEANUP recorder listener=closed');
+  expect(output.text).toContain('UOR_LOADER_CLEANUP session-continuation listener=closed');
 }, 7000);
 
-it('runs picker and recorder regression under the actual production Node/tsx loader', async () => {
+it('runs picker, recorder and session-only continuation under the actual production Node/tsx loader', async () => {
   const output = await runOwnedLoader();
   expect(output.timedOut, output.text).toBe(false);
   expect(output.code, output.text).toBe(0);
