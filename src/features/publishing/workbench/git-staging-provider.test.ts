@@ -71,6 +71,23 @@ it('extends only an observed own branch and rejects a changed remote head withou
   const remote=await provider.inspectRemote(first.branch);expect(remote).not.toBe(first.commit);await expect(provider.verifyPrepared(second)).rejects.toMatchObject({code:'PREVIEW_STALE'});
   expect(await provider.inspectRemote(first.branch)).toBe(remote);
 },30000);
+it('continues the same proposal after independent main advancement through an ordinary fast-forward push',async()=>{
+  const f=await gitStagingFixture(),provider=createGitStagingProvider(f.options),firstInput=f.makePackage(),first=await provider.prepare(firstInput);
+  await f.git(first.checkout,['push','origin',first.branch]);
+  const oldPrefix=`published/workbench/packages/${first.packageRevision.packageId}/1/`;
+  const oldBytes=await f.git(first.checkout,['show',first.commit+':'+oldPrefix+'manifest.json']);
+  await writeFile(path.join(f.projectRoot,'README.md'),'Independent accepted main');await f.git(f.projectRoot,['add','--','README.md']);await f.git(f.projectRoot,['commit','-m','independent main']);await f.git(f.projectRoot,['push','origin','main']);
+  const current=await provider.readMain(),next=f.makePackage(290001,2),{contentHash:_hash,...base}=next.manifest.packageRevision;
+  const manifest=buildPackageManifest({package:{...base,baseCommit:current.commit},files:next.files});
+  const second=await provider.prepare({...next,manifest,expectedRemoteHead:first.commit});
+  expect(second.branch).toBe(first.branch);expect(second.packageRevision.baseCommit).toBe(current.commit);
+  expect((await f.git(second.checkout,['show','-s','--format=%P',second.commit])).split(' ')).toEqual([first.commit,current.commit]);
+  expect(await f.git(second.checkout,['show',second.commit+':'+oldPrefix+'manifest.json'])).toBe(oldBytes);
+  expect(await readFile(path.join(second.checkout,'README.md'),'utf8')).toBe('Independent accepted main');
+  await expect(provider.verifyPrepared(second)).resolves.toBeUndefined();
+  await f.git(second.checkout,['push','origin',second.commit+':refs/heads/'+second.branch]);expect(await provider.inspectRemote(second.branch)).toBe(second.commit);
+  expect((await f.argv()).flat().some(arg=>['--force','--force-with-lease','reset','rebase'].includes(arg))).toBe(false);
+},60000);
 it('rejects option-like refs, credential URLs and undeclared/private package paths',async()=>{
   const f=await gitStagingFixture();const provider=createGitStagingProvider(f.options);
   for(const branch of ['main','--upload-pack=whoami','uor/a/b;echo bad','uor/../main']) await expect(provider.inspectRemote(branch)).rejects.toMatchObject({code:'GIT_CONFIGURATION_INVALID'});

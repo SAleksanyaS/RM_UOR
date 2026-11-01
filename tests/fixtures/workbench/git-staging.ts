@@ -19,7 +19,7 @@ export async function gitStagingFixture() {
     const resolved=path.resolve(root),allowed=path.resolve(tmpdir());if(!resolved.startsWith(allowed+path.sep)||!path.basename(resolved).startsWith('uor-t23-')) throw Error('Unsafe synthetic cleanup');
     await rm(resolved,{recursive:true,force:true,maxRetries:3,retryDelay:100});
   });
-  const gitExecutable=(await execute('where.exe',['git'],{windowsHide:true})).stdout.trim().split(/\r?\n/)[0];
+  const gitExecutable=(await execute(process.platform==='win32'?'where.exe':'which',['git'],{shell:false,windowsHide:true})).stdout.trim().split(/\r?\n/)[0];
   const git=async(cwd:string,args:string[])=>String((await execute(gitExecutable,args,{cwd,shell:false,windowsHide:true,timeout:30000,maxBuffer:8*1024*1024})).stdout).trim();
   const projectRoot=path.join(root,'running project'),runtimeRoot=path.join(root,'private runtime'),remoteUrl=path.join(root,'remote.git');
   await mkdir(projectRoot);await git(root,['init','--bare','--initial-branch=main',remoteUrl]);await git(projectRoot,['init','--initial-branch=main']);

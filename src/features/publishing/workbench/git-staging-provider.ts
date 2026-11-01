@@ -138,14 +138,35 @@ export function createGitStagingProvider(input:GitStagingOptions):PublicationGit
     if(await text(proposal.checkout,['status','--porcelain','--untracked-files=all'],true)) return stale();
     await commit(proposal.checkout,proposal.commit);
     const expectedParent=proposal.expectedRemoteHead??revision.baseCommit;
-    if(await text(proposal.checkout,['rev-parse',proposal.commit+'^'],true)!==expectedParent) return stale();
+    const incorporatesMain=(await invoke(proposal.checkout,['merge-base','--is-ancestor',revision.baseCommit,expectedParent],true,[1])).exitCode===0;
+    const parents=(await text(proposal.checkout,['show','-s','--format=%P',proposal.commit],true)).split(' ');
+    if(!same(parents,incorporatesMain?[expectedParent]:[expectedParent,revision.baseCommit]))return stale();
+    if(!incorporatesMain){
+      const fork=await text(proposal.checkout,['merge-base','--all',revision.baseCommit,expectedParent],true,[1]);
+      if(!gitOidSchema.safeParse(fork).success)return stale();
+      await assertProposalDelta(proposal.checkout,expectedParent,{...revision,baseCommit:fork},revision.revision-1);
+    }
     await assertProposalDelta(proposal.checkout,proposal.commit,revision,revision.revision);
     const prefix=`published/workbench/packages/${revision.packageId}/${revision.revision}/`;
-    const expected=[prefix+'manifest.json',...manifest.files.map(file=>prefix+file.path)].sort();
-    const changed=(await text(proposal.checkout,['diff','--name-only','--no-renames',expectedParent,proposal.commit],true)).split(/\r?\n/).filter(Boolean).sort();
-    if(!same(changed,expected)) return stale();
+    if(incorporatesMain){
+      const expected=[prefix+'manifest.json',...manifest.files.map(file=>prefix+file.path)].sort();
+      const changed=(await text(proposal.checkout,['diff','--name-only','--no-renames',expectedParent,proposal.commit],true)).split(/\r?\n/).filter(Boolean).sort();
+      if(!same(changed,expected)) return stale();
+    }
     const files=await tree(proposal.checkout,proposal.commit);const actualManifest=files.get(prefix+'manifest.json');if(!actualManifest || !same(JSON.parse(Buffer.from(actualManifest).toString('utf8')),manifest)) return stale();
     for(const file of manifest.files) {const bytes=files.get(prefix+file.path);if(!bytes || bytes.byteLength!==file.bytes || hashBytes(bytes)!==file.sha256) return stale();}
+    // The complete published tree must be exactly fresh main + unchanged prior
+    // proposal capsules + this new capsule. A clean Git merge alone is insufficient.
+    const expectedFiles=await tree(proposal.checkout,revision.baseCommit);
+    for(const [name,bytes] of await tree(proposal.checkout,expectedParent)){
+      if(expectedFiles.has(name)&&hashBytes(expectedFiles.get(name)!)!==hashBytes(bytes))return stale();
+      expectedFiles.set(name,bytes);
+    }
+    for(const name of [prefix+'manifest.json',...manifest.files.map(file=>prefix+file.path)]){
+      if(expectedFiles.has(name))return stale();expectedFiles.set(name,files.get(name)!);
+    }
+    const signature=(value:ReadonlyMap<string,Uint8Array>)=>[...value].map(([name,bytes])=>[name,hashBytes(bytes)]).sort(([a],[b])=>a<b?-1:a>b?1:0);
+    if(!same(signature(files),signature(expectedFiles)))return stale();
   }
   async function validatePrepared(value:PreparedProposal,manifest:PackageManifest):Promise<void> {
     await validatePreparedLocal(value,manifest);
@@ -196,6 +217,16 @@ export function createGitStagingProvider(input:GitStagingOptions):PublicationGit
       const manifest=packageManifestSchema.parse(JSON.parse((await readPhysicalPackageFile(path.join(prefix,'manifest.json'))).toString('utf8')));
       return validatePrepared(saved,manifest);
     },
+    async readCandidate(candidate) {
+      await port.verifyPrepared(candidate);
+      const target=await readMain();if(target.commit!==candidate.packageRevision.baseCommit)return stale();
+      if((await invoke(candidate.checkout,['merge-base','--is-ancestor',target.commit,candidate.commit],true,[1])).exitCode!==0)return stale();
+      const candidateTreeOid=await text(candidate.checkout,['rev-parse',candidate.commit+'^{tree}'],true);gitOidSchema.parse(candidateTreeOid);
+      const files=await tree(candidate.checkout,candidate.commit);
+      await validatePreparedLocal(candidate,packageManifestSchema.parse(JSON.parse((await readPhysicalPackageFile(path.join(candidate.checkout,'published','workbench','packages',candidate.packageRevision.packageId,String(candidate.packageRevision.revision),'manifest.json'))).toString('utf8'))));
+      if((await readMain()).commit!==target.commit)return stale();
+      return {target,candidate:{repositoryId:target.repositoryId,sourceOid:candidate.commit,targetOid:target.commit,candidateTreeOid,files}};
+    },
     async prepare(unparsed) {
       const manifest=packageManifestSchema.parse(unparsed.manifest);const files=new Map([...unparsed.files].map(([name,bytes])=>[name,new Uint8Array(bytes)]));
       const expectedRemoteHead=unparsed.expectedRemoteHead===null?null:gitOidSchema.parse(unparsed.expectedRemoteHead);
@@ -214,10 +245,13 @@ export function createGitStagingProvider(input:GitStagingOptions):PublicationGit
         await text(checkout,['-c','core.longpaths=true','init','--initial-branch=uor-staging']);await text(checkout,['config','core.longpaths','true']);await text(checkout,['remote','add','origin',options.remoteUrl]);
         await text(checkout,['fetch','--no-tags','origin','refs/heads/main'],true);if(await text(checkout,['rev-parse','FETCH_HEAD'],true)!==revision.baseCommit) return stale();
         const start=expectedRemoteHead??revision.baseCommit;
+        let incorporateMain=false;
         if(expectedRemoteHead) {
           await text(checkout,['fetch','--no-tags','origin','refs/heads/'+branch],true);if(await text(checkout,['rev-parse','FETCH_HEAD'],true)!==expectedRemoteHead) return stale();
-          if((await invoke(checkout,['merge-base','--is-ancestor',revision.baseCommit,expectedRemoteHead],true,[1])).exitCode!==0) return stale();
-          await assertProposalDelta(checkout,expectedRemoteHead,revision,revision.revision-1);
+          incorporateMain=(await invoke(checkout,['merge-base','--is-ancestor',revision.baseCommit,expectedRemoteHead],true,[1])).exitCode!==0;
+          const fork=incorporateMain?await text(checkout,['merge-base','--all',revision.baseCommit,expectedRemoteHead],true,[1]):revision.baseCommit;
+          if(!gitOidSchema.safeParse(fork).success)return stale();
+          await assertProposalDelta(checkout,expectedRemoteHead,{...revision,baseCommit:fork},revision.revision-1);
         }
         await text(checkout,['switch','--create',branch,start]);
         const name=await text(options.projectRoot,['config','--get','user.name'],true,[1]),email=await text(options.projectRoot,['config','--get','user.email'],true,[1]);
@@ -226,6 +260,10 @@ export function createGitStagingProvider(input:GitStagingOptions):PublicationGit
         const sourceHooks=await text(options.projectRoot,['rev-parse','--git-path','hooks'],true);
         const configuredHooks=await text(options.projectRoot,['config','--path','--get','core.hooksPath'],true,[1]);
         const hooks=path.resolve(options.projectRoot,configuredHooks||sourceHooks);await text(checkout,['config','core.hooksPath',hooks]);
+        if(incorporateMain){
+          const merged=await invoke(checkout,['merge','--no-ff','--no-commit','--no-edit',revision.baseCommit],false,[1]);
+          if(merged.exitCode!==0)return stale();
+        }
         const prefix=`published/workbench/packages/${revision.packageId}/${revision.revision}/`;
         for(const [relative,bytes] of [...files,["manifest.json",canonicalBytes(manifest)] as const]) {
           const filename=path.join(checkout,prefix,relative);await assertPhysicalPackagePath(filename,true);await mkdir(path.dirname(filename),{recursive:true});await assertPhysicalPackagePath(path.dirname(filename));await writeFile(filename,bytes,{flag:'wx'});

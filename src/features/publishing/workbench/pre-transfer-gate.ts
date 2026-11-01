@@ -6,6 +6,7 @@ import { buildPackageManifest,canonicalBytes,hashBytes } from './package-manifes
 import type { PackageArtifactStore } from './contracts';
 import type { PreparedProposal,PublicationGitPort } from './git-port';
 import type { PreTransferGate } from './terminal-runner';
+import { assertPublicationCandidateProof, validatePublicationCandidate } from './publication-validation';
 
 type Dependencies={accessPolicy:AccessPolicyService;git:PublicationGitPort;artifacts:PackageArtifactStore;operationId?:string;assertPreview?:()=>Promise<unknown>};
 const fail=(code:string,status=409):never=>{throw new WorkbenchHttpError(status,code,code);};
@@ -18,7 +19,13 @@ export function createPreTransferGate(context:CommandContext,prepared:PreparedPr
     await deps.assertPreview();identity();const files=await deps.artifacts.readRevision(candidate.packageRevision);identity();
     const {contentHash:_hash,...base}=candidate.packageRevision;
     if(hashBytes(canonicalBytes(buildPackageManifest({package:base,files}).packageRevision))!==hashBytes(canonicalBytes(candidate.packageRevision))) return fail('INTEGRITY_MISMATCH',422);
-    await deps.git.verifyPrepared(candidate);identity();await deps.assertPreview();identity();
+    await deps.git.verifyPrepared(candidate);identity();
+    if(!deps.git.readCandidate)return fail('CANDIDATE_VALIDATION_UNAVAILABLE',503);
+    const exact=await deps.git.readCandidate(candidate);identity();
+    if(exact.candidate.sourceOid!==candidate.commit||exact.candidate.targetOid!==candidate.packageRevision.baseCommit)return fail('PREVIEW_STALE');
+    const proof=validatePublicationCandidate(exact);
+    await deps.assertPreview();identity();
+    const checked=await deps.git.readCandidate(candidate);identity();assertPublicationCandidateProof(proof,checked);
     const fresh=await deps.accessPolicy.assertFreshPublishAllowed(deps.operationId!);identity();
     if(fresh.personId!==person||!canUseCapability(fresh,'package.submit')) return fail('ACCESS_DENIED',403);context.ownAccess=fresh;
   };

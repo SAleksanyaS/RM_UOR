@@ -63,10 +63,10 @@ describe('immutable evaluation bases', () => {
     expect(first.resolution.templateRef).toEqual(versionRef('template', 60));
     expect(first.resolution.directoryLinkRefs).toEqual([versionRef('directory_link', 80)]);
     r.append('directory_link', { ...link, revision: 2 }, 1);
-    const unknown = makePublicationAnchor({ id: fixtureId(70), packageId: fixtureId(71), timeVerification: 'unknown', mergedAt: null });
+    const unknown = makePublicationAnchor({ id: fixtureId(70), packageId: fixtureId(70), timeVerification: 'unknown', mergedAt: null });
     r.transaction(() => { r.appendPublicationAnchor(unknown, null); r.append('method_version', { ...i.method, revision: 2, publicationAnchorId: unknown.id }, 1); r.append('template', { ...makeHeader(60, { revision: 2, publicationAnchorId: unknown.id }), name: 'demo_template_v2', methodRef: versionRef('method_version', 14, 2) }, 1); });
     const second = resolveEvaluationInput(request(i), r, clock, actor); expect(second.method.revision).toBe(2); expect(second.resolution.templateRef?.revision).toBe(2);
-    const pending = makePublicationAnchor({ id: fixtureId(72), packageId: fixtureId(73), publicationState: 'unconfirmed', timeVerification: 'unknown', mergedAt: null, mainCommit: null, verifiedAt: null });
+    const pending = makePublicationAnchor({ id: fixtureId(72), packageId: fixtureId(72), publicationState: 'unconfirmed', timeVerification: 'unknown', mergedAt: null, mainCommit: null, verifiedAt: null });
     r.appendPublicationAnchor(pending, null); r.append('template', { ...makeHeader(60, { revision: 3, publicationAnchorId: pending.id }), name: 'pending', methodRef: versionRef('method_version', 14) }, 2);
     expect(resolveEvaluationInput(request(i), r, clock, actor).method.revision).toBe(2);
     expect(r.readVersion<EvaluationBasis>(saved.basisRef)?.methodRef.revision).toBe(1);

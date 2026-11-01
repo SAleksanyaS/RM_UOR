@@ -2,7 +2,7 @@ import path from 'node:path';
 import { afterEach,expect,it } from 'vitest';
 import { draftCleanups,business } from '../../../../tests/fixtures/workbench/drafts';
 import { proposalFixture } from '../../../../tests/fixtures/workbench/proposals';
-import { fixtureId,makeEntityGraph } from '../../../../tests/fixtures/workbench/factories';
+import { fixtureId,makeEntityGraph,makeHeader } from '../../../../tests/fixtures/workbench/factories';
 import { createPackageArtifactStore } from './package-artifacts';
 import { canonicalBytes } from './package-manifest';
 import { PublishingService } from './publishing-service';
@@ -13,15 +13,21 @@ import { packagePreviewResultSchema,packageSubmitResultSchema,packageStatusResul
 import { createJobStore } from '../../../server/workbench/jobs';
 import { createCommandRegistry } from '../../../server/workbench/command-registry';
 import { WorkbenchHttpError } from '../../../server/workbench/protocol';
+import { syntheticCandidateInput, syntheticProposalTree, syntheticPublishedTree } from './testing/candidate-fixture';
 
 afterEach(async()=>{for(const cleanup of draftCleanups.splice(0)) await cleanup();});
 async function fixture() {
   const f=proposalFixture();const remote=new Map<string,string>();const prepared=new Map<number,PreparedProposal>();let commits=0,pushes=0,serial=245000;
-  const main={repositoryId:'synthetic-main',commit:'a'.repeat(40),files:new Map(makeEntityGraph(f.businessInput).entries.map(({entityType,value})=>[`records/${entityType}/${value.id}/${value.revision}.json`,canonicalBytes(value)]))};
+  const graph=makeEntityGraph(f.businessInput),header=(id:number)=>makeHeader(id,{publicationAnchorId:graph.anchors[0].id});
+  graph.entries.push({entityType:'directory_entity',value:{...header(245910),kind:'dit',name:'Synthetic DIT',externalKeys:[]}},{entityType:'directory_entity',value:{...header(245911),kind:'cluster',name:'Synthetic cluster',externalKeys:[]}},{entityType:'directory_link',value:{...header(245912),kind:'dit_cluster',from:{entityType:'directory_entity',id:fixtureId(245910)},to:{entityType:'directory_entity',id:fixtureId(245911)}}},{entityType:'directory_link',value:{...header(245913),kind:'cluster_product',from:{entityType:'directory_entity',id:fixtureId(245911)},to:{entityType:'directory_entity',id:f.businessInput.assignment.scope.id}}});
+  graph.entries.push({entityType:'directory_link',value:{...header(245914),kind:'leader',scope:{kind:'cluster',id:fixtureId(245911)},personId:fixtureId(17)}},{entityType:'directory_link',value:{...header(245915),kind:'leader',scope:f.businessInput.assignment.scope,personId:fixtureId(17)}});
+  const main={repositoryId:'synthetic-main',commit:'a'.repeat(40),files:syntheticPublishedTree(graph.entries,'0'.repeat(40),f.clock.now(),fixtureId(17))};
+  const candidateTrees=new Map<string,Map<string,Uint8Array>>();
   const git:PublicationGitPort={async readMain(){return main;},async inspectRemote(branch){return remote.get(branch)??null;},async prepare(input){
     const revision=input.manifest.packageRevision,old=prepared.get(revision.revision);if(old) return old;commits++;
-    const value={packageRevision:revision,branch:`uor/${revision.curatorPersonId}/${revision.packageId}`,checkout:path.join(f.root,'private-checkout-'+revision.revision),commit:(revision.revision===1?'b':'c').repeat(40),expectedRemoteHead:input.expectedRemoteHead};prepared.set(revision.revision,value);return value;
-  },async verifyPrepared(value){if((remote.get(value.branch)??null)!==value.expectedRemoteHead) throw Error('Stale prepared branch');}};
+    const value={packageRevision:revision,branch:`uor/${revision.curatorPersonId}/${revision.packageId}`,checkout:path.join(f.root,'private-checkout-'+revision.revision),commit:(revision.revision===1?'b':'c').repeat(40),expectedRemoteHead:input.expectedRemoteHead};prepared.set(revision.revision,value);
+    candidateTrees.set(value.commit,new Map([...main.files,...(input.expectedRemoteHead?candidateTrees.get(input.expectedRemoteHead)??[]:[]),...syntheticProposalTree(input.manifest,input.files)]));return value;
+  },async verifyPrepared(value){if((remote.get(value.branch)??null)!==value.expectedRemoteHead||value.packageRevision.baseCommit!==main.commit) throw Error('Stale prepared branch');},async readCandidate(value){await git.verifyPrepared(value);const files=candidateTrees.get(value.commit);if(!files)throw Error('Missing exact candidate');return syntheticCandidateInput(value,main,files);}};
   const terminal:TerminalRunner={async runGitPush(input){await input.preTransferGate();const value=[...prepared.values()].find(value=>value.commit===input.preparedCommit)!;pushes++;remote.set(value.branch,value.commit);return {status:'confirmed',exitCode:0,remoteCommit:value.commit};}};
   const dependencies={repository:f.repository,clock:f.clock,drafts:f.service,artifacts:createPackageArtifactStore({artifactRoot:path.join(f.root,'packages')}),git,bitbucket:f.fake,terminal,accessPolicy:f.deps.accessPolicy,jobs:f.jobs,jobSink:f.jobs,publication:{mode:'demo-only' as const,classifyRecord:()=>true}};
   const service=new PublishingService(dependencies);
@@ -36,11 +42,26 @@ async function fixture() {
 }
 it('registers owned asynchronous submit/status and replays one typed command job',async()=>{
   const f=await fixture(),preview=await f.preview(),sent=await f.send('package.submit',{packageId:f.packageId(),previewToken:preview.previewToken});
-  expect(sent.job.status).toBe('succeeded');const result=packageSubmitResultSchema.parse(sent.job.result);expect(result.state).toBe('open_pr');
+  expect(sent.job.error).toBeNull();expect(sent.job.status).toBe('succeeded');const result=packageSubmitResultSchema.parse(sent.job.result);expect(result.state).toBe('open_pr');
   expect(await f.registry.execute(sent.request,{...f.context,commandId:sent.request.commandId})).toEqual(sent.accepted);expect(f.counts()).toEqual({commits:1,pushes:1});
   await expect(f.registry.execute({...sent.request,payload:{...sent.request.payload,previewToken:'changed'}},{...f.context,commandId:sent.request.commandId})).rejects.toMatchObject({code:'IDEMPOTENCY_CONFLICT'});
   f.context.ownAccess={...f.context.ownAccess,personId:fixtureId(245999)};
   await expect(f.registry.execute(sent.request,{...f.context,commandId:sent.request.commandId})).rejects.toMatchObject({code:'COMMAND_NOT_FOUND'});
+});
+it('refuses submit before preparing or pushing when the provider cannot read a full exact candidate',async()=>{
+  const f=await fixture(),preview=await f.preview();f.git.readCandidate=undefined;
+  const sent=await f.send('package.submit',{packageId:f.packageId(),previewToken:preview.previewToken});
+  expect(sent.job.error?.code).toBe('CANDIDATE_VALIDATION_UNAVAILABLE');expect(f.counts()).toEqual({commits:0,pushes:0});
+});
+it('updates the same open PR after independent main advancement only with a fresh preview',async()=>{
+  const f=await fixture(),first=await f.preview(),bytes=await f.dependencies.artifacts.readRevision(first.packageRevision);
+  const sent=await f.send('package.submit',{packageId:f.packageId(),previewToken:first.previewToken}),proposal=packageSubmitResultSchema.parse(sent.job.result).proposal;
+  f.main.commit='d'.repeat(40);
+  await expect(f.publishing.assertPreview(f.context,{packageId:f.packageId(),previewToken:first.previewToken})).rejects.toMatchObject({code:'PREVIEW_STALE'});
+  await f.edit('Fresh change after unrelated accepted main');const second=await f.preview();expect(second.packageRevision.baseCommit).toBe(f.main.commit);
+  const updated=await f.send('package.submit',{packageId:f.packageId(),previewToken:second.previewToken});expect(updated.job.error).toBeNull();expect({status:updated.job.status,warnings:updated.job.warnings}).toEqual({status:'succeeded',warnings:[]});
+  expect(packageSubmitResultSchema.parse(updated.job.result).proposal).toEqual(proposal);expect(f.fake.testing.creates).toBe(1);expect(f.fake.testing.updates).toBe(1);
+  expect(await f.dependencies.artifacts.readRevision(first.packageRevision)).toEqual(bytes);expect(f.counts()).toEqual({commits:2,pushes:2});
 });
 it('recovers a lost native create through the same job without another commit or push',async()=>{
   const f=await fixture(),preview=await f.preview();f.fake.testing.loseNextCreateResponse=true;

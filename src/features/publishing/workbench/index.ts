@@ -18,3 +18,5 @@ export type { TerminalCapabilityProfile } from './terminal-capability-profile';
 export { createNativeTerminalPort,createWindowsTerminalLauncher } from './terminal-native';
 export { verifyPublicationAnchor,type PublicationAnchor } from './publication-anchor';
 export { applyVerifiedPublication,readAppliedPublication,type PublicationApplyDependencies } from './publication-apply';
+export { buildHistoricalEvaluationInput, historicalBasisDefinitions, type HistoricalRead } from './historical-input';
+export { validatePublicationCandidate, assertPublicationCandidateProof, type PublicationCandidate, type PublicationCandidateInput, type PublicationCandidateProof } from './publication-validation';

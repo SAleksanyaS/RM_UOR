@@ -111,7 +111,7 @@ it('pending_team_proposals_are_not_current_until_confirmed_publication_and_keep_
   expect(() => f.repository.append('goal_assignment', { ...makeHeader(770), ...definition, publicationAnchorId: null }, null)).toThrowError(expect.objectContaining({ code: 'ASSIGNMENT_POPULATION_MISMATCH' }));
   f.repository.append('goal_assignment', { ...makeHeader(770), ...completedDefinition, publicationAnchorId: null }, null);
   expect(f.repository.readPublishedHead(assignmentRef)).toBeNull();
-  const anchor = makePublicationAnchor({ id: fixtureId(772), packageId: fixtureId(773), timeVerification: 'unknown', mergedAt: null });
+  const anchor = makePublicationAnchor({ id: fixtureId(772), packageId: fixtureId(772), timeVerification: 'unknown', mergedAt: null });
   f.repository.transaction(() => {
     f.repository.appendPublicationAnchor(anchor, null);
     f.repository.append('template', { ...input.templates[0], revision: 2, publicationAnchorId: anchor.id }, 1);
@@ -225,7 +225,7 @@ it('returns_problems_for_malformed_entities_and_duplicate_semantic_team_relation
 });
 it('confirmed_unknown_time_enables_current_links_but_historical_time_uses_anchor_guard', () => {
   const f = repositoryFixture(); const store = createDirectoryStore({ repository: f.repository }); const old = f.links.find(l => l.id === fixtureId(116))!;
-  const anchor = makePublicationAnchor({ id: fixtureId(900), packageId: fixtureId(901), timeVerification: 'unknown', mergedAt: null });
+  const anchor = makePublicationAnchor({ id: fixtureId(900), packageId: fixtureId(900), timeVerification: 'unknown', mergedAt: null });
   f.repository.transaction(() => { f.repository.appendPublicationAnchor(anchor, null); f.repository.append('directory_link', { ...old, revision: 2, publicationAnchorId: anchor.id, personId: fixtureId(106) }, 1); });
   const current = store.read({ refs: f.refs, mode: { kind: 'current' } }); expect(current.directoryLinks.find(l => l.id === old.id)).toMatchObject({ revision: 2, personId: fixtureId(106) });
   expect(() => store.read({ refs: f.refs, mode: { kind: 'at', effectiveAt: '2026-10-28T09:00:00Z' } })).toThrowError(expect.objectContaining({ code: 'EFFECTIVE_TIME_UNVERIFIED' }));

@@ -21,6 +21,21 @@ it('updates the same open PR for rework and preserves ordinary comments',async()
   const next=await reconcileProposal(f.command().context,f.input(2),f.deps);
   expect(next.link.id).toBe(first.link.id);expect(next.sourceCommit).toBe('c'.repeat(40));expect(f.fake.testing.updates).toBe(1);expect((await f.fake.readComments(first.link))[0].requiresRework).toBe(false);
 });
+it('updates the existing PR from its older target only after a fresh gate and exact new-source/new-target readback',async()=>{
+  const f=proposalFixture(),first=await reconcileProposal(f.command().context,f.input(),f.deps),next=f.input(2),command=f.command();
+  next.packageRevision={...next.packageRevision,baseCommit:'d'.repeat(40)};
+  const result=await reconcileProposal(command.context,next,f.deps);
+  expect(result).toMatchObject({link:first.link,sourceCommit:next.proposalCommit,targetCommit:next.packageRevision.baseCommit});
+  expect(f.gates).toContain(command.job.jobId);expect(f.fake.testing.creates).toBe(1);expect(f.fake.testing.updates).toBe(1);
+});
+it('keeps unchanged-source target movement stale and rejects a stale target after an explicit PR update',async()=>{
+  const f=proposalFixture(),first=await reconcileProposal(f.command().context,f.input(),f.deps),unchanged=f.input();
+  unchanged.packageRevision={...unchanged.packageRevision,baseCommit:'d'.repeat(40)};
+  await expect(reconcileProposal(f.command().context,unchanged,f.deps)).rejects.toMatchObject({code:'PREVIEW_STALE'});expect(f.fake.testing.updates).toBe(0);
+  const next=f.input(2);next.packageRevision={...next.packageRevision,baseCommit:'d'.repeat(40)};
+  const staleReadback={...f.deps,bitbucket:{...f.fake,async readProposal(){return {...first,sourceCommit:next.proposalCommit};}}};
+  await expect(reconcileProposal(f.command().context,next,staleReadback)).rejects.toMatchObject({code:'REMOTE_STATE_UNKNOWN'});expect(f.fake.testing.updates).toBe(1);
+});
 it('never creates blindly when marker search is unsupported or ambiguous',async()=>{
   const f=proposalFixture();f.fake.testing.capabilities={...syntheticCapabilities,findByPackageMarker:false};
   await expect(reconcileProposal(f.command().context,f.input(),f.deps)).rejects.toMatchObject({code:'REMOTE_STATE_UNKNOWN'});expect(f.fake.testing.creates).toBe(0);

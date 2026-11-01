@@ -107,7 +107,7 @@ it('retains_history_and_frozen_agreed_basis', () => {
 });
 it('separates_current_publication_from_wall_clock_history', () => {
     const { r, input, i } = setup();
-    const unknown = makePublicationAnchor({ id: fixtureId(60000), packageId: fixtureId(60001), timeVerification: 'unknown', mergedAt: null });
+    const unknown = makePublicationAnchor({ id: fixtureId(60000), packageId: fixtureId(60000), timeVerification: 'unknown', mergedAt: null });
     r.appendPublicationAnchor(unknown, null);
     r.append('core_goal_definition', { ...i.goal, revision: 2, publicationAnchorId: unknown.id }, 1);
     expect(queryHistorySeries(input, r).points).toHaveLength(3);

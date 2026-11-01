@@ -73,6 +73,7 @@ export class PublishingService {
     const git=this.deps.git as PublicationGitPort,bitbucket=this.deps.bitbucket??createUnavailableBitbucketPort(),terminal=this.deps.terminal;
     const capabilities=bitbucketCapabilitiesSchema.parse(await bitbucket.capabilities());
     if(!capabilities.nativePullRequests||!capabilities.findByPackageMarker||!capabilities.terminalAuthProfileId||!terminal||typeof git.prepare!=='function'||typeof git.inspectRemote!=='function'||typeof git.verifyPrepared!=='function') return fail('BITBUCKET_NOT_READY',503);
+    if(typeof git.readCandidate!=='function') return fail('CANDIDATE_VALIDATION_UNAVAILABLE',503);
     const cancellation=new AbortController();
     let nativeFlight:Promise<TerminalRunResult>|null=null,currentCandidate:PreparedProposal|null=null,cancelPending=false;
     const previousIntent=this.deps.jobs.checkpoints(job.jobId,context.installationId).filter(value=>value.stage==='git.push.intent').at(-1);

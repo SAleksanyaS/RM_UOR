@@ -81,6 +81,21 @@ it('rejects capsule records without their matching manifest',async()=>{
   f.setMain({...f.main(),files});
   await expect(preparePackagePreview(f.context,f.packageId(),f.main(),f.deps)).rejects.toMatchObject({code:'INTEGRITY_MISMATCH'});
 });
+it('reads the latest accepted capsule of each package while retaining superseded proposal bytes',async()=>{
+  const f=fixture(),comment=await f.open('commentary');
+  await f.execute('comment.draft.save',{draftId:comment.draftId,targetRef:{entityType:'core_goal_definition',id:f.input.goal.id},text:'Review after a continued proposal'});
+  const files=new Map(f.main().files);
+  const add=(id:number,revision:number,value:typeof f.input.goal)=>{
+    const packageId=fixtureId(id),body=new Map([[`records/core_goal_definition/${value.id}/${value.revision}.json`,canonicalBytes({...value,publicationAnchorId:packageId})]]);
+    const manifest=buildPackageManifest({package:{schemaVersion:1,packageId,revision,cycleId:fixtureId(id+1),curatorPersonId:fixtureId(17),baseCommit:f.main().commit,targetBranch:'main',createdAt:f.clock.now()},files:body}),prefix=`published/workbench/packages/${packageId}/${revision}/`;
+    for(const [name,bytes] of body)files.set(prefix+name,bytes);files.set(prefix+'manifest.json',canonicalBytes(manifest));
+  };
+  add(224001,1,{...f.input.goal,revision:2,title:'Independent accepted title'});
+  add(224011,1,{...f.input.goal,revision:2,description:'Old own proposal'});
+  add(224011,2,{...f.input.goal,revision:3,title:'Independent accepted title',description:'Old own proposal'});
+  f.setMain({...f.main(),commit:'c'.repeat(40),files});
+  const result=await f.preview();expect(result.errors).toEqual([]);expect(f.main().files).toEqual(files);
+});
 it('previews through the actual async registry and reuses immutable revision bytes',async()=>{
   const f=fixture(); await f.editGoal({description:'Моё описание'});
   const first=await f.preview(); expect(first.errors).toEqual([]);
@@ -314,6 +329,19 @@ it.each([['missing',false],['foreign',false],['missing',true],['foreign',true]] 
   f.setNow('2026-10-23T12:02:00Z');
   const next=await f.preview(); expect(next.errors).toEqual([]); expect(next.packageRevision).toEqual(first.packageRevision);
   expect(await f.artifacts.readRevision(next.packageRevision)).toEqual(bytes);
+});
+it.each(['missing','foreign','restored'] as const)('requires trusted ownership for every private lineage input: %s',async binding=>{
+  const f=fixture(),assignment=await f.open('goal_assignment',{entityType:'goal_assignment',id:f.input.assignment.id});
+  await f.execute('calculation.prepare',{assignmentRef:f.service.readOwnEntry(f.context,assignment.draftId).versionRef,businessTime:f.input.context.businessTime});
+  const leaf={...f.input.facts[0],id:fixtureId(223101),actor:f.context.actor,publicationAnchorId:null};
+  const capture={...f.input.captures[0],id:fixtureId(223102),actor:f.context.actor,publicationAnchorId:null,capturedAt:'2026-10-23T12:01:00Z'};
+  const fact={...f.input.facts[0],revision:2,actor:f.context.actor,publicationAnchorId:null,captureId:capture.id,recordedAt:'2026-10-23T12:01:00Z',origin:'reducer' as const,lineage:{...f.input.facts[0].lineage,captureId:capture.id,inputFactRefs:[{entityType:'observed_fact',id:leaf.id,revision:1}],reducerMethodRef:{entityType:'method_version',id:f.input.method.id,revision:1}}};
+  f.repository.transaction(()=>{f.repository.append('observed_fact',leaf,null);f.repository.append('capture',capture,null);f.repository.append('observed_fact',fact,1);});
+  const ownership=createWorkspaceOwnership(f.repository);
+  for(const [type,value]of [['capture',capture],['observed_fact',fact]]as const)ownership.bind({moduleId:'core',key:`${type}/${value.id}/${value.revision}`,installationId:f.context.installationId,personId:f.context.ownAccess.personId,provenance:'created'});
+  if(binding!=='missing')ownership.bind({moduleId:'core',key:`observed_fact/${leaf.id}/1`,installationId:f.context.installationId,personId:binding==='foreign'?fixtureId(223199):f.context.ownAccess.personId,provenance:binding==='restored'?'restore':'created'});
+  f.setNow('2026-10-23T12:02:00Z');const result=await f.preview();
+  if(binding==='restored')expect(result.errors).toEqual([]);else expect(result.errors).toContainEqual(expect.objectContaining({code:'EVALUATION_BLOCKED'}));
 });
 it('cancels a waiting preview without replacing the previous ready package',async()=>{
   const f=fixture(); await f.editGoal({description:'Сохранённый предпросмотр'}); const first=await f.preview();

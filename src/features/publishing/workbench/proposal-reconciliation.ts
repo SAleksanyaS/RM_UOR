@@ -32,7 +32,10 @@ export async function reconcileProposal(context:CommandContext,unparsed:Proposal
     const old=sql.get<{input_hash:string}>('SELECT input_hash FROM wb_publishing_effects WHERE operation_id=? AND stage=? AND package_id=? AND revision=?',[job.jobId,'PR.write',revision.packageId,revision.revision]);if(old&&old.input_hash!==binding) return fail('IDEMPOTENCY_CONFLICT');
     if(found&&['merged','declined'].includes(found.state)) return fail('PACKAGE_CLOSED');
     if(found&&found.sourceCommit===input.proposalCommit) {if(found.targetCommit!==revision.baseCommit) return fail('PREVIEW_STALE');return found;}
-    if(found&&(!capabilities.updateOpenProposal||found.targetCommit!==revision.baseCommit)) return fail();
+    // A new, freshly validated source may advance this same PR from its older
+    // target. The caller's job-bound gate rechecks current main before dispatch;
+    // exact source and target are still mandatory in the subsequent readback.
+    if(found&&!capabilities.updateOpenProposal) return fail();
     deps.repository.transaction(()=>{sql.run('INSERT OR IGNORE INTO wb_publishing_effects(operation_id,stage,package_id,revision,installation_id,person_id,input_hash,intent_at,phase,external_json) VALUES(?,?,?,?,?,?,?,?,?,NULL)',[job.jobId,'PR.write',revision.packageId,revision.revision,context.installationId,owner,binding,context.clock.now(),'intent']);});
     const update=(phase:string,value:ProposalSnapshot|null)=>deps.repository.transaction(()=>sql.run('UPDATE wb_publishing_effects SET phase=?,external_json=? WHERE operation_id=? AND stage=? AND package_id=? AND revision=?',[phase,value?JSON.stringify(value):null,job.jobId,'PR.write',revision.packageId,revision.revision]));
     try {const fresh=await deps.accessPolicy.assertFreshPublishAllowed(job.jobId);if(fresh.personId!==owner||!canUseCapability(fresh,'package.submit')) return fail('ACCESS_DENIED',403);context.ownAccess=fresh;}

@@ -29,9 +29,12 @@ export function readMainProjection(main:VerifiedMain) {
   validatePortablePaths([...main.files.keys()]);
   // A capsule is an integrity boundary even when its manifest is missing.
   // Direct records remain the explicit synthetic/provider input format.
+  const latestCapsule=new Map<string,number>();
   for(const name of main.files.keys()) {
     const prefix=/^(published\/workbench\/packages\/[a-f0-9-]{36}\/[1-9][0-9]*\/)/.exec(name)?.[1];
     if(prefix && !main.files.has(prefix+'manifest.json')) return integrity();
+    const capsule=/^published\/workbench\/packages\/([a-f0-9-]{36})\/([1-9][0-9]*)\//.exec(name);
+    if(capsule)latestCapsule.set(capsule[1],Math.max(latestCapsule.get(capsule[1])??0,Number(capsule[2])));
   }
   const versions=new Map<string,TypedValue>(); const heads=new Map<string,TypedValue>();
   const artifacts:Array<{prefix:string;hash:string;bytes:Uint8Array}>=[];
@@ -54,6 +57,11 @@ export function readMainProjection(main:VerifiedMain) {
     try { value=schemaForEntity(type).parse(JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes))) as WorkbenchEntity; }
     catch(error) { if(error instanceof WorkbenchError && error.code==='UNKNOWN_ENTITY_TYPE') return fail('SCHEMA_UNSUPPORTED'); return integrity(); }
     if(value.id!==id || value.revision!==Number(revision)) return integrity();
+    // Earlier revisions of an unaccepted proposal remain immutable audit bytes.
+    // They are parsed and manifest-checked above, but only the latest capsule of
+    // that package contributes active versions, as in reader application.
+    const enclosing=/^published\/workbench\/packages\/([a-f0-9-]{36})\/([1-9][0-9]*)\//.exec(name);
+    if(enclosing && Number(enclosing[2])!==latestCapsule.get(enclosing[1]))continue;
     const key=versionKey(headerRef(type,value)); const old=versions.get(key);
     if(old && hashBytes(canonicalBytes(old.value))!==hashBytes(canonicalBytes(value))) return integrity();
     versions.set(key,{type,value});
