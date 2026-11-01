@@ -1,0 +1,11 @@
+.wb-data .wb-panel { margin-block: 1rem; padding: 1rem; border: 1px solid #c6d7cc; border-radius: .75rem; background: #fff; }
+.wb-data button, .wb-data-dialog button { margin: .25rem; }
+.wb-data [aria-pressed=true] { background: #d1f2df; border-color: #006d54; }
+.wb-data table { border-collapse: collapse; width: 100%; min-width: 42rem; font-size: .875rem; }
+.wb-data th, .wb-data td { min-width: 6rem; padding: .5rem; border-bottom: 1px solid #c6d7cc; vertical-align: top; text-align: left; }
+.wb-data [role=region] { max-width: 100%; overflow-x: auto; }
+.wb-data-dialog { width: min(100%, 55rem); max-height: 100%; overflow-y: auto; border-radius: .75rem; padding: 1rem; background: #fff; }
+.wb-data-dialog fieldset { min-width: 0; margin-block: 1rem; border: 1px solid #c6d7cc; }
+.wb-data-dialog label { display: block; margin-block: .75rem; }
+.wb-data-dialog input:not([type=checkbox]), .wb-data-dialog select { display: block; width: 100%; min-height: 44px; padding: .4rem; border: 1px solid #698579; border-radius: .3rem; }
+.wb-data-dialog .oko-form-grid { display: grid; gap: .5rem 1rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); }
