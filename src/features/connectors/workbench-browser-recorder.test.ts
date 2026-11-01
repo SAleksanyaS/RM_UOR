@@ -68,8 +68,8 @@ it('rejects failed/empty downloads and ambiguous targets without declaring a com
   await expect(finishRecording(f.root, 'owner', f.started.recordingId, false)).rejects.toMatchObject({ code: 'configuration_required' });
   const empty = await fixture(); empty.authenticate(); await empty.emit({ action: 'click', locator: { kind: 'css', selector: '#export' } });
   const file = await empty.download(Buffer.alloc(0)); await file.pending;
-  await expect(waitForRecordingComplete(empty.root, 'owner', empty.started.recordingId)).rejects.toMatchObject({ code: 'format' });
-  await expect(finishRecording(empty.root, 'owner', empty.started.recordingId, false)).rejects.toMatchObject({ code: 'format' });
+  await expect(waitForRecordingComplete(empty.root, 'owner', empty.started.recordingId)).rejects.toMatchObject({ code: 'incomplete' });
+  await expect(finishRecording(empty.root, 'owner', empty.started.recordingId, false)).rejects.toMatchObject({ code: 'incomplete' });
   const failed = await fixture(); failed.authenticate(); await failed.emit({ action: 'click', locator: { kind: 'css', selector: '#export' } });
   const interrupted = await failed.download(Buffer.from('Value\n92'), Promise.resolve('interrupted')); await interrupted.pending;
   expect(interrupted.cancelled()).toBe(true);

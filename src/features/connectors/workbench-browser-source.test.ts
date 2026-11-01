@@ -236,15 +236,15 @@ it.each([401, 403])('actual_runtime_detects_http_auth_response: %s', async statu
   f.runtime.replay = createBrowserRuntime({ runtimeRoot: f.root, launcher: { launchPersistent: async () => context } }).replay;
   const job = await f.capture(); expect(status === 401 ? job.warnings[0]?.code : job.error?.code).toBe(status === 401 ? 'AUTH_REQUIRED' : 'SOURCE_ACCESS_DENIED');
 });
-it.each(['failed', 'empty', 'html', 'completed'])('actual_runtime_requires_completed_nonempty_download: %s', async state => {
+it.each(['failed', 'missing', 'empty', 'html', 'completed'])('actual_runtime_requires_completed_nonempty_download: %s', async state => {
   const f = await fixture(); const events = new EventEmitter(); let closed = false;
   const filename = path.join(f.root, 'synthetic-download.csv'); await writeFile(filename, state === 'empty' ? '' : state === 'html' ? '<html>login</html>' : 'demo_row_key,demo_scope_id,demo_metric_id,demo_value,demo_date\nr1,dit,m1,92,2026-10-23\n');
-  const download = { failure: async () => state === 'failed' ? 'cancelled' : null, path: async () => filename, suggestedFilename: () => 'synthetic.csv', cancel: async () => {}, delete: async () => {} };
+  const download = { failure: async () => state === 'failed' ? 'cancelled' : null, path: async () => state === 'missing' ? null : filename, suggestedFilename: () => 'synthetic.csv', cancel: async () => {}, delete: async () => {} };
   const pageEvents = new EventEmitter(); const page = Object.assign(pageEvents, { goto: async () => {}, url: () => f.scenario.startUrl, frames: () => [], locator: () => ({ count: async () => 1, isVisible: async () => true, evaluateAll: async () => false, evaluate: async () => null, click: async () => { pageEvents.emit('download', download); } }) });
   const context = Object.assign(events, { setDefaultTimeout: () => {}, setDefaultNavigationTimeout: () => {}, pages: () => [page], newCDPSession: async () => Object.assign(new EventEmitter(), { send: async () => {}, detach: async () => {} }), route: async () => {}, routeWebSocket: async () => {}, close: async () => { closed = true; events.emit('close'); } }) as unknown as BrowserContext;
   f.runtime.replay = createBrowserRuntime({ runtimeRoot: f.root, launcher: { launchPersistent: async () => context } }).replay;
   const job = await f.capture(); expect(job.status).toBe(state === 'completed' ? 'succeeded' : 'failed'); expect(closed).toBe(true);
-  if (state !== 'completed') expect(f.fallback().captureRef).toBeNull();
+  if (state !== 'completed') {expect(f.fallback().captureRef).toBeNull();expect(job.error?.code).toBe(state === 'html' ? 'SOURCE_SCHEMA_CHANGED' : 'DOWNLOAD_REQUIRED');}
 });
 it('missing_export_proof_empty_download_and_cancel_keep_previous_capture', async () => {
   const f = await fixture(); await f.capture(); const previous = f.fallback().captureRef;

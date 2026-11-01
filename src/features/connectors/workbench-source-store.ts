@@ -29,6 +29,9 @@ export interface SourceStore {
   findOperation(installationId: string, operationId: string, goalId?: string): CaptureResult | null;
   commitCapture(input: { installationId: string; binding: ResolvedCaptureBinding; request: CaptureRequest; raw: RawBatch; capture: Capture; facts: ObservedFact[]; retainedFactRefs?: VersionRef[]; issues: SourceIssue[] }): CaptureResult;
   readCapture(ref: VersionRef, installationId: string): SourceCaptureView | null;
+  ownCaptureIssuePage(owner:{installationId:string;profilePersonId:string|null},captureId:string,offset:number,limit:number):Array<{code:string;message:string}>;
+  readOwnCapture(owner:{installationId:string;profilePersonId:string|null},captureId:string):SourceCaptureView|null;
+  ownCaptureMetadata(owner:{installationId:string;profilePersonId:string|null},sourceIds:string[]):Array<{id:string;revision:number;sourceId:string;capturedAt:string;result:Capture['result']}>;
   listOwnCaptures(owner:{installationId:string;profilePersonId:string|null}):SourceCaptureView[];
   hasOwnCapture(owner:{installationId:string;profilePersonId:string|null},captureId:string):boolean;
   readOwnCaptureArtifact(owner:{installationId:string;profilePersonId:string|null},captureId:string):{view:SourceCaptureView;bytes:Uint8Array}|null;
@@ -68,6 +71,8 @@ export function createSourceStore({ repository, ownership }: { repository: Workb
     CREATE TABLE wb_sources_artifacts(installation_id TEXT NOT NULL,artifact_id TEXT NOT NULL,metadata_json TEXT NOT NULL,bytes_value BLOB NOT NULL,PRIMARY KEY(installation_id,artifact_id));`);
   sql.execMigration('v2-latest-attempt', `CREATE TABLE wb_sources_attempts(installation_id TEXT NOT NULL,goal_id TEXT NOT NULL,context_key TEXT NOT NULL,source_id TEXT NOT NULL,capture_id TEXT NOT NULL,PRIMARY KEY(installation_id,goal_id,context_key,source_id));
     INSERT OR REPLACE INTO wb_sources_attempts SELECT installation_id,json_extract(value_json,'$.request.goalRef.id'),json_extract(value_json,'$.contextKey'),json_extract(value_json,'$.request.sourceRef.id'),capture_id FROM wb_sources_captures ORDER BY rowid;`);
+  sql.execMigration('v4-capture-metadata-index',"CREATE INDEX wb_sources_capture_metadata ON wb_sources_captures(installation_id,json_extract(value_json,'$.request.sourceRef.id'),json_extract(value_json,'$.raw.capturedAt') DESC,capture_id) WHERE json_valid(value_json)");
+  sql.execMigration('v5-capture-validity-index',"CREATE INDEX wb_sources_capture_validity ON wb_sources_captures(installation_id,json_valid(value_json),capture_id)");
   sql.execMigration('v3-original-omissions','CREATE TABLE wb_sources_original_omissions(file_key TEXT PRIMARY KEY,sha256 TEXT NOT NULL,bytes INTEGER NOT NULL)');
   const published = <T extends Header>(value: T | null): T => {
     if (!value || !value.publicationAnchorId) return fail();
@@ -171,6 +176,26 @@ export function createSourceStore({ repository, ownership }: { repository: Workb
       if(!uuidSchema.safeParse(captureId).success||!uuidSchema.safeParse(owner.installationId).success||!uuidSchema.nullable().safeParse(owner.profilePersonId).success)return false;
       const binding=bindings.read('sources','capture:'+captureId);
       return !!binding&&binding.installationId===owner.installationId&&binding.personId===owner.profilePersonId&&sql.get('SELECT 1 FROM wb_sources_captures WHERE installation_id=? AND capture_id=?',[owner.installationId,captureId])!==null;
+    },
+    ownCaptureIssuePage(owner,captureId,offset,limit) {
+      if(!store.hasOwnCapture(owner,captureId))return [];
+      if(!Number.isSafeInteger(offset)||offset<0||!Number.isSafeInteger(limit)||limit<1||limit>200)return fail();
+      const validity=sql.get<{valid:number}>('SELECT json_valid(value_json) AS valid FROM wb_sources_captures WHERE installation_id=? AND capture_id=?',[owner.installationId,captureId]);
+      if(!validity?.valid)return offset===0?[{code:'SOURCE_EVIDENCE_INVALID',message:'Свидетельство выгрузки повреждено; исходные данные требуют проверки'}]:[];
+      const fields=Array.from({length:limit},(_,n)=>[`json_extract(value_json,?) AS code${n}`,`json_extract(value_json,?) AS message${n}`]).flat();
+      const paths=Array.from({length:limit},(_,n)=>[`$.issues[${offset+n}].code`,`$.issues[${offset+n}].message`]).flat();
+      const row=sql.get<Record<string,string|null>>('SELECT '+fields.join(',')+' FROM wb_sources_captures WHERE installation_id=? AND capture_id=?',[...paths,owner.installationId,captureId]);
+      return row?Array.from({length:limit},(_,n)=>({code:row['code'+n],message:row['message'+n]})).flatMap(issue=>issue.code&&issue.message?[{code:issue.code,message:issue.message}]:[]):[];
+    },
+    readOwnCapture(owner,captureId) {return store.hasOwnCapture(owner,captureId)?ownCaptureView(owner,captureId):null;},
+    ownCaptureMetadata(owner,sourceIds) {
+      if(!sourceIds.length)return [];
+      // Project only metadata in SQLite. Never deserialize the lifetime raw evidence.
+      const valid=sql.all<{id:string}>(`SELECT capture_id AS id FROM wb_sources_captures WHERE installation_id=? AND json_valid(value_json) AND json_extract(value_json,'$.request.sourceRef.id') IN (${sourceIds.map(()=>'?').join(',')}) ORDER BY json_extract(value_json,'$.raw.capturedAt') DESC,capture_id`,[owner.installationId,...sourceIds]);
+      // Corrupted evidence cannot hide a retained capture or poison another read.
+      // Its authoritative source/result metadata remains in the immutable core.
+      const damaged=sql.all<{id:string}>('SELECT capture_id AS id FROM wb_sources_captures WHERE installation_id=? AND json_valid(value_json)=0 ORDER BY capture_id',[owner.installationId]);
+      return [...valid,...damaged].filter(row=>store.hasOwnCapture(owner,row.id)).flatMap(row=>{const metadata=repository.readCaptureMetadata({entityType:'capture',id:row.id,revision:1});return metadata&&sourceIds.includes(metadata.sourceId)?[metadata]:[];});
     },
     listOwnCaptures(owner) {
       return sql.all<{capture_id:string}>('SELECT capture_id FROM wb_sources_captures WHERE installation_id=? ORDER BY capture_id',[owner.installationId]).flatMap(row=>{

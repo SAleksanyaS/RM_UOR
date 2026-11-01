@@ -16,6 +16,8 @@ import { selectEvaluationFacts } from '../evaluation/workbench/select-facts';
 import type { Capture, DirectoryEntity, DirectoryLink } from '../../domain/workbench/entities';
 import { captureResultSchema, captureRequestSchema, rawBatchSchema, sourcePayloadHash, type SourceAdapter, type NormalizerPort, type EnricherPort } from './workbench-source-contracts';
 import { createSourceStore } from './workbench-source-store';
+import { createWorkbenchReadIndex } from '../catalog/workbench-read-index';
+import { queryWorkbench, type WorkbenchReadPorts } from '../catalog/workbench-read-models';
 import { createSourceService, registerSourceCommands } from './workbench-source-service';
 import { createSyntheticDemoSource, syntheticDemoNormalizer } from './workbench-demo-source';
 import { createHash,randomUUID } from 'node:crypto';
@@ -83,7 +85,9 @@ it('passes exact immutable capture mapping and directory to a stateless enrichme
 it('classifies an exact own capture by indexed metadata without parsing selected or unrelated historical payloads',async()=>{
  const f=fixture(),captured=await f.capture(),owner={installationId:f.context.installationId,profilePersonId:f.context.ownAccess.personId},sql=f.repository.sqlForModule('sources');
  sql.run('INSERT INTO wb_sources_captures VALUES(?,?,?,?)',[owner.installationId,randomUUID(),randomUUID(),'unrelated damaged historical payload']);sql.run('UPDATE wb_sources_captures SET value_json=? WHERE capture_id=?',['selected payload is deliberately not parsed',captured.captureRef.id]);
- expect(f.store.hasOwnCapture(owner,captured.captureRef.id)).toBe(true);expect(f.store.hasOwnCapture({...owner,profilePersonId:randomUUID()},captured.captureRef.id)).toBe(false);expect(f.store.hasOwnCapture(owner,randomUUID())).toBe(false);
+ expect(f.store.hasOwnCapture(owner,captured.captureRef.id)).toBe(true);
+ expect(f.store.ownCaptureMetadata(owner,[f.input.goal.sourceId])).toEqual([expect.objectContaining({id:captured.captureRef.id,result:'accepted'})]);
+ expect(f.store.ownCaptureIssuePage(owner,captured.captureRef.id,0,32)).toEqual([{code:'SOURCE_EVIDENCE_INVALID',message:expect.any(String)}]);expect(f.store.hasOwnCapture({...owner,profilePersonId:randomUUID()},captured.captureRef.id)).toBe(false);expect(f.store.hasOwnCapture(owner,randomUUID())).toBe(false);
  f.repository.sqlForModule('ownership').run('DELETE FROM wb_ownership_bindings WHERE module_id=? AND object_key=?',['sources','capture:'+captured.captureRef.id]);expect(f.store.hasOwnCapture(owner,captured.captureRef.id)).toBe(false);
 });
 it('archives complete source history and rebinds downloads without changing historical actor',async()=>{
@@ -314,4 +318,42 @@ it('inapplicable_old_source_local_pointer_continues_to_valid_replacement_source_
   const captureRef = { entityType: 'capture', id: capture.id, revision: 1 };
   f.store.installVerifiedGit({ goalId: f.input.goal.id, captureRef, factRefs: facts.map(fact => ({ entityType: 'observed_fact', id: fact.id, revision: 1 })), context: f.saved.context, coverage: { complete: true, expectedRows: 2, receivedRows: 2, evidence: ['replacement-verified-main'] } });
   const before = f.repository.getStateRevision(); expect(f.fallback()).toMatchObject({ obtainedVia: 'git', sourceId: sourceRef.id, captureRef, sourceDate: '2026-10-25', capturedAt: '2026-10-26T08:00:00Z' }); expect(f.repository.getStateRevision()).toBe(before);
+});
+
+it('final_I1_private_multicapture_query_pages_before_evidence_hydration_and_keeps_history',async()=>{
+ const f=fixture(),refs=[];
+ for(let n=0;n<12;n++){f.clock.now=()=>new Date(Date.UTC(2026,9,28,7,n)).toISOString();refs.push((await f.capture()).captureRef);}
+ const selected=refs.at(-1)!,index=createWorkbenchReadIndex(f.repository);
+ const ports={repository:f.repository,index,sources:f.store} as WorkbenchReadPorts;
+ const request={context:f.saved.context,filter:{},sort:[],page:{limit:1,cursor:null as string|null}};
+ const before=f.repository.getStateRevision(),read=f.store.readCapture;let evidenceReads=0,allowedId=selected.id;
+ f.store.readCapture=(reference,installationId)=>{evidenceReads++;if(reference.id!==allowedId)throw Error('unrelated historical evidence');return read(reference,installationId);};
+ f.store.listOwnCaptures=()=>{throw Error('lifetime evidence enumeration');};
+ const first=await queryWorkbench('data.captures',request,f.context,ports);
+ expect(first.items[0].ref).toEqual(selected);expect(first.page.hasMore).toBe(true);expect(evidenceReads).toBe(1);
+ allowedId=refs.at(-2)!.id;evidenceReads=0;
+ const second=await queryWorkbench('data.captures',{...request,page:{limit:1,cursor:first.page.nextCursor}},f.context,ports);
+ expect(second.items[0].ref).toEqual(refs.at(-2));expect(evidenceReads).toBe(1);allowedId=selected.id;
+ evidenceReads=0;const rows=await queryWorkbench('data.rows',{...request,filter:{captureRef:selected,layer:'raw',issuesOnly:false}},f.context,ports);expect(rows.items).toHaveLength(1);expect(evidenceReads).toBe(1);
+ const other={...f.context,ownAccess:{...f.context.ownAccess,personId:fixtureId(998001)}};
+ expect((await queryWorkbench('data.captures',request,other,ports)).items).toEqual([]);
+ await expect(queryWorkbench('data.rows',{...request,filter:{captureRef:selected,layer:'raw'}},other,ports)).rejects.toMatchObject({code:'REFERENCE_NOT_FOUND'});
+ expect(f.repository.getStateRevision()).toBe(before);
+ expect(f.store.ownCaptureMetadata({installationId:f.context.installationId,profilePersonId:null},[f.input.goal.sourceId])).toHaveLength(12);
+ f.store.readCapture=read;for(const reference of refs)expect(f.store.readCapture(reference,f.context.installationId)?.capture.rawRows).toHaveLength(2);
+ expect(f.repository.sqlForModule('sources').all("EXPLAIN QUERY PLAN SELECT capture_id FROM wb_sources_captures WHERE installation_id=? AND json_valid(value_json) AND json_extract(value_json,'$.request.sourceRef.id')=? ORDER BY json_extract(value_json,'$.raw.capturedAt') DESC,capture_id",[f.context.installationId,f.input.goal.sourceId]).map((r:any)=>r.detail).join(' ')).toContain('wb_sources_capture_metadata');
+});
+
+it('final_I1_dashboard_issue_summary_reads_no_raw_history_and_retains_diagnostics',async()=>{
+ const f=fixture(),enrich=f.enricher.enrich;f.enricher.enrich=input=>{const result=enrich(input);result.rows[0].scope=null;return result;};
+ const captured=await f.capture(),own={installationId:f.context.installationId,profilePersonId:null};
+ const expected=f.store.readCapture(captured.captureRef,f.context.installationId)!.issues.map(({code,message})=>({code,message}));
+ f.store.readCapture=()=>{throw Error('dashboard must not hydrate raw evidence');};
+ expect(f.store.ownCaptureIssuePage(own,captured.captureRef.id,0,32)).toEqual(expected);
+ expect(f.store.ownCaptureIssuePage({...own,profilePersonId:fixtureId(998002)},captured.captureRef.id,0,32)).toEqual([]);
+ const dashboard={...makeHeader(998003,{publicationAnchorId:fixtureId(2)}),title:'Synthetic issues',filters:[],blocks:[{id:fixtureId(998004),typeId:'uor.dashboard.data-issues.v1',settings:{schemaId:'uor.dashboard.data-issues.v1',schemaVersion:1,value:{layout:{w:6,h:2},kinds:['unmapped'],limit:1}}}]};
+ f.repository.append('dashboard_def',dashboard,null);
+ const index=createWorkbenchReadIndex(f.repository),ports={repository:f.repository,index,sources:f.store} as WorkbenchReadPorts;
+ const output=await queryWorkbench('dashboards.view',{context:f.saved.context,filter:{ref:{entityType:'dashboard_def',id:dashboard.id}},sort:[],page:{limit:1,cursor:null}},f.context,ports);
+ expect(output.blocks[0]).toMatchObject({type:'data-issues',items:[{kind:'unmapped',code:expect.stringMatching(/SCOPE/),ref:{entityType:'capture',id:captured.captureRef.id}}]});
 });

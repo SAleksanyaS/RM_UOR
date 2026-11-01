@@ -220,7 +220,7 @@ export async function startRecording(runtime: string, owner: string, profile: Pr
       });
       context.pages().forEach(attach); context.on('page', attach);
       }
-      context.on('close',()=>{release();onClosed?.();});
+      context.on('close',()=>{clearTimeout(record.expires);release();onClosed?.();});
       const page = context.pages()[0] ?? await context.newPage(); await page.goto(startUrl); recordings.set(id, record); ready(record);
       await done;
       clearTimeout(record.expires); recordings.delete(id);

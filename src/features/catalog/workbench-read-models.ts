@@ -3,7 +3,7 @@ import type { AgreedSnapshot, CalculationResult, Capture, CoreGoalDefinition, Ev
 import type { EntityRef, Header, VersionRef } from '../../domain/workbench/primitives';
 import { entityRefSchema, versionRefSchema, utcInstantSchema, uuidSchema, businessTimeSchema, exactNumberSchema } from '../../domain/workbench/primitives';
 import * as schemas from '../../domain/workbench/schemas';
-import type { WorkbenchRepository } from '../../server/storage/workbench-repository';
+import type { CaptureMetadata, WorkbenchRepository } from '../../server/storage/workbench-repository';
 import { isOwnCoreVersion } from '../../server/storage/workbench-ownership';
 import type { QueryContext } from '../../server/workbench/query-registry';
 import { pageResultSchema, nextActionSchema, jobSnapshotSchema, WorkbenchHttpError, type GlobalContext, type QueryRequest } from '../../server/workbench/protocol';
@@ -90,7 +90,7 @@ export type WorkbenchQueryName=keyof typeof workbenchOutputSchemas;
 export type WorkbenchReadModels={ [K in WorkbenchQueryName]:z.infer<typeof workbenchOutputSchemas[K]> };
 export type WorkbenchReadModel=WorkbenchReadModels[WorkbenchQueryName];
 const fail=(code:string,status=422):never=>{throw new WorkbenchHttpError(status,code,code);};
-const ref=(entityType:string,value:Header):VersionRef=>({entityType,id:value.id,revision:value.revision});
+const ref=(entityType:string,value:Pick<Header,'id'|'revision'>):VersionRef=>({entityType,id:value.id,revision:value.revision});
 const same=(a:unknown,b:unknown)=>JSON.stringify(a)===JSON.stringify(b);
 function visible(value:Header,context:QueryContext,entityType:string):boolean {
   const anchor=value.publicationAnchorId?context.repository.readPublicationAnchor({entityType:'publication_anchor',id:value.publicationAnchorId}):null;
@@ -202,20 +202,22 @@ function execution(request:QueryRequest,ports:WorkbenchReadPorts) {
   return [...works.map(value=>({kind:'work' as const,ref:{entityType:'work',id:value.id},title:value.title,value})),...ports.index.list('decision').filter(d=>ids.has(d.workId)).map(value=>({kind:'decision' as const,ref:{entityType:'decision',id:value.id},title:value.request,value}))];
 }
 type CaptureRead={capture:Capture;view:SourceCaptureView|null;obtainedVia:'local-cache'|'git';facts?:ObservedFact[]};
-function captures(request:QueryRequest,context:QueryContext,ports:WorkbenchReadPorts):CaptureRead[] {
+type CaptureSummary=Omit<CaptureRead,'capture'>&{capture:CaptureMetadata};
+function captures(request:QueryRequest,context:QueryContext,ports:WorkbenchReadPorts):CaptureSummary[] {
   if(request.context.resultMode==='agreed') {
     const snapshot=request.context.snapshotId?ports.index.read({entityType:'agreed_snapshot',id:request.context.snapshotId}) as AgreedSnapshot|null:null;
     if(!snapshot || !assignmentsFor(request,ports).length) return [];
     const basis=exact<EvaluationBasis>(snapshot.basisRef,context);
     const selected=basis.factRefs.map(reference=>exact<ObservedFact>(reference,context));
-    return [...new Set(selected.map(fact=>fact.captureId))].map(id=>({capture:exact<Capture>({entityType:'capture',id,revision:1},context),view:null,obtainedVia:'git',facts:selected.filter(fact=>fact.captureId===id)}));
+    return [...new Set(selected.map(fact=>fact.captureId))].map(id=>({capture:context.repository.readCaptureMetadata({entityType:'capture',id,revision:1})??fail('REFERENCE_NOT_FOUND',404),view:null,obtainedVia:'git',facts:selected.filter(fact=>fact.captureId===id)}));
   }
-  const sourceIds=new Set(assignmentsFor(request,ports).flatMap(a=>{const goal=ports.index.read({entityType:'core_goal_definition',id:a.goalId}) as CoreGoalDefinition|null;return goal?[goal.sourceId]:[];}));
-  const local=ports.sources.listOwnCaptures({installationId:context.installationId,profilePersonId:context.ownAccess.personId});
-  const byId=new Map<string,{capture:Capture;view:SourceCaptureView|null;obtainedVia:'local-cache'|'git'}>();
-  ports.index.list('capture').forEach(c=>byId.set(c.id,{capture:c,view:null,obtainedVia:'git'}));
-  local.forEach(view=>byId.set(view.capture.id,{capture:view.capture,view,obtainedVia:'local-cache'}));
-  return [...byId.values()].filter(v=>sourceIds.has(v.capture.sourceId)).sort((a,b)=>b.capture.capturedAt.localeCompare(a.capture.capturedAt)||a.capture.id.localeCompare(b.capture.id));
+  const sourceIds=assignmentsFor(request,ports).flatMap(a=>{const goal=ports.index.read({entityType:'core_goal_definition',id:a.goalId}) as CoreGoalDefinition|null;return goal?[goal.sourceId]:[];});
+  const owner={installationId:context.installationId,profilePersonId:context.ownAccess.personId};
+  const byId=new Map(ports.index.captureMetadata(sourceIds).map(c=>[c.id,{...c,obtainedVia:'git' as 'git'|'local-cache'}]));
+  for(const c of ports.sources.ownCaptureMetadata(owner,sourceIds))byId.set(c.id,{...c,obtainedVia:'local-cache'});
+  return [...byId.values()].sort((a,b)=>b.capturedAt.localeCompare(a.capturedAt)||a.id.localeCompare(b.id)).map(metadata=>({
+    capture:metadata,view:null,obtainedVia:metadata.obtainedVia,
+  }));
 }
 export function queryWorkbench<K extends WorkbenchQueryName>(name:K,request:QueryRequest,context:QueryContext,ports:WorkbenchReadPorts):Promise<WorkbenchReadModels[K]>;
 export async function queryWorkbench(name:WorkbenchQueryName,request:QueryRequest,context:QueryContext,ports:WorkbenchReadPorts):Promise<unknown> {
@@ -313,14 +315,30 @@ export async function queryWorkbench(name:WorkbenchQueryName,request:QueryReques
   if(name==='execution.list') return paged(execution(request,ports).filter(item=>!filter.kind || filter.kind==='all' || item.kind===filter.kind));
   if(name==='execution.detail') {const reference=filter.ref as EntityRef;const item=execution(request,ports).find(item=>item.ref.entityType===reference.entityType && item.ref.id===reference.id);if(!item) return fail('REFERENCE_NOT_FOUND',404);const workId=item.kind==='work'?item.value.id:item.value.workId;return {item,dependencies:ports.index.list('work_dependency').filter(d=>d.predecessorWorkId===workId||d.successorWorkId===workId),decisions:ports.index.list('decision').filter(d=>d.workId===workId)};}
   if(name==='snapshots.list') return paged(snapshotsInContext(request,context,ports));
-  const available=captures(request,context,ports);
-  const captureItems=()=>available.map(item=>({ref:ref('capture',item.capture),capture:item.capture,obtainedVia:item.obtainedVia,issues:item.view?.issues??[],latestAttemptIncomplete:item.capture.result==='partial'}));
-  if(name==='data.captures') return paged(captureItems());
+  let availableCache:CaptureSummary[]|undefined;
+  const available=()=>availableCache??=captures(request,context,ports);
+  const hydrate=(item:CaptureSummary):CaptureRead=>{
+    if(request.context.resultMode==='agreed')return {...item,capture:exact<Capture>({entityType:'capture',id:item.capture.id,revision:item.capture.revision},context)};
+    const view=item.obtainedVia==='local-cache'?ports.sources.readOwnCapture({installationId:context.installationId,profilePersonId:context.ownAccess.personId},item.capture.id):null;
+    return {capture:view?.capture??exact<Capture>({entityType:'capture',id:item.capture.id,revision:item.capture.revision},context),view,obtainedVia:item.obtainedVia};
+  };
+  const captureItems=(items:CaptureSummary[])=>items.map(hydrate).map(item=>({ref:ref('capture',item.capture),capture:item.capture,obtainedVia:item.obtainedVia,issues:item.view?.issues??[],latestAttemptIncomplete:item.capture.result==='partial'}));
+  const capturePage=()=>{const result=paged(available().map(item=>({...item,ref:ref('capture',item.capture)})));return {...result,items:captureItems(result.items)};};
+  if(name==='data.captures') return capturePage();
   if(name==='data.rows') {
-    const reference=filter.captureRef as VersionRef; const selected=available.find(c=>c.capture.id===reference.id && c.capture.revision===reference.revision); if(!selected) return fail('REFERENCE_NOT_FOUND',404);
+    const reference=filter.captureRef as VersionRef;
+    let selected:CaptureRead|null=null;
+    if(request.context.resultMode==='agreed') {const metadata=available().find(c=>c.capture.id===reference.id&&c.capture.revision===reference.revision);if(metadata)selected=hydrate(metadata);}
+    else {
+      const sourceIds=new Set(assignmentsFor(request,ports).flatMap(a=>{const goal=ports.index.read({entityType:'core_goal_definition',id:a.goalId}) as CoreGoalDefinition|null;return goal?[goal.sourceId]:[];}));
+      const view=reference.revision===1?ports.sources.readOwnCapture({installationId:context.installationId,profilePersonId:context.ownAccess.personId},reference.id):null;
+      const capture=view?.capture??ports.index.read({entityType:'capture',id:reference.id}) as Capture|null;
+      if(capture&&capture.revision===reference.revision&&sourceIds.has(capture.sourceId))selected={capture,view,obtainedVia:view?'local-cache':'git'};
+    }
+    if(!selected) return fail('REFERENCE_NOT_FOUND',404);
     const issues=selected.view?.issues??[];
     if(filter.layer==='raw') return paged(selected.capture.rawRows.map(row=>({layer:'raw' as const,row,issues:issues.filter(issue=>issue.rowKeys.includes(row.rowKey))})).filter(row=>!filter.issuesOnly||row.issues.length));
-    const facts=selected.facts??selected.view?.facts??ports.index.list('observed_fact').filter(f=>f.captureId===selected.capture.id);
+    const facts=selected.facts??selected.view?.facts??ports.index.factsForCapture(selected.capture.id);
     return paged(selected.capture.canonicalRows.map(row=>({layer:'enriched' as const,row,factRefs:facts.filter(f=>f.lineage.sourceRowKeys.includes(row.rowKey)).map(f=>ref('observed_fact',f)),issues:issues.filter(issue=>issue.rowKeys.includes(row.rowKey))})).filter(row=>!filter.issuesOnly||row.issues.length));
   }
   if(name==='data.lineage') {
@@ -329,7 +347,7 @@ export async function queryWorkbench(name:WorkbenchQueryName,request:QueryReques
     const pending=basis?[...basis.factRefs]:[filter.factRef as VersionRef];const facts:ObservedFact[]=[];const seen=new Set<string>();
     while(pending.length) {const reference=pending.pop()!;const key=JSON.stringify(reference);if(seen.has(key)) continue;seen.add(key);const fact=exact<ObservedFact>(reference,context);facts.push(fact);pending.push(...fact.lineage.inputFactRefs);}
     const unique=<T extends Header>(values:T[])=>[...new Map(values.map(v=>[`${v.id}/${v.revision}`,v])).values()];
-    return {basis,method:basis?exact(basis.methodRef,context):null,facts,captures:unique(facts.map(f=>exact<Capture>({entityType:'capture',id:f.captureId,revision:1},context))),mappings:unique(facts.map(f=>exact<z.infer<typeof schemas.sourceFieldMappingSchema>>(f.lineage.mappingRef,context))),directoryLinks:unique(facts.flatMap(f=>f.lineage.directoryLinkRefs.map(r=>exact<z.infer<typeof schemas.directoryLinkSchema>>(r,context))))};
+    return {basis,method:basis?exact(basis.methodRef,context):null,facts,captures:[...new Set(facts.map(f=>f.captureId))].map(id=>exact<Capture>({entityType:'capture',id,revision:1},context)),mappings:unique(facts.map(f=>exact<z.infer<typeof schemas.sourceFieldMappingSchema>>(f.lineage.mappingRef,context))),directoryLinks:unique(facts.flatMap(f=>f.lineage.directoryLinkRefs.map(r=>exact<z.infer<typeof schemas.directoryLinkSchema>>(r,context))))};
   }
   if(name==='history.series') {
     const assignments=assignmentsFor(request,ports);if(assignments.length!==1) return fail('ASSIGNMENT_SELECTION_REQUIRED');
@@ -354,9 +372,10 @@ export async function queryWorkbench(name:WorkbenchQueryName,request:QueryReques
       const template=ports.index.read({entityType:'template',id:binding.templateId}) as z.infer<typeof schemas.templateSchema>|null;
       if(!template) return fail('REFERENCE_NOT_FOUND',404);return exact(template.methodRef,context);
     });
-    return {goal:rows[0]?.goal??ports.index.read({entityType:'core_goal_definition',id:request.context.goalId}),rows,tabs:{state:rows,work:execution(request,ports),method,calculation:rows.flatMap(row=>row.basisRef?[exact(row.basisRef,context)]:[]),enriched:captureItems(),raw:captureItems(),history:snapshotsInContext(request,context,ports).map(item=>item.snapshot)}};
+    const tabCaptures=capturePage().items;
+    return {goal:rows[0]?.goal??ports.index.read({entityType:'core_goal_definition',id:request.context.goalId}),rows,tabs:{state:rows,work:execution(request,ports),method,calculation:rows.flatMap(row=>row.basisRef?[exact(row.basisRef,context)]:[]),enriched:tabCaptures,raw:tabCaptures,history:snapshotsInContext(request,context,ports).map(item=>item.snapshot)}};
   }
-  if(name==='overview') {const active=rows.filter(row=>row.goal.lifecycle==='active');const work=execution(request,ports);return {goals:filter.kind && filter.kind!=='goal'?[]:active,execution:filter.kind==='goal'||filter.kind==='data'?[]:work.filter(item=>!filter.kind||item.kind===filter.kind),counts:{goals:active.length,works:work.filter(v=>v.kind==='work').length,decisions:work.filter(v=>v.kind==='decision').length,data:available.filter(v=>v.capture.result==='partial').length}};}
+  if(name==='overview') {const active=rows.filter(row=>row.goal.lifecycle==='active');const work=execution(request,ports);return {goals:filter.kind && filter.kind!=='goal'?[]:active,execution:filter.kind==='goal'||filter.kind==='data'?[]:work.filter(item=>!filter.kind||item.kind===filter.kind),counts:{goals:active.length,works:work.filter(v=>v.kind==='work').length,decisions:work.filter(v=>v.kind==='decision').length,data:available().filter(v=>v.capture.result==='partial').length}};}
   if(name==='dashboards.view') {
     const definition=ports.index.read(filter.ref as EntityRef) as z.infer<typeof schemas.dashboardDefSchema>|null;if(!definition) return fail('REFERENCE_NOT_FOUND',404);
     const agreed=request.context.resultMode==='agreed';
@@ -367,7 +386,13 @@ export async function queryWorkbench(name:WorkbenchQueryName,request:QueryReques
     else if(agreedBasis) validateDashboard({...definition,blocks:definition.blocks.filter(block=>!['uor.dashboard.metric-card.v1','uor.dashboard.metric-trend.v1'].includes(block.typeId)||(block.settings.value.assignmentRef as EntityRef).id===agreedBasis.assignmentRef.id)},resolver);
     const unavailableReason=agreed&&!agreedBasis?'AGREED_SNAPSHOT_UNAVAILABLE':null;
     const issues:DashboardIssue[]=[];
-    const addIssue=(kind:DashboardIssue['kind'],code:string,reference:EntityRef,message=code)=>issues.push({kind,code,ref:{entityType:reference.entityType,id:reference.id},message});
+    const limits=new Map<DashboardIssue['kind'],number>();
+    for(const block of definition.blocks)if(block.typeId==='uor.dashboard.data-issues.v1'){
+      const settings=block.settings.value as {kinds:DashboardIssue['kind'][];limit:number};
+      for(const kind of settings.kinds)limits.set(kind,Math.max(limits.get(kind)??0,settings.limit));
+    }
+    const needs=(kind:DashboardIssue['kind'])=>issues.filter(issue=>issue.kind===kind).length<(limits.get(kind)??0);
+    const addIssue=(kind:DashboardIssue['kind'],code:string,reference:EntityRef,message=code)=>{if(needs(kind))issues.push({kind,code,ref:{entityType:reference.entityType,id:reference.id},message});};
     for(const row of rows) {
       if(row.numericResult?.freshness==='stale') addIssue('stale','STALE_DATA',row.ref);
       if(row.numericResult && !row.numericResult.complete) addIssue('incomplete','INCOMPLETE_COVERAGE',row.ref);
@@ -375,9 +400,14 @@ export async function queryWorkbench(name:WorkbenchQueryName,request:QueryReques
       if(row.unavailableReason) addIssue('error',row.unavailableReason,row.ref);
       for(const flag of row.numericResult?.qualityFlags??[]) if(flag.includes('lineage_')) addIssue('unmapped',flag,row.ref);
     }
-    for(const item of available) {
+    if(needs('incomplete')||needs('unmapped')||needs('error'))for(const item of available()) {
       if(item.capture.result==='partial') addIssue('incomplete','PARTIAL_CAPTURE',ref('capture',item.capture));
-      for(const issue of item.view?.issues??[]) addIssue(/unmapped|mapping|directory|scope/i.test(issue.code)?'unmapped':'error',issue.code,ref('capture',item.capture),issue.message);
+      if(item.obtainedVia==='local-cache'&&(needs('unmapped')||needs('error')))for(let offset=0;;offset+=32){
+        const summary=ports.sources.ownCaptureIssuePage({installationId:context.installationId,profilePersonId:context.ownAccess.personId},item.capture.id,offset,32);
+        for(const issue of summary)addIssue(/unmapped|mapping|directory|scope/i.test(issue.code)?'unmapped':'error',issue.code,ref('capture',item.capture),issue.message);
+        if(summary.length<32||!needs('unmapped')&&!needs('error'))break;
+      }
+      if(!needs('incomplete')&&!needs('unmapped')&&!needs('error'))break;
     }
     const executionItems=execution(request,ports);
     const blocks=buildDashboardBlocks({definition,goals:rows,execution:executionItems,issues,resolver,unavailableReason,today:new Date(Date.parse(context.clock.now())+3*60*60*1000).toISOString().slice(0,10),inputFor:row=>savedEvaluationInput(row,request,context),trendFor:(row,metricRef,granularity)=>{

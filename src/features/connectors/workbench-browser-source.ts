@@ -103,10 +103,11 @@ export function createBrowserSourceAdapter({ runtime, profiles, scenarios, clock
   return adapter;
 }
 
-export function createBrowserLoginService({ runtime, profiles, scenarios, repository }: { runtime: BrowserRuntimePort; profiles: BrowserProfileService; scenarios: BrowserScenarioService; repository: WorkbenchRepository }): BrowserLoginService {
+export function createBrowserLoginService({ runtime, profiles, scenarios, repository }: { runtime: BrowserRuntimePort; profiles: BrowserProfileService; scenarios: BrowserScenarioService; repository: WorkbenchRepository }): BrowserLoginService & {dispose():void} {
   const handles = new Map<string, { owner: BrowserOwner; sourceRef: VersionRef; scenario: ReturnType<BrowserScenarioService['resolvePublished']>; profileRevision: string | null }>();
   const current = (sourceRef: VersionRef) => { const source = repository.readPublishedHead<SourceDefinition>({ entityType: sourceRef.entityType, id: sourceRef.id }); if (!source || !same({ entityType: 'source_definition', id: source.id, revision: source.revision }, sourceRef)) return fail('SOURCE_CONFIGURATION_CHANGED', 409); return scenarios.resolvePublished(sourceRef); };
   return {
+    dispose(){handles.clear();},
     async open(context, { sourceRef }) {
       assertContext(context, repository); const scenario = current(sourceRef), owner = ownerOf(context);
       const profile = await profiles.getOwn(context, scenario.sourceId); if (!profile.profile || !profile.configured) return fail('BROWSER_CONFIGURATION_REQUIRED', 409);

@@ -36,10 +36,12 @@ export type EntityRegistration<T extends Header> = { schema: z.ZodType<T>; refer
 export type EvaluationCandidateQuery = { sourceId: UUIDv4; assignmentId: UUIDv4; metricIds: UUIDv4[]; scopes: ScopeRef[]; businessTime: EvaluationContext['businessTime']; evaluatedAt: UtcInstant };
 export type EvaluationCandidates = Pick<EvaluationInput, 'facts' | 'captures' | 'applicability' | 'corrections'>;
 export type ImportFactQuery = Pick<EvaluationCandidateQuery, 'sourceId' | 'metricIds' | 'scopes' | 'businessTime'> & { factKeys: string[] };
+export type CaptureMetadata=Pick<Capture,'id'|'revision'|'sourceId'|'capturedAt'|'result'>;
 export type WorkspaceCoreRecord={entityType:string;version:number;value:Header|PublicationAnchor};
 export interface WorkbenchRepository {
   getHead<T extends Header>(ref: EntityRef): T | null;
   readVersion<T extends Header>(ref: VersionRef): T | null;
+  readCaptureMetadata(ref:VersionRef):CaptureMetadata|null;
   append<T extends Header>(entityType: string, value: T, expectedHead: number | null): VersionRef;
   importPublishedVersion<T extends Header>(entityType:string,value:T):VersionRef;
   attachVerifiedPublicationAnchor<T extends Header>(entityType:string,value:T,owner:{installationId:string;personId:string|null}):VersionRef;
@@ -185,6 +187,10 @@ export function createWorkbenchRepository(options: { filename: string; artifactR
     readVersion<T extends Header>(ref: VersionRef): T | null {
       assertOpen(); versionRefSchema.parse(ref);
       return read<T>(db.prepare('SELECT payload_json FROM wb_entity_versions WHERE entity_type=? AND id=? AND revision=?').get(ref.entityType, ref.id, ref.revision) as PayloadRow | undefined);
+    },
+    readCaptureMetadata(ref) {
+      assertOpen();versionRefSchema.parse(ref);if(ref.entityType!=='capture')return null;
+      return db.prepare("SELECT id,revision,json_extract(payload_json,'$.sourceId') AS sourceId,json_extract(payload_json,'$.capturedAt') AS capturedAt,json_extract(payload_json,'$.result') AS result FROM wb_entity_versions WHERE entity_type='capture' AND id=? AND revision=?").get(ref.id,ref.revision) as CaptureMetadata|undefined??null;
     },
     append<T extends Header>(type: string, value: T, expectedHead: number | null): VersionRef {
       assertWritable(); if (projecting) throw new WorkbenchError('PROJECTION_ENTITY_WRITE_FORBIDDEN');

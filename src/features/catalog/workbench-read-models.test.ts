@@ -310,3 +310,31 @@ it('projects package zones from exact own edits and published assignments withou
  const queue=await f.query('uor.queue') as import('./workbench-read-models').WorkbenchReadModels['uor.queue'];
  expect(queue.items[0]).toHaveProperty('zones');expect(queue.items[0].zones?.map(zone=>zone.id)).toContain(f.input.assignment.scope.id);expect(f.repository.getStateRevision()).toBe(before);
 });
+
+it('final_I1_queries_do_not_hydrate_unrelated_lifetime_capture_payloads',async()=>{
+  const f=queryFixture(); const chosen=f.input.captures[0];
+  for(let n=0;n<24;n++) f.repository.append('capture',{...chosen,id:fixtureId(987000+n),capturedAt:'2026-10-01T00:00:00Z'},null);
+  const original=f.repository.readVersion;let captureReads=0;
+  f.repository.readVersion=((reference:any)=>{if(reference.entityType==='capture'){captureReads++;if(reference.id!==chosen.id)throw Error('unrelated historical raw payload');}return original(reference);}) as typeof original;
+  const oldRead=f.ports.index.read;f.ports.index.read=(reference)=>{if(reference.entityType==='capture'){captureReads++;if(reference.id!==chosen.id)throw Error('unrelated indexed raw payload');}return oldRead(reference);};
+  const oldList=f.ports.index.list;f.ports.index.list=((type:any)=>{if(type==='capture'||type==='observed_fact')throw Error('unbounded published payload enumeration');return oldList(type);}) as typeof oldList;
+  f.sources.listOwnCaptures=()=>{throw Error('unbounded private evidence enumeration');};
+  await f.query('goals.list');
+  await f.query('history.series',{metricRef:{entityType:'metric_definition',id:f.input.metrics[0].id,revision:1},granularity:'day'});
+  expect(captureReads).toBe(0);
+  const oldMetadata=f.sources.ownCaptureMetadata;f.sources.ownCaptureMetadata=()=>{throw Error('exact rows must not enumerate metadata');};
+  await f.query('data.rows',{captureRef:{entityType:'capture',id:chosen.id,revision:1},layer:'raw',issuesOnly:false});f.sources.ownCaptureMetadata=oldMetadata;
+  expect(captureReads).toBe(1);captureReads=0;
+  await f.query('data.rows',{captureRef:{entityType:'capture',id:chosen.id,revision:1},layer:'enriched',issuesOnly:false});
+  expect(captureReads).toBe(1);captureReads=0;
+  const first=await f.registry.execute('data.captures',{...f.request,page:{limit:1,cursor:null}},f.context) as any;
+  expect(first.items).toHaveLength(1);expect(first.page.hasMore).toBe(true);expect(captureReads).toBe(1);
+  expect(f.repository.readVersionsForPublicationAnchor(f.input.goal.publicationAnchorId!).filter(v=>v.entityType==='capture')).toHaveLength(f.input.captures.length+24);
+});
+
+it('final_I1_lineage_hydrates_each_exact_capture_once_for_multiple_facts',async()=>{
+ const f=queryFixture(makeNumericFixture({values:['100','100']})),saved=await f.prepare();
+ const read=f.repository.readVersion;let reads=0;f.repository.readVersion=((reference:any)=>{if(reference.entityType==='capture')reads++;return read(reference);}) as typeof read;
+ const line=await f.query('data.lineage',{resultRef:saved.resultRef}) as any;
+ expect(line.facts).toHaveLength(2);expect(line.captures).toHaveLength(1);expect(reads).toBe(1);
+});

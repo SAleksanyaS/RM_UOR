@@ -57,8 +57,10 @@ export async function completedBrowserDownload(file: Download, profile: PrivateP
       abort = () => reject(new ConnectorError('cancelled', 'Выгрузка отменена')); signal?.addEventListener('abort', abort, { once: true }); if (signal?.aborted) abort();
     })]);
     if (failure) throw new ConnectorError('incomplete', 'Браузер не завершил выгрузку');
-    const filename = await file.path(), size = filename ? (await stat(filename)).size : 0;
-    if (!filename || !size || size > profile.maxBytes) throw new ConnectorError('format', 'Выгрузка отсутствует, пуста или превышает ограничение размера');
+    const filename = await file.path();
+    const size = filename ? await stat(filename).then(info=>info.size,error=>{if(error.code==='ENOENT')return 0;throw error;}) : 0;
+    if (!filename || !size) throw new ConnectorError('incomplete', 'Выгрузка отсутствует или пуста');
+    if (size > profile.maxBytes) throw new ConnectorError('format', 'Выгрузка превышает ограничение размера');
     const bytes = await readFile(filename), name = path.basename(file.suggestedFilename());
     if (bytes.length !== size || !/\.(csv|xlsx)$/i.test(name) || /^\s*(?:<!doctype\s+html|<html|<form|<\?xml[^>]*>\s*<html)/i.test(bytes.subarray(0, 2048).toString('utf8').replace(/^\uFEFF/, ''))
       || /\.xlsx$/i.test(name) && !(bytes[0] === 0x50 && bytes[1] === 0x4b) || /\.csv$/i.test(name) && bytes.includes(0))
@@ -89,6 +91,12 @@ export async function cancelWorkbenchRecording(runtime: string, owner: string, i
   record.problem ??= new ConnectorError('cancelled', 'Запись отменена'); record.cancellation.abort(); clearTimeout(record.timer);
   if (!record.closed) { record.closed = true; await record.context.close().catch(() => {}); }
   record.release(); record.end(); return false;
+}
+export async function disposeWorkbenchRecording(runtime:string,owner:string,id:string):Promise<void>{
+  const record=records.get(id);if(!record||record.runtime!==runtime||record.owner!==owner)return;
+  await cancelWorkbenchRecording(runtime,owner,id);
+  await record.queue.catch(()=>{});await Promise.all([...record.downloads]);
+  clearTimeout(record.timer);if(record.retention)clearTimeout(record.retention);records.delete(id);
 }
 export async function waitForWorkbenchRecordingComplete(runtime: string, owner: string, id: string): Promise<void> {
   const record = own(runtime, owner, id); await record.terminal; if (record.problem) throw record.problem;
@@ -190,7 +198,7 @@ export async function startWorkbenchRecording(runtime: string, owner: string, pr
       });
       context.pages().forEach(attach); context.on('page', attach); records.set(id, record);
       const page = context.pages()[0] ?? await context.newPage(); await page.goto(startUrl).catch(error => { if (!record.completed) throw error; }); ready(record); await done;
-    } catch (error) { failed(error); } finally { await context?.close().catch(() => {}); }
+    } catch (error) { await disposeWorkbenchRecording(runtime,owner,id); failed(error); } finally { await context?.close().catch(() => {}); }
   }).catch(failed);
   const record = await started; return { recordingId: record.id, message: 'Выполните действия в отчёте. Запись закончится после завершённой выгрузки CSV/XLSX.' };
 }
@@ -208,6 +216,7 @@ export async function finishWorkbenchRecording(runtime: string, owner: string, i
 
 export type BrowserRecordingReview = RecordedBrowserScenario & { bindingProblem?: string | null };
 export interface BrowserRecorderService {
+  dispose():void;
   start(context: CommandContext, input: BrowserSourceBinding & { startUrl: string; authenticatedSelector: string }): Promise<{ recordingId: string; state: 'recording' }>;
   selectMarker(context: CommandContext, input: BrowserSourceBinding & { startUrl: string }): Promise<{ selector: string; label: string }>;
   status(context: QueryContext, recordingId: string): Promise<BrowserRecordingStatus>;
@@ -231,6 +240,7 @@ export function createBrowserRecorderService({ runtime, repository, profiles, dr
     return profile;
   };
   return {
+    dispose(){for(const session of sessions.values())clearTimeout(session.timer);sessions.clear();},
     async selectMarker(context, input) {
       const profile = await checked(context, input); checkedUrl(input.startUrl, profile.profile!);
       if (!runtime.selectMarker) throw new WorkbenchHttpError(409, 'BROWSER_CONFIGURATION_REQUIRED', 'Marker selection is unavailable');

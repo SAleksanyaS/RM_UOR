@@ -59,3 +59,16 @@ it('rejects an owner root junction even when its target remains inside runtime',
   const runtime = createBrowserRuntime({ runtimeRoot: root, launcher: { launchPersistent: async () => { throw Error('must not launch'); } } });
   await expect(runtime.openLogin({ owner, profile, startUrl: 'https://report.example.invalid/report', authenticatedSelector: '#ready' }, new AbortController().signal)).rejects.toMatchObject({ code: 'BROWSER_CONFIGURATION_INVALID' });
 });
+
+it('final_I2_shutdown_cancels_queued_native_work_and_closes_only_owned_contexts',async()=>{
+ const root=await mkdtemp(path.join(os.tmpdir(),'uor-browser-runtime-'));roots.push(root);
+ const foreign=fakeContext();let foreignClosed=false;foreign.once('close',()=>foreignClosed=true);
+ let launches=0,active=0;
+ const runtime=createBrowserRuntime({runtimeRoot:root,launcher:{async launchPersistent(){launches++;active++;const context=fakeContext();context.once('close',()=>active--);return context;}}});
+ const input={owner,profile,startUrl:'https://report.example.invalid/report',authenticatedSelector:'#ready'};
+ await runtime.openLogin(input,new AbortController().signal);
+ const queued=runtime.openLogin(input,new AbortController().signal).then(()=> 'opened',error=>error.name);
+ await runtime.shutdown();expect(await queued).toBe('AbortError');expect(active).toBe(0);expect(launches).toBe(1);expect(foreignClosed).toBe(false);
+ await expect(runtime.openLogin(input,new AbortController().signal)).rejects.toMatchObject({name:'AbortError'});
+ runtime.resume();await expect(runtime.openLogin(input,new AbortController().signal)).rejects.toMatchObject({name:'AbortError'});await foreign.close();
+});

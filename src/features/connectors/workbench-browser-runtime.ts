@@ -1,4 +1,4 @@
-import { readWorkbenchRecordingStatus, readWorkbenchRecordingDownload } from './workbench-browser-recorder';
+import { disposeWorkbenchRecording, readWorkbenchRecordingStatus, readWorkbenchRecordingDownload } from './workbench-browser-recorder';
 import { selectBrowserReportMarker } from './workbench-browser-picker';
 import { randomUUID } from 'node:crypto';
 import { lstat, mkdir } from 'node:fs/promises';
@@ -55,13 +55,26 @@ function fromLegacy(step: BrowserStep): RecordedBrowserStep {
   const { selector, ...rest } = step;
   return { ...rest, locator: { kind: 'css', selector } };
 }
-export function createBrowserRuntime({ runtimeRoot, launcher }: { runtimeRoot: string; launcher?: BrowserLauncherPort }): BrowserWorkflowRuntimePort {
+export type BrowserRuntimeLifecycle={pause():Promise<void>;resume():void;shutdown():Promise<void>};
+export function createBrowserRuntime({ runtimeRoot, launcher }: { runtimeRoot: string; launcher?: BrowserLauncherPort }): BrowserWorkflowRuntimePort & BrowserRuntimeLifecycle {
   const handles = new Map<string, { owner: string; root: string; recorderId: string; input: BrowserLoginInput }>();
+  const recordingsToDispose=new Map<string,{root:string;owner:string}>();
   const finished = new Map<string, { owner: string; root: string; recorderId: string; result: RecordedBrowserScenario; timer: NodeJS.Timeout }>();
   const pending = new Set<{ owner: string; controller: AbortController; settled: Promise<void> }>();
   const closing = new Set<string>();
+  const retentionTimers=new Set<NodeJS.Timeout>();
+  const nativeContexts=new Set<import('playwright').BrowserContext>();
+  let accepting=true,disposed=false;
+  const assertAccepting=()=>{if(!accepting||disposed)throw new DOMException('Browser runtime is stopping','AbortError');};
+  const trackedLauncher:BrowserLauncherPort={async launchPersistent(profile,folder,options){
+    assertAccepting();
+    const context=launcher?await launcher.launchPersistent(profile,folder,options):await (await import('playwright')).chromium.launchPersistentContext(folder,options);
+    nativeContexts.add(context);context.once('close',()=>nativeContexts.delete(context));
+    if(!accepting||disposed){await context.close();throw new DOMException('Browser runtime is stopping','AbortError');}
+    return context;
+  }};
   const open = async (input: BrowserLoginInput, signal: AbortSignal, mode: 'login' | 'record'): Promise<BrowserSessionHandle> => {
-    signal.throwIfAborted(); const owner = browserOwnerKey(input.owner);
+    assertAccepting(); signal.throwIfAborted(); const owner = browserOwnerKey(input.owner);
     if (closing.has(owner)) throw new DOMException('Owner browser sessions are closing', 'AbortError');
     const controller = new AbortController(); let settled!: () => void;
     const request = { owner, controller, settled: new Promise<void>(resolve => { settled = resolve; }) }; pending.add(request);
@@ -69,16 +82,33 @@ export function createBrowserRuntime({ runtimeRoot, launcher }: { runtimeRoot: s
     try {
       const root = await browserOwnerRoot(runtimeRoot, input.owner), handleId = randomUUID(); ownedSignal.throwIfAborted();
       const result = await startRecording(root, owner, input.profile, input.startUrl, mode === 'record', input.authenticatedSelector,
-        () => { if (mode === 'login') handles.delete(handleId); else { const timer = setTimeout(() => handles.delete(handleId), 15 * 60_000); timer.unref(); } }, { launcher, signal: ownedSignal, workbenchRecording: mode === 'record' });
+        () => { if (mode === 'login') handles.delete(handleId); else { const timer = setTimeout(() => {const handle=handles.get(handleId);handles.delete(handleId);retentionTimers.delete(timer);if(handle){recordingsToDispose.delete(handle.recorderId);void disposeWorkbenchRecording(handle.root,handle.owner,handle.recorderId).catch(()=>{});}}, 15 * 60_000); retentionTimers.add(timer);timer.unref(); } }, { launcher:trackedLauncher, signal: ownedSignal, workbenchRecording: mode === 'record' });
+      recordingsToDispose.set(result.recordingId,{root,owner});
       ownedSignal.throwIfAborted(); handles.set(handleId, { owner, root, recorderId: result.recordingId, input });
       return { handleId, state: 'open', mode };
     } finally { pending.delete(request); settled(); }
   };
-  const runtime: BrowserWorkflowRuntimePort = {
+  const runtime: BrowserWorkflowRuntimePort & BrowserRuntimeLifecycle = {
+    async pause(){
+      accepting=false;
+      const requests=[...pending];for(const request of requests)request.controller.abort();
+      await Promise.all([...nativeContexts].map(context=>context.close()));
+      await Promise.all(requests.map(request=>request.settled));
+      for(const timer of retentionTimers)clearTimeout(timer);retentionTimers.clear();
+      for(const [id,handle] of [...handles]){
+        await cancelRecording(handle.root,handle.owner,handle.recorderId).catch(()=>false);
+        await disposeWorkbenchRecording(handle.root,handle.owner,handle.recorderId);handles.delete(id);
+      }
+      for(const [id,handle] of [...finished]){clearTimeout(handle.timer);finished.delete(id);}
+      for(const [id,record] of recordingsToDispose)await disposeWorkbenchRecording(record.root,record.owner,id);
+      recordingsToDispose.clear();
+    },
+    resume(){if(!disposed)accepting=true;},
+    async shutdown(){disposed=true;await runtime.pause();},
     async cancelRecording({ handleId, owner }) {
       const handle = handles.get(handleId);
       if (!handle || handle.owner !== browserOwnerKey(owner)) throw new WorkbenchHttpError(404, 'BROWSER_HANDLE_NOT_FOUND', 'Browser session not found');
-      await cancelRecording(handle.root, handle.owner, handle.recorderId); handles.delete(handleId);
+      await cancelRecording(handle.root, handle.owner, handle.recorderId); await disposeWorkbenchRecording(handle.root,handle.owner,handle.recorderId);recordingsToDispose.delete(handle.recorderId);handles.delete(handleId);
     },
     async observeLogin({ handleId, owner }) {
       const handle = handles.get(handleId);
@@ -98,11 +128,11 @@ export function createBrowserRuntime({ runtimeRoot, launcher }: { runtimeRoot: s
       return readWorkbenchRecordingDownload(handle.root, key, handle.recorderId);
     },
     async selectMarker(input, signal) {
-      const owner = browserOwnerKey(input.owner);
+      assertAccepting(); const owner = browserOwnerKey(input.owner);
       if (closing.has(owner)) throw new DOMException('Owner browser sessions are closing', 'AbortError');
       const controller = new AbortController(); let settled!: () => void;
       const request = { owner, controller, settled: new Promise<void>(resolve => { settled = resolve; }) }; pending.add(request);
-      try { return await selectBrowserReportMarker({ ...input, runtimeRoot, signal: AbortSignal.any([signal, controller.signal]), launcher }); }
+      try { return await selectBrowserReportMarker({ ...input, runtimeRoot, signal: AbortSignal.any([signal, controller.signal]), launcher:trackedLauncher }); }
       finally { pending.delete(request); settled(); }
     },
     openLogin: (input, signal) => open(input, signal, 'login'), startRecording: (input, signal) => open(input, signal, 'record'),
@@ -116,13 +146,16 @@ export function createBrowserRuntime({ runtimeRoot, launcher }: { runtimeRoot: s
       try { const result = await finishRecording(handle.root, handle.owner, handle.recorderId, false); const steps = result.workbenchSteps ?? result.scenario.steps.map(fromLegacy);
         const recorded: RecordedBrowserScenario = { recordingId: handleId, startUrl: handle.input.startUrl, authenticatedSelector: handle.input.authenticatedSelector, steps,
           parameterNames: result.parameters, screenshotHandles: Array.from({ length: result.screenshotCount }, () => randomUUID()), hasDownload: result.completedDownload === true };
-        const timer = setTimeout(() => finished.delete(handleId), 15 * 60_000); timer.unref();
+        const timer = setTimeout(() => {finished.delete(handleId);recordingsToDispose.delete(handle.recorderId);void disposeWorkbenchRecording(handle.root,handle.owner,handle.recorderId).catch(()=>{});}, 15 * 60_000); timer.unref();
         finished.set(handleId, { owner: handle.owner, root: handle.root, recorderId: handle.recorderId, result: recorded, timer }); return structuredClone(recorded);
       } finally { handles.delete(handleId); }
     },
     async replay(input, signal) {
-      const scenario = browserScenarioDefinitionSchema.parse(input.scenario);
-      return executeBrowser(await browserOwnerRoot(runtimeRoot, input.owner), input.profile, { id: scenario.id, startUrl: scenario.startUrl, steps: [] }, scenario.parameters, signal, { launcher, authenticatedSelector: scenario.authenticatedSelector, workbenchSteps: scenario.steps });
+      assertAccepting(); const scenario = browserScenarioDefinitionSchema.parse(input.scenario),owner=browserOwnerKey(input.owner);
+      const controller=new AbortController();let settled!:()=>void;
+      const request={owner,controller,settled:new Promise<void>(resolve=>{settled=resolve;})};pending.add(request);
+      try {return await executeBrowser(await browserOwnerRoot(runtimeRoot,input.owner),input.profile,{id:scenario.id,startUrl:scenario.startUrl,steps:[]},scenario.parameters,AbortSignal.any([signal,controller.signal]),{launcher:trackedLauncher,authenticatedSelector:scenario.authenticatedSelector,workbenchSteps:scenario.steps});}
+      finally {pending.delete(request);settled();}
     },
     async screenshot({ recordingId, owner, handleId }) {
       const record = finished.get(recordingId), index = record?.result.screenshotHandles.indexOf(handleId) ?? -1;
@@ -144,7 +177,7 @@ export function createBrowserRuntime({ runtimeRoot, launcher }: { runtimeRoot: s
         await Promise.all(requests.map(request => request.settled));
         for (const [handleId, handle] of [...handles]) if (handle.owner === key) {
           const completed = await cancelRecording(handle.root, handle.owner, handle.recorderId).catch(() => false);
-          if (completed) await runtime.finish({ handleId, owner, save: false }).catch(() => {}); else handles.delete(handleId);
+          if (completed) await runtime.finish({ handleId, owner, save: false }).catch(() => {}); else {await disposeWorkbenchRecording(handle.root,handle.owner,handle.recorderId);recordingsToDispose.delete(handle.recorderId);handles.delete(handleId);}
         }
       } finally { closing.delete(key); }
     },

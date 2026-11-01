@@ -177,3 +177,28 @@ describe('clean distribution from the accepted code revision', () => {
     expect(await readFile(path.join(root, 'delivery/code.private-local-accounts.zip'), 'utf8')).toBe('existing-private-output');
   });
 });
+
+it('final_I3_exports_each_actual_vite_entry_and_current_transfer_route',async()=>{
+  const root=await repository();
+  const actual=await readFile(new URL('../../../vite.config.ts',import.meta.url),'utf8');
+  const entries=[...actual.matchAll(/resolve\(process.cwd\(\), ['"]([^'"]+\.html)['"]\)/g)].map(m=>m[1]);
+  expect(entries.sort()).toEqual(['index.html','oko.html']);
+  for(const name of entries)await put(root,name,'<!doctype html><title>synthetic</title>');
+  await git(root,'add','.');await git(root,'commit','-m','Synthetic build inputs');
+  const result=await exportCleanDistribution({projectRoot:root}),zip=await JSZip.loadAsync(await readFile(result.path));
+  const manifest=JSON.parse(await zip.file('DISTRIBUTION_MANIFEST.json')!.async('text'));
+  for(const name of entries){expect(zip.file(name),name).not.toBeNull();expect(manifest.files.some((f:any)=>f.path===name)).toBe(true);}
+  const guide=await zip.file('TRANSFER_README.md')!.async('text');expect(guide).toContain('README.md');expect(guide).toContain('local-preview');expect(guide).not.toContain('Прочитайте docs/USER_GUIDE.md');expect(guide).not.toContain('учётные записи по руководству');
+});
+
+it('final_M3_keeps_approved_contract_plan_links_reachable_without_neighbor_evidence',async()=>{
+ const root=await repository();
+ const links=['docs/superpowers/specs/2026-10-28-uor-workbench/19-acceptance-delivery-contract.md','docs/superpowers/plans/2026-10-28-uor-workbench/06-oko-browser-scenarios.md','docs/superpowers/plans/2026-10-28-uor-workbench/PROGRESS.md'];
+ await put(root,'docs/agents/START_HERE.md',links.map(p=>'[Approved](../../'+p+')').join('\n'));
+ for(const p of links)await put(root,p,'# Public approved contract / task plan');
+ for(const p of ['docs/superpowers/specs/2026-10-28-uor-workbench/private-evidence.md','docs/superpowers/plans/2026-10-28-uor-workbench/private-evidence.md'])await put(root,p,'synthetic-private');
+ await git(root,'add','.');await git(root,'commit','-m','Synthetic approved references');
+ const result=await exportCleanDistribution({projectRoot:root}),zip=await JSZip.loadAsync(await readFile(result.path));
+ for(const p of links)expect(zip.file(p),p).not.toBeNull();
+ expect(Object.keys(zip.files).some(p=>p.includes('private-evidence'))).toBe(false);
+});

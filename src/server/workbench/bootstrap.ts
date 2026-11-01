@@ -158,7 +158,7 @@ export async function createWorkbenchRuntime(options: WorkbenchRuntimeOptions, i
         const archive: ArchiveDependencies = { repository, artifactRoot: path.join(prepared.runtimeRoot, 'maintenance'), files, clock, sessionId: context => context.sessionId ?? '', modules: new Map(), lifecycle: storage.lifecycle, workspace: storage.workspace };
         archive.modules = storage.initialize(archive, jobs, index.rebuild);
         const launcher = createCodeUpdateLauncherPort(root, config), codeUpdateRecovery = createCodeUpdateRecovery({ repository, jobs, installationId, accessPolicy, launcher });
-        storage.background({ pause: async () => { await Promise.all([notifications.pause(), codeUpdateRecovery.pause()]); }, resume: () => { notifications.start(); codeUpdateRecovery.start(); } });
+        storage.background({ pause: async () => { await Promise.all([notifications.pause(), codeUpdateRecovery.pause(),runtime.pause()]); recorder.dispose(); login.dispose(); }, resume: () => { runtime.resume(); notifications.start(); codeUpdateRecovery.start(); } });
         const codeUpdate = new CodeUpdateService({ projectRoot: codeRoot, config, launcher, clock, jobs, jobSink: jobs });
         const maintenance = new MaintenanceService({ archive, jobs, jobSink: jobs, codeUpdate });
         const apply = maintenance.applyRestore.bind(maintenance);
@@ -207,7 +207,7 @@ export async function createWorkbenchRuntime(options: WorkbenchRuntimeOptions, i
         const activate = async (_app?: FastifyInstance) => { if (activated)
             return; await recoverWorkbenchCommands(deps); await codeUpdateRecovery.reconcile(); codeUpdateRecovery.start(); notifications.start(); storage.activate(); activated = true; };
         const close = async () => { if (closed)
-            return; closed = true; storage.freeze(); await notifications.stop(); await codeUpdateRecovery.pause(); await workflow.shutdown(); if (!preparedUpdate)
+            return; closed = true; storage.freeze(); await notifications.stop(); await codeUpdateRecovery.pause(); await runtime.shutdown(); recorder.dispose(); login.dispose(); await workflow.shutdown(); if (!preparedUpdate)
             await commands.idle(); await storage.close(); };
         const systemContext = async (commandId: string = randomUUID()): Promise<CommandContext> => { const ownAccess = await accessPolicy.resolveOwnAccess(); return { repository, clock, installationId, commandId, requestId: randomUUID(), sessionId: 'code-update-system', ownAccess, actor: { hostname: hostname(), installationId, profilePersonId: ownAccess.personId } }; };
         return { deps, configure, activate, close, config, codeRoot, projectRoot: root, services: { drafts, sources, publishing, workflow, maintenance, preferences, files, archive },
