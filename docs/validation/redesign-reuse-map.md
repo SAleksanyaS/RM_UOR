@@ -1,0 +1,28 @@
+# Карта функций и повторного использования после редизайна
+
+Основание: инвентаризация `ac299a5`, утверждённый эталон `32106a9`, спецификация от 1 ноября 2026. Путь файла в таблице указан относительно `src/`, если не сказано иначе. Это карта фактического размещения функций; наличие legacy исходников не считается возвращённым экраном.
+
+| Функция | Прежнее размещение / наследие | Текущее место и повторное использование | Статус и причина решения |
+| --- | --- | --- | --- |
+| Бренд, sidebar, compact/mobile | `app/Sidebar.tsx`, `workspace-shell.css`, `public/brand/` | `app/workbench/WorkbenchShell.tsx`, `WorkbenchNavigation.tsx`; исходный логотип, адаптированные пять маршрутов и capabilities | Восстановлено в штатном Workbench; legacy Session/permissions не подключены |
+| Область, дата, текущий/согласованный вид | Прежний workspace и `App.tsx` | `GlobalContextControls.tsx`, `route-state.ts`, `context.tsx` | Сохранено; компактная строка, URL/back и guard несохранённого ввода |
+| Повестка руководителя | `features/overview/OverviewPage.tsx`, `director/DirectorPage.tsx` | `features/overview/workbench/OverviewPage.tsx`; существующий overview query | Перестроено представление; общий счётчик назначений не называется количеством проблем |
+| Каталог целей | Прежние каталог/GoalEditor | `GoalsPage.tsx`, `goals.list` | Таблица и серверная сортировка; фильтр явно относится к текущей странице; общий поиск сохранён |
+| Карточка и история цели | `GoalPage.tsx`, `GoalHistoryPanel.tsx` | `GoalDetailPage.tsx`, `ResultSummary.tsx`, `BasisInspector.tsx`, `history.series` | Сохранены факт, порог, методика, качество, подтверждение и история; точные имена/единицы из сохранённой редакции |
+| Настройка цели | Прежний goal-setup / GoalEditor | `features/goal-setup/workbench/`, DraftService/command receipts/CAS | Сохранено и усилено восстановлением составного сохранения; неполный черновик не равен готовому пакету |
+| Работы, планы, риски, решения | `planning/PlanningPage.tsx`, `ExecutionPlanPanel.tsx`, прежний execution | `features/execution/workbench/` | Таблицы и редакторы адаптированы; план/прогноз/риск/зависимости сохранены отдельно от достижения цели |
+| Очередь УОР и публикация | `execution/CuratorInboxPage.tsx`, `release/ReleasePage.tsx` | `publishing/workbench/CuratorPanel.tsx`, `PackageDiff.tsx`, `PublishOperation.tsx` | Собственный пакет, предметный preview, разделённые Git/PR/main apply стадии; внешний merge сохранён |
+| Источник цели и импорт | `ConnectorPage.tsx`, `DataImportDialog.tsx` | `sources/workbench/WorkbenchDataPage.tsx`, SourceSetup/MappingEditor/ImportPreview | Один действующий импортный конвейер; явное принятие допустимых строк, correction и partial сохраняются |
+| Личный ОКО | Отдельный `app/oko/OkoApp.tsx` | `connectors/workbench/PersonalOkoWorkspace.tsx` в Data | Представление извлечено; целое приложение внутри приложения не монтируется; личные reader права без общего curator доступа |
+| Запись, повтор, справочник и скачивания | BrowserScenarioWizard, OkoClient, browser runtime/parser/enrichment | Те же сервисы, prefix `oko.workflow.*`, общий UI результата и отдельная настройка | Переиспользовано; два файла, прежние recovery keys, личная принадлежность и sandbox |
+| Исходные строки и lineage | Прежние source/evidence views | Data/LineagePanel и BasisInspector | Сохранено; точные refs, отдельные raw/enriched слои, данные источника и времени получения |
+| Дашборды и дополнительные поля | `knowledge/KnowledgeWorkspacePage.tsx` | `dashboards/workbench/` и зарегистрированные field schemas | Действующий конструктор сохранён, настройки убраны из первой повестки; поля не превращены в формулы |
+| Поиск и уведомления | Прежние inbox/changes | `search/workbench/GlobalSearch.tsx`, `app/workbench/NotificationCenter.tsx` | Сохранены canonical links, непрочитанное/прочитанное, подписки, dialog focus/inert/returnFocus |
+| Обслуживание, копия, restore, code update | `system/SystemPage.tsx`, CodeUpdatePanel/ChangesView | `workspace-maintenance/workbench/` и штатный launcher | Отдельная служебная область; preview, подтверждение, защитная копия, recovery lock и journals сохранены |
+| Темы и плотность | Прежние стили и preferences | Общие `--wb-*` и существующие feature CSS, personal preferences | Light/dark/system и сохранённый личный вид; cosmetic `!important` не добавлены |
+| Матрица руководителей / отдельная страница руководителя | GoalLeaderMatrix/MatrixPage/LeaderPage/ClusterLeadersPage | Имена, область и ответственность есть в целях/дашбордах/контексте | Отдельный полный аналог старой матрицы отложен. Перенос требует согласованного матричного read model; таблица целей не объявляется его полным заменителем |
+| Отчёты, PPTX, еженедельный отчёт | `reporting/ReportsPage.tsx`, `weekly-report/WeeklyReportPage.tsx` | Legacy модули и проверки сохранены, production registry их не включает | Отложено: нужен отдельный перенос frozen snapshot/template/evidence контракта и предметная приёмка, не подключение старого runtime |
+| Отдельная библиотека знаний / доказательств | KnowledgeWorkspacePage/EvidenceLibraryPage | Типизированные поля, evidence service, файлы и происхождение в Data | Частичное соответствие. Полные старые страницы не возвращены; информационный раздел требует отдельного сценария |
+| Прежний App/runtime | `app/App.tsx`, legacy createApp/createContext/LocalDatabase | Совместимость и миграционные тесты; production `main.tsx → WorkbenchApp` | Сохранён в исходниках, не подключён как обход нового API или прав |
+
+Итоговый UI и owning checks: [журнал переноса](redesign-completion-ui.md). Интеграционные доказательства и поставка: [журнал завершения](redesign-completion.md). Банковские и предметные ограничения: [оставшаяся работа](../remaining-work.md).

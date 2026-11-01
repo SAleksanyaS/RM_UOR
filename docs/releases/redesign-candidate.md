@@ -16,6 +16,8 @@
 
 Owning evidence: [формы и точность оснований](../validation/redesign-completion-forms.md), [публикация](../validation/redesign-completion-publishing.md), [личный ОКО](../validation/redesign-completion-oko.md), [UI и карта функций](../validation/redesign-completion-ui.md), [зависимости и SQLite](../validation/redesign-dependencies.md).
 
+[Полная карта наследия](../validation/redesign-reuse-map.md) отдельно перечисляет перенесённые, адаптированные, частично соответствующие и отложенные возможности, включая матрицу руководителей, отчёты/PPTX и библиотеку.
+
 ## Перенос без потери данных
 
 Пакет содержит код, публичные шаблоны и инструкции. Рабочая база, конфигурации, браузерные профили, сертификаты, выгрузки, зависимости и личные файлы в него не входят. Исходную папку владельца и её `.runtime` не заменять содержимым ZIP.
