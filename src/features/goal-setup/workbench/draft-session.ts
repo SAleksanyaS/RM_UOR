@@ -1,5 +1,5 @@
 import type { EntityRef } from '../../../domain/workbench/primitives';
-import type { AnyQueryRequest, CommandResult, ApiSuccess, GlobalContext } from '../../../server/workbench/protocol';
+import type { AnyQueryRequest, CommandRequest, CommandResult, ApiSuccess, GlobalContext } from '../../../server/workbench/protocol';
 import type { WorkbenchClient } from '../../../app/workbench/api-client';
 import type { WorkbenchReadModels } from '../../catalog/workbench-read-models';
 import type { DraftOpenResult } from '../../catalog/workbench-drafts';
@@ -43,6 +43,38 @@ export async function command<R>(client: WorkbenchClient, name: string, payload:
     if ('jobId' in response.data)
         throw Error('Ожидался синхронный ответ');
     return response.data;
+}
+export class SetupReadbackError extends Error {
+    constructor() { super('Черновик создан; обновить данные пока не удалось. Повторите чтение, чтобы продолжить.'); }
+}
+/** One in-flight synchronous step, backed by the existing durable command store.
+ * The local runner never invents a second identity for an unknown result. */
+export function createSetupCommandRecovery(client: WorkbenchClient) {
+    let pending: CommandRequest | null = null;
+    return {
+        get hasPending() { return pending !== null; },
+        async execute<R>(name: string, payload: Record<string, unknown>, token: string | null) {
+            if (pending) {
+                if (pending.name !== name || JSON.stringify(pending.payload) !== JSON.stringify(payload) || pending.baseRevision !== token)
+                    throw Error('Сначала проверьте результат незавершённого шага сохранения');
+                const known = (await client.reconcileCommand(pending.commandId)).data;
+                if (known.name !== null && known.name !== name) throw Error('Ответ проверки относится к другой операции');
+                if (!['not_found', 'completed'].includes(known.status))
+                    throw Error(known.status === 'interrupted' ? 'Сохранение прервано. Откройте сохранённый черновик заново перед продолжением.' : 'Сохранение ещё выполняется. Повторите проверку результата.');
+                // completed returns the same cached receipt (including CAS token);
+                // not_found sends the original request which never reached storage.
+            } else pending = { commandId: crypto.randomUUID(), name, payload: structuredClone(payload), baseRevision: token };
+            try {
+                const response = await client.command<Omit<CommandResult, 'result'> & { result: R }>(pending);
+                if ('jobId' in response.data) throw Error('Ожидался синхронный ответ сохранения');
+                pending = null;
+                return response.data;
+            } catch (failure) {
+                if (failure instanceof WorkbenchApiError && [400, 403, 404, 409, 422].includes(failure.status) && failure.problem.code !== 'COMMAND_INTERRUPTED') pending = null;
+                throw failure;
+            }
+        },
+    };
 }
 export async function readPackage(client: WorkbenchClient, id: string, context: GlobalContext) { return (await client.query<PackageForm>('uor.package', request({ packageRef: { entityType: 'publication_package', id } }, context))).data; }
 async function ownPackages(client: WorkbenchClient, context: GlobalContext) {

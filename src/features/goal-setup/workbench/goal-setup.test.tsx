@@ -16,7 +16,7 @@ it.each([false, true])('review_template_na_uses_active_exact_metrics_with_standa
     await screen.findByLabelText('Название показателя');
     fireEvent.change(screen.getByLabelText('Название показателя'), { target: { value: 'Чужой для шаблона показатель' } });
 } await chooseTemplate(addTemplate(h)); fireEvent.click(screen.getByRole('button', { name: 'Показатели и условия' })); fireEvent.click(screen.getByRole('button', { name: 'Добавить неприменимость' })); const select = await screen.findByLabelText('Показатель N/A'); await waitFor(() => expect([...select.querySelectorAll('option')].map(o => o.value)).toContain(h.refs.metric.id)); expect(select.textContent).not.toContain('Чужой для шаблона показатель'); fireEvent.change(select, { target: { value: h.refs.metric.id } }); fireEvent.click(screen.getByRole('button', { name: 'Сохранить черновик' })); await screen.findByText('Черновик сохранён'); await restartGoal(h); fireEvent.click(screen.getByRole('button', { name: 'Показатели и условия' })); expect((await screen.findByLabelText('Показатель N/A') as HTMLSelectElement).value).toBe(h.refs.metric.id); expect(h.requests.filter(r => r.body?.name === 'draft.open' && (r.body.payload as any)?.entityType === 'method_version')).toHaveLength(standalone ? 1 : 0); });
-it('review_invalid_manual_transition_recovers_exact_pending_input_after_fresh_client', async () => { const h = await createWorkbenchUiHarness({ role: 'curator', scenario: 'manual-goal' }, { views: { goals: NewGoal, goalDetail: WorkbenchGoalDetailPage } }); closes.push(h.close); await h.open('/goals/' + h.refs.goal.id); fireEvent.click(await screen.findByRole('button', { name: 'Настроить цель' })); await screen.findByLabelText('Название цели'); fireEvent.click(screen.getByRole('button', { name: 'Пример и влияние' })); fireEvent.change(screen.getByLabelText('Новый статус'), { target: { value: 'completed' } }); fireEvent.click(screen.getByRole('button', { name: 'Сохранить ручной результат' })); await screen.findByText(/MANUAL_RESULT_REQUIRED|VALIDATION_FAILED/); const before = await ownGoalPackage(h); const pending = before.entries.find((e: any) => e.entityRef.entityType === 'manual_status_event'); await restartGoal(h, () => <WorkbenchGoalSetupWizard goalRef={h.refs.goal} onClose={() => undefined}/>); fireEvent.click(screen.getByRole('button', { name: 'Пример и влияние' })); expect((screen.getByLabelText('Новый статус') as HTMLSelectElement).value).toBe('completed'); expect(screen.getByRole('button', { name: 'Сохранить ручной результат' }).matches(':disabled')).toBe(false); fireEvent.change(screen.getByLabelText('Описание результата'), { target: { value: 'Исправленный результат' } }); fireEvent.click(screen.getByRole('button', { name: 'Сохранить ручной результат' })); await screen.findByText('Текущий статус: completed'); const events = (await ownGoalPackage(h)).entries.filter((e: any) => e.entityRef.entityType === 'manual_status_event'); expect(events).toHaveLength(1); expect(events[0].draftId).toBe(pending.draftId); expect(events[0].definition.resultDescription).toBe('Исправленный результат'); });
+it('review_invalid_manual_transition_recovers_exact_pending_input_after_fresh_client', async () => { const h = await createWorkbenchUiHarness({ role: 'curator', scenario: 'manual-goal' }, { views: { goals: NewGoal, goalDetail: WorkbenchGoalDetailPage } }); closes.push(h.close); await h.open('/goals/' + h.refs.goal.id); fireEvent.click(await screen.findByRole('button', { name: 'Настроить цель' })); await screen.findByLabelText('Название цели'); fireEvent.click(screen.getByRole('button', { name: 'Пример и влияние' })); fireEvent.change(screen.getByLabelText('Новый статус'), { target: { value: 'completed' } }); fireEvent.click(screen.getByRole('button', { name: 'Сохранить ручной результат' })); await screen.findByText(/MANUAL_RESULT_REQUIRED|VALIDATION_FAILED/); const before = await ownGoalPackage(h); const pending = before.entries.find((e: any) => e.entityRef.entityType === 'manual_status_event'); await restartGoal(h, () => <WorkbenchGoalSetupWizard goalRef={h.refs.goal} onClose={() => undefined}/>); fireEvent.click(screen.getByRole('button', { name: 'Пример и влияние' })); expect((screen.getByLabelText('Новый статус') as HTMLSelectElement).value).toBe('completed'); expect(screen.getByRole('button', { name: 'Сохранить ручной результат' }).matches(':disabled')).toBe(false); fireEvent.change(screen.getByLabelText('Описание результата'), { target: { value: 'Исправленный результат' } }); fireEvent.click(screen.getByRole('button', { name: 'Сохранить ручной результат' })); await screen.findByText('Текущий статус: Завершена'); const events = (await ownGoalPackage(h)).entries.filter((e: any) => e.entityRef.entityType === 'manual_status_event'); expect(events).toHaveLength(1); expect(events[0].draftId).toBe(pending.draftId); expect(events[0].definition.resultDescription).toBe('Исправленный результат'); });
 afterEach(async () => {
     cleanup();
     for (const close of closes.splice(0))
@@ -133,13 +133,13 @@ it('manual_completion_and_reopen_require_result_and_reason_and_recover_422', asy
     expect((screen.getByLabelText('Описание результата') as HTMLInputElement).disabled).toBe(false);
     fireEvent.change(screen.getByLabelText('Описание результата'), { target: { value: 'Внедрено и проверено' } });
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить ручной результат' }));
-    await screen.findByText('Текущий статус: completed');
+    await screen.findByText('Текущий статус: Завершена');
     fireEvent.change(screen.getByLabelText('Новый статус'), { target: { value: 'in_progress' } });
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить ручной результат' }));
     await screen.findByText(/VALIDATION_FAILED/);
     fireEvent.change(screen.getByLabelText('Причина возврата'), { target: { value: 'Найдено новое ограничение' } });
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить ручной результат' }));
-    await screen.findByText('Текущий статус: in_progress');
+    await screen.findByText('Текущий статус: В работе');
 });
 it('server_422_is_shown_at_field_and_form_remains_editable', async () => {
     await open();
@@ -355,21 +355,21 @@ it('private_manual_chain_reopens_its_actual_tip_and_appends_next_event_without_o
     fireEvent.change(screen.getByLabelText('Новый статус'), { target: { value: 'completed' } });
     fireEvent.change(screen.getByLabelText('Описание результата'), { target: { value: 'Первый результат' } });
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить ручной результат' }));
-    await screen.findByText('Текущий статус: completed');
+    await screen.findByText('Текущий статус: Завершена');
     fireEvent.change(screen.getByLabelText('Новый статус'), { target: { value: 'in_progress' } });
     fireEvent.change(screen.getByLabelText('Причина возврата'), { target: { value: 'Доработка' } });
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить ручной результат' }));
-    await screen.findByText('Текущий статус: in_progress');
+    await screen.findByText('Текущий статус: В работе');
     const commandsBefore = h.requests.filter(r => r.body?.name === 'manualGoal.transition');
     fireEvent.click(screen.getByRole('button', { name: 'Закрыть настройку' }));
     fireEvent.click(screen.getByRole('button', { name: 'Настроить цель' }));
     await screen.findByLabelText('Название цели');
     fireEvent.click(screen.getByRole('button', { name: 'Пример и влияние' }));
-    await screen.findByText('Текущий статус: in_progress');
+    await screen.findByText('Текущий статус: В работе');
     fireEvent.change(screen.getByLabelText('Новый статус'), { target: { value: 'completed' } });
     fireEvent.change(screen.getByLabelText('Описание результата'), { target: { value: 'Второй результат' } });
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить ручной результат' }));
-    await screen.findByText('Текущий статус: completed');
+    await screen.findByText('Текущий статус: Завершена');
     const commands = h.requests.filter(r => r.body?.name === 'manualGoal.transition');
     expect(commands).toHaveLength(3);
     expect(new Set(commands.map(r => (r.body?.payload as any).draftId)).size).toBe(3);

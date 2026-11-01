@@ -61,9 +61,9 @@ export function WorkbenchGoalDetailPage({ goalId }: { goalId: string }) {
   };
   const settingsControl = session?.allowedCommands.includes('goal.draft.save') && <button type="button" className="wb-goal-settings" aria-label="Настроить цель" title="Настроить цель" onClick={() => setSetup(true)}><Settings2 size={17} aria-hidden="true" /><span>Настроить цель</span></button>;
   return <section className="wb-goal-detail" aria-label="Карточка цели">
-    {!data && settingsControl}
+    <div className="wb-goal-title"><div className="wb-goal-title-heading"><div><span className="wb-eyebrow">{data ? `Цель · ${data.goal.mode === 'numeric' ? 'Числовой результат' : 'Ручной статус'}` : 'Цель'}</span><h2>{data?.goal.title ?? 'Загружаем цель…'}</h2></div>{settingsControl}</div>{data?.goal.description && <p>{data.goal.description}</p>}</div>
     {setup && <WorkbenchGoalSetupWizard goalRef={{entityType:'core_goal_definition',id:goalId}} onClose={() => setSetup(false)} />}<ResultModeSelector goalId={goalId} selectedSnapshot={data?.rows[0]?.snapshot} /><QueryFeedback loading={query.loading} error={query.error} operation={query.errorOperation} />
-    {data && <><div className="wb-goal-title"><div className="wb-goal-title-heading"><div><span className="wb-eyebrow">Цель · {data.goal.mode === "numeric" ? "Числовой результат" : "Ручной статус"}</span><h2>{data.goal.title}</h2></div>{settingsControl}</div>{data.goal.description && <p>{data.goal.description}</p>}</div>
+    {data && <>
       <div className="wb-goal-source-note"><Database size={14} aria-hidden="true" /><span>Дата данных: {data.tabs.enriched[0]?.capture.sourceUpdatedAt ?? 'Неизвестна'}</span><span>Основание доступно в исходных строках</span></div>
       <section aria-label="Сводка состояния цели" className="wb-goal-rows">{data.rows.map(row => <RowState key={row.ref.id} row={row} names={names} basis={basisFor(row)} method={methodFor(row)} deliveries={deliveries} />)}</section>
       <div className="wb-goal-next-step"><div><span className="wb-eyebrow">Следующее действие</span><h3>{data.tabs.work.flatMap(item => item.kind === 'work' ? [item.value.nextAction] : [])[0] || 'Проверить состояние и основания цели'}</h3></div><ContextLink path="/execution" label="Работы и решения" /><ArrowRight size={16} aria-hidden="true" /></div>

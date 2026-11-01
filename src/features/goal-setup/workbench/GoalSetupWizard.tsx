@@ -4,16 +4,18 @@ import type { FieldProblem, CommandResult } from '../../../server/workbench/prot
 import type { DraftOpenResult, DraftSaveResult } from '../../catalog/workbench-drafts';
 import type { WorkbenchReadModels } from '../../catalog/workbench-read-models';
 import { packagePreviewResultSchema, type PackagePreviewResult } from '../../publishing/workbench/contracts';
+import { PackageDiff } from '../../publishing/workbench/PackageDiff';
 import { privateCalculationPreviewSchema, privateMethodConfigurationSchema, privateManualTipSchema, type SourceMappingHints, type PrivateCalculationPreview } from '../../evaluation/workbench/private-preview-contracts';
 import { displayExact } from '../../overview/workbench/goal-view-utils';
 import { WorkbenchApiError } from '../../../app/workbench/api-client';
 import { useGlobalContext, useWorkbench } from '../../../app/workbench/context';
+import { useUnsavedChanges } from '../../../app/workbench/use-unsaved-changes';
 import { workbenchErrorMessage } from '../../../app/workbench/WorkbenchShell';
 import { WorkbenchSourceSetupWizard } from '../../sources/workbench/SourceSetupWizard';
 import { PopulationEditor } from './PopulationEditor';
 import { MethodEditor } from './MethodEditor';
 import { ApplicabilityEditor } from './ApplicabilityEditor';
-import { command, loadSetup, readPackage, request, SetupDraftChoiceError, type DraftChoice, type Entry, type SetupSession } from './draft-session';
+import { command, createSetupCommandRecovery, SetupReadbackError, loadSetup, readPackage, request, SetupDraftChoiceError, type DraftChoice, type Entry, type SetupSession } from './draft-session';
 import { array, object, text, changed, TextField, FieldErrors, type Definition } from './setup-fields';
 import '../../sources/workbench/data-views.css';
 import './goal-setup.css';
@@ -33,6 +35,13 @@ export function WorkbenchGoalSetupWizard({ goalRef, packageRef, onClose }: {
     }>>([]);
     const [sourceOpen, setSourceOpen] = useState(false), [example, setExample] = useState<PrivateCalculationPreview | null>(null);
     const [choices, setChoices] = useState<DraftChoice[]>([]), [choice, setChoice] = useState<DraftChoice>();
+    const [dirty, setDirty] = useState(false), [transitionDirty, setTransitionDirty] = useState(false), [progress, setProgress] = useState<{completed:number;total:number}|null>(null);
+    const [recovery, setRecovery] = useState<{action:()=>Promise<void>;kind:'unknown'|'readback'}|null>(null);
+    const recoverCommands = useRef(createSetupCommandRecovery(client));
+    const confirmedDefinitions = useRef(new Map<string,string>());
+    const openedEntries = useRef(new Map<string, Awaited<ReturnType<typeof command<DraftOpenResult>>>>());
+    const leave = useUnsavedChanges(dirty || transitionDirty || recovery !== null);
+    const close = () => leave(onClose);
     const allowed = session?.allowedCommands.includes('goal.draft.save') ?? false;
     const ownerKey = JSON.stringify([session?.role, session?.personId, allowed]);
     const identity = useRef(ownerKey);
@@ -50,7 +59,7 @@ export function WorkbenchGoalSetupWizard({ goalRef, packageRef, onClose }: {
     };
     const dialog = useRef<HTMLElement>(null), closeButton = useRef<HTMLButtonElement>(null), sourceVisible = useRef(sourceOpen), closeAction = useRef(onClose);
     sourceVisible.current = sourceOpen;
-    closeAction.current = onClose;
+    closeAction.current = close;
     useEffect(() => {
         const opener = document.activeElement as HTMLElement | null;
         closeButton.current?.focus();
@@ -82,12 +91,14 @@ export function WorkbenchGoalSetupWizard({ goalRef, packageRef, onClose }: {
         };
     }, []);
     const resolveActiveMetrics = async (m: SetupSession) => { const response = await client.query('calculation.method', request({ packageId: m.pkg.summary.packageRef.id, assignmentRef: m.assignment.versionRef, editToken: m.pkg.summary.editToken })); assertCurrent(); const config = privateMethodConfigurationSchema.parse(response.data); setActiveMetrics(config.metrics.map(metric => ({ id: metric.id, name: metric.name }))); };
-    const refresh = () => { setModel(live.current ? { ...live.current } : null); setPreview(null); setExample(null); setSaved(false); };
+    const refresh = () => { setDirty(true); setModel(live.current ? { ...live.current } : null); setPreview(null); setExample(null); setSaved(false); };
     useEffect(() => {
         let present = true;
         active.current = true;
         const key = ownerKey;
         setChoices([]);
+        setDirty(false); setTransitionDirty(false); setProgress(null); setRecovery(null);
+        recoverCommands.current = createSetupCommandRecovery(client); confirmedDefinitions.current.clear(); openedEntries.current.clear();
         setBusy(false);
         setSaved(false);
         setPreview(null);
@@ -129,6 +140,7 @@ export function WorkbenchGoalSetupWizard({ goalRef, packageRef, onClose }: {
             return;
         setBusy(true);
         setError(null);
+        setRecovery(null);
         setExtraProblems([]);
         try {
             assertCurrent();
@@ -138,6 +150,7 @@ export function WorkbenchGoalSetupWizard({ goalRef, packageRef, onClose }: {
             if (!active.current || identity.current !== ownerKey || clientIdentity.current !== client)
                 return;
             setError(failure);
+            if (recoverCommands.current.hasPending || failure instanceof SetupReadbackError) setRecovery({action,kind:failure instanceof SetupReadbackError?'readback':'unknown'});
             if (failure instanceof WorkbenchApiError)
                 setExtraProblems(failure.problem.details.map(p => ({ ...p, path: p.path.replace(/^\/?definition[/.]/, '/').replace(/\./g, '/') })));
         }
@@ -146,7 +159,27 @@ export function WorkbenchGoalSetupWizard({ goalRef, packageRef, onClose }: {
                 setBusy(false);
         }
     };
-    const openEntry = async (type: string): Promise<Entry> => { assertCurrent(); const m = live.current!; const result = await command<DraftOpenResult>(client, 'draft.open', { entityType: type, ref: null, packageId: m.pkg.summary.packageRef.id }, m.pkg.summary.editToken); assertCurrent(); m.pkg.summary.editToken = result.editToken!; const current = await readPackage(client, m.pkg.summary.packageRef.id, m.context); assertCurrent(); m.pkg = current; return current.entries.find(e => e.draftId === result.result.draftId)!; };
+    const openEntry = async (type: string): Promise<Entry> => {
+        assertCurrent(); const m = live.current!;
+        let receipt = openedEntries.current.get(type);
+        if (!receipt) {
+            receipt = await recoverCommands.current.execute<DraftOpenResult>('draft.open', { entityType: type, ref: null, packageId: m.pkg.summary.packageRef.id }, m.pkg.summary.editToken);
+            assertCurrent();
+            openedEntries.current.set(type, receipt);
+            m.pkg.summary.editToken = receipt.editToken!;
+        }
+        let current: SetupSession['pkg'];
+        try { current = await readPackage(client, m.pkg.summary.packageRef.id, m.context); }
+        catch { throw new SetupReadbackError(); }
+        assertCurrent();
+        const entry = current.entries.find(e => e.draftId === receipt.result.draftId);
+        if (!entry) throw new SetupReadbackError();
+        // Keep existing edited objects: only the newly opened entry comes from
+        // readback. The receipt's CAS token remains the revision we actually own.
+        m.pkg.entries = current.entries;
+        openedEntries.current.delete(type);
+        return entry;
+    };
     const ensureMethod = async () => { const m = live.current!; if (!m.method) {
         m.method = await openEntry('method_version');
         m.method.definition = m.goal.definition.mode ? { mode: m.goal.definition.mode } : {};
@@ -158,6 +191,7 @@ export function WorkbenchGoalSetupWizard({ goalRef, packageRef, onClose }: {
             await ensureMethod();
         const metricRefs = new Map<string, Entry>();
         const entries = [...m.metrics, ...(m.method ? [m.method] : []), m.source, m.goal, m.assignment, ...(m.na ? [m.na] : [])];
+        let completed = 0; setProgress({completed,total:entries.length});
         for (const entry of entries) {
             assertCurrent();
             if (entry === m.method && entry.definition.mode === 'numeric')
@@ -165,22 +199,31 @@ export function WorkbenchGoalSetupWizard({ goalRef, packageRef, onClose }: {
             if (entry === m.assignment && m.method && object(entry.definition.methodBinding).kind === 'standalone')
                 entry.definition = { ...entry.definition, methodBinding: { kind: 'standalone', methodRef: m.method.versionRef } };
             if (entry === m.assignment && m.method && !m.standaloneAssociated && object(entry.definition.methodBinding).kind === 'template') {
-                const association = await command<DraftSaveResult>(client, 'assignment.draft.save', { draftId: entry.draftId, definition: { ...entry.definition, methodBinding: { kind: 'standalone', methodRef: m.method.versionRef } } }, m.pkg.summary.editToken);
+                const association = await recoverCommands.current.execute<DraftSaveResult>('assignment.draft.save', { draftId: entry.draftId, definition: { ...entry.definition, methodBinding: { kind: 'standalone', methodRef: m.method.versionRef } } }, m.pkg.summary.editToken);
                 assertCurrent();
                 m.pkg.summary.editToken = association.editToken!;
                 m.standaloneAssociated = true;
             }
-            const receipt = await command<DraftSaveResult>(client, commands[entry.entityRef.entityType] + '.draft.save', { draftId: entry.draftId, definition: entry.definition }, m.pkg.summary.editToken);
+            const definitionKey = JSON.stringify(entry.definition);
+            if (confirmedDefinitions.current.get(entry.draftId) === definitionKey) {
+                metricRefs.set(entry.entityRef.id, entry);
+                setProgress({completed:++completed,total:entries.length});
+                continue;
+            }
+            const receipt = await recoverCommands.current.execute<DraftSaveResult>(commands[entry.entityRef.entityType] + '.draft.save', { draftId: entry.draftId, definition: entry.definition }, m.pkg.summary.editToken);
             assertCurrent();
             m.pkg.summary.editToken = receipt.editToken!;
             entry.versionRef = receipt.result.versionRef;
             entry.complete = receipt.result.complete;
             entry.problems = receipt.result.problems;
+            confirmedDefinitions.current.set(entry.draftId, definitionKey);
+            setProgress({completed:++completed,total:entries.length});
             if (entry === m.assignment && m.manualRef.entityType === 'goal_assignment')
                 m.manualRef = entry.versionRef;
             metricRefs.set(entry.entityRef.id, entry);
         }
         setModel({ ...m });
+        setDirty(false);
         setSaved(true);
         setPreview(null);
         setExample(null);
@@ -223,10 +266,10 @@ export function WorkbenchGoalSetupWizard({ goalRef, packageRef, onClose }: {
     const transitionManual = async () => { await save(); assertCurrent(); const m = live.current!; const tipResponse = await client.query('manual.tip', request({ packageId: m.pkg.summary.packageRef.id, assignmentRef: m.assignment.versionRef, editToken: m.pkg.summary.editToken })); const tip = privateManualTipSchema.parse(tipResponse.data); assertCurrent(); m.manualTipReady = tip.status === 'ready'; m.manualProblems = tip.problems; if (!m.manualTipReady) {
         setModel({ ...m });
         return;
-    } m.manualRef = tip.tipRef ?? m.assignment.versionRef; const input = { ref: m.manualRef, targetState: transition.targetState, reason: text(transition.reason) || null, resultDescription: text(transition.resultDescription) || null }; const prepared = await command<DraftOpenResult>(client, 'manualGoal.prepareTransition', { ...input, packageId: m.pkg.summary.packageRef.id, draftId: manualEntry?.draftId ?? tip.pending?.draftId ?? null }, m.pkg.summary.editToken); assertCurrent(); m.pkg.summary.editToken = prepared.editToken!; const current = await readPackage(client, m.pkg.summary.packageRef.id, m.context); assertCurrent(); m.pkg = current; const entry = current.entries.find(e => e.draftId === prepared.result.draftId)!; setManualEntry(entry); const receipt = await command<DraftSaveResult>(client, 'manualGoal.transition', { ...input, draftId: entry.draftId }, m.pkg.summary.editToken); assertCurrent(); m.pkg.summary.editToken = receipt.editToken!; m.manualRef = receipt.result.versionRef; m.manualState = text(transition.targetState); setManualEntry(null); setSaved(true); setModel({ ...m }); };
-    return <div className="wb-goal-setup-backdrop"><section ref={dialog} inert={sourceOpen} className="wb-goal-setup" role="dialog" aria-modal="true" aria-label="Настройка цели"><header><h2>{goalRef ? 'Настройка цели' : 'Новая цель'}</h2><button ref={closeButton} type="button" onClick={onClose}>Закрыть настройку</button></header>{!allowed && <p role="alert">Подготовка доступна куратору УОР.</p>}{error !== null && <p role="alert">{workbenchErrorMessage(error)}{error instanceof WorkbenchApiError && error.status === 409 ? ' Черновик сохранён; откройте актуальную редакцию перед новым изменением.' : ''}</p>}
+    } m.manualRef = tip.tipRef ?? m.assignment.versionRef; const input = { ref: m.manualRef, targetState: transition.targetState, reason: text(transition.reason) || null, resultDescription: text(transition.resultDescription) || null }; const prepared = await command<DraftOpenResult>(client, 'manualGoal.prepareTransition', { ...input, packageId: m.pkg.summary.packageRef.id, draftId: manualEntry?.draftId ?? tip.pending?.draftId ?? null }, m.pkg.summary.editToken); assertCurrent(); m.pkg.summary.editToken = prepared.editToken!; const current = await readPackage(client, m.pkg.summary.packageRef.id, m.context); assertCurrent(); m.pkg = current; const entry = current.entries.find(e => e.draftId === prepared.result.draftId)!; setManualEntry(entry); const receipt = await command<DraftSaveResult>(client, 'manualGoal.transition', { ...input, draftId: entry.draftId }, m.pkg.summary.editToken); assertCurrent(); m.pkg.summary.editToken = receipt.editToken!; m.manualRef = receipt.result.versionRef; m.manualState = text(transition.targetState); setManualEntry(null); setDirty(false); setTransitionDirty(false); setSaved(true); setModel({ ...m }); };
+    return <div className="wb-goal-setup-backdrop"><section ref={dialog} inert={sourceOpen} className="wb-goal-setup" role="dialog" aria-modal="true" aria-label="Настройка цели"><header><h2>{goalRef ? 'Настройка цели' : 'Новая цель'}</h2><button ref={closeButton} type="button" onClick={close}>Закрыть настройку</button></header>{!allowed && <p role="alert">Подготовка доступна куратору УОР.</p>}{error !== null && <p role="alert">{error instanceof SetupReadbackError ? error.message : workbenchErrorMessage(error)}{error instanceof WorkbenchApiError && error.status === 409 ? ' Подтверждённые шаги сохранены. Откройте актуальную редакцию перед новым изменением.' : ''}</p>}
     {choices.length > 0 && !model && <label>Свой черновик цели<select value="" onChange={e => { setChoice(choices[Number(e.target.value)]); setChoices([]); }}><option value="">Выберите черновик</option>{choices.map((c, i) => <option key={c.packageId + "/" + c.goalId} value={i}>{c.label}</option>)}</select></label>}{!model && allowed && !error && !choices.length && <p>Открываем свой черновик…</p>}{model && <><p>Личный черновик. Общая цель изменится после публикации в main.</p><nav aria-label="Шаги настройки">{steps.map((s, i) => <button type="button" key={s} aria-current={i === step ? 'step' : undefined} onClick={() => setStep(i)}>{s}</button>)}</nav>
-      <fieldset disabled={busy}><legend>{steps[step]}</legend>
+      <fieldset disabled={busy || recovery !== null}><legend>{steps[step]}</legend>
         <div hidden={step !== 0}><TextField label="Название цели" value={model.goal.definition} field="title" problems={[...model.goal.problems, ...extraProblems]} onChange={v => patch(model.goal, v)}/><TextField label="Описание цели" value={model.goal.definition} field="description" preserveEmpty onChange={v => patch(model.goal, v)}/>
           <label>Способ оценки<select value={text(model.goal.definition.mode)} onChange={e => {
                 patch(model.goal, { ...model.goal.definition, mode: e.target.value });
@@ -248,7 +291,7 @@ export function WorkbenchGoalSetupWizard({ goalRef, packageRef, onClose }: {
         <div hidden={step !== 2}><label><input type="radio" name="method-kind" checked={object(model.assignment.definition.methodBinding).kind === 'standalone'} onChange={() => { if (model.method)
             patch(model.assignment, { ...model.assignment.definition, methodBinding: { kind: 'standalone', methodRef: model.method.versionRef } });
         else
-            void run(async () => { const method = await ensureMethod(); patch(model.assignment, { ...model.assignment.definition, methodBinding: { kind: 'standalone', methodRef: method.versionRef } }); }); }}/>Самостоятельная методика</label><label><input type="radio" name="method-kind" checked={object(model.assignment.definition.methodBinding).kind === 'template'} onChange={() => patch(model.assignment, { ...model.assignment.definition, methodBinding: { kind: 'template', ...(templateLoaded ? { templateId: templateLoaded } : {}) } })}/>Шаблон</label><label>Идентификатор опубликованного шаблона<input value={templateId} onChange={e => setTemplateId(e.target.value)}/></label><button type="button" onClick={() => void run(async () => {
+            void run(async () => { const method = await ensureMethod(); patch(model.assignment, { ...model.assignment.definition, methodBinding: { kind: 'standalone', methodRef: method.versionRef } }); }); }}/>Самостоятельная методика</label><label><input type="radio" name="method-kind" checked={object(model.assignment.definition.methodBinding).kind === 'template'} onChange={() => patch(model.assignment, { ...model.assignment.definition, methodBinding: { kind: 'template', ...(templateLoaded ? { templateId: templateLoaded } : {}) } })}/>Шаблон</label><label>Идентификатор опубликованного шаблона<input value={templateId} onChange={e => {setTemplateId(e.target.value);setDirty(true);}}/></label><button type="button" onClick={() => void run(async () => {
                 const form = await client.query<WorkbenchReadModels['forms.describe']>('forms.describe', request({ formKind: 'template', ref: { entityType: 'template', id: templateId } }, model.context));
                 if (!form.data.values)
                     throw Error('Шаблон не найден');
@@ -273,14 +316,14 @@ export function WorkbenchGoalSetupWizard({ goalRef, packageRef, onClose }: {
                     refresh();
                 }
             })}>Добавить неприменимость</button>{model.na && <ApplicabilityEditor value={model.na.definition} onChange={v => patch(model.na!, v)} metricOptions={object(model.assignment.definition.methodBinding).kind === 'template' ? activeMetrics : model.metrics.map(e => ({ id: e.entityRef.id, name: text(e.definition.name) || e.entityRef.id }))} scopeLabel={model.entities.find(e => e.id === object(model.assignment.definition.scope).id)?.name ?? ''} problems={[...model.na.problems, ...extraProblems]}/>}</div>
-        <div hidden={step !== 4}>{model.goal.definition.mode === 'numeric' && <button type="button" onClick={() => void run(calculateExample)}>Рассчитать пример</button>}{example && <section aria-label="Пример расчёта черновика"><h3>{example.goal.title}</h3><p>Область примера: {example.assignment.scope.kind}; редакция назначения {example.basis.assignmentRef.revision}</p><p>Основание: редакция методики {example.basis.methodRef.revision}; {example.basis.businessTime.kind === 'as_of' ? example.basis.businessTime.date : example.basis.businessTime.startInclusive + ' — ' + example.basis.businessTime.endExclusive}</p><p>Входы: {example.basis.factRefs.length} фактов; ожидаемых участников: {example.basis.expectedPopulation?.length ?? 'Не задано'}</p><ul>{example.facts.map(fact => <li key={fact.id}>{example.metrics.find(metric => metric.id === fact.metricId)?.name ?? 'Показатель'}: {displayExact(fact.value)} {fact.unitCode}; {fact.state === 'known' ? 'измерено' : fact.missingReason}</li>)}</ul>{example.method.mode === 'numeric' && <ul>{example.method.rules.map(rule => <li key={rule.metricRef.id}>{example.metrics.find(metric => metric.id === rule.metricRef.id)?.name ?? 'Показатель'}: {rule.condition.op === 'range' ? `${rule.condition.min}–${rule.condition.max}` : `${rule.condition.op === 'gte' ? '≥' : rule.condition.op === 'lte' ? '≤' : '='} ${rule.condition.target}`}; вес {rule.originalWeight}; {rule.mandatory ? 'обязательное условие' : 'необязательное условие'}</li>)}</ul>}<p>Балл примера: {displayExact(example.result.scorePercent)}{example.result.scorePercent ? '%' : ''}</p>{example.result.preliminaryPercent && <p>Предварительный балл примера: {displayExact(example.result.preliminaryPercent)}%</p>}<p>Покрытие примера: {displayExact(example.result.coveragePercent)}{example.result.coveragePercent ? '%' : ''}</p><p>Давность на момент примера: {example.result.freshness}</p><p>Состояние расчёта: {example.result.calculation}; достижение: {example.result.achievement}</p>{example.result.qualityFlags.map(flag => <p key={flag}>{flag}</p>)}<p>Пример не подтверждает выполнение цели.</p></section>}<button type="button" onClick={() => void run(async () => { await save(); assertCurrent(); const m = live.current!; setMappingHints(undefined); if (m.goal.definition.mode === 'numeric' && object(m.assignment.definition.methodBinding).kind) {
+        <div hidden={step !== 4}>{model.goal.definition.mode === 'numeric' && <button type="button" onClick={() => void run(calculateExample)}>Рассчитать пример</button>}{example && <section aria-label="Пример расчёта черновика"><h3>{example.goal.title}</h3><p>Область примера: {({dit:'ДИТ',cluster:'Кластер',product:'Продукт',team:'Команда'})[example.assignment.scope.kind]}; редакция назначения {example.basis.assignmentRef.revision}</p><p>Основание: редакция методики {example.basis.methodRef.revision}; {example.basis.businessTime.kind === 'as_of' ? example.basis.businessTime.date : example.basis.businessTime.startInclusive + ' — ' + example.basis.businessTime.endExclusive}</p><p>Входы: {example.basis.factRefs.length} фактов; ожидаемых участников: {example.basis.expectedPopulation?.length ?? 'Не задано'}</p><ul>{example.facts.map(fact => <li key={fact.id}>{example.metrics.find(metric => metric.id === fact.metricId)?.name ?? 'Показатель'}: {displayExact(fact.value)} {fact.unitCode}; {fact.state === 'known' ? 'измерено' : fact.missingReason}</li>)}</ul>{example.method.mode === 'numeric' && <ul>{example.method.rules.map(rule => <li key={rule.metricRef.id}>{example.metrics.find(metric => metric.id === rule.metricRef.id)?.name ?? 'Показатель'}: {rule.condition.op === 'range' ? `${rule.condition.min}–${rule.condition.max}` : `${rule.condition.op === 'gte' ? '≥' : rule.condition.op === 'lte' ? '≤' : '='} ${rule.condition.target}`}; вес {rule.originalWeight}; {rule.mandatory ? 'обязательное условие' : 'необязательное условие'}</li>)}</ul>}<p>Балл примера: {displayExact(example.result.scorePercent)}{example.result.scorePercent ? '%' : ''}</p>{example.result.preliminaryPercent && <p>Предварительный балл примера: {displayExact(example.result.preliminaryPercent)}%</p>}<p>Покрытие примера: {displayExact(example.result.coveragePercent)}{example.result.coveragePercent ? '%' : ''}</p><p>Давность на момент примера: {({fresh:'Данные актуальны',stale:'Данные устарели',unknown:'Давность неизвестна'})[example.result.freshness]}</p><p>Состояние расчёта: {({ready:'Готов',preliminary:'Предварительный',no_data:'Нет данных',not_applicable:'Не применимо',blocked:'Заблокирован'})[example.result.calculation]}; достижение: {({met:'Условие выполнено',not_met:'Условие не выполнено',unknown:'Не определено',not_applicable:'Не применимо'})[example.result.achievement]}</p>{example.result.qualityFlags.map(flag => <p key={flag}>{flag}</p>)}<p>Пример не подтверждает выполнение цели.</p></section>}<button type="button" onClick={() => void run(async () => { await save(); assertCurrent(); const m = live.current!; setMappingHints(undefined); if (m.goal.definition.mode === 'numeric' && object(m.assignment.definition.methodBinding).kind) {
             const response = await client.query('calculation.method', request({ packageId: m.pkg.summary.packageRef.id, assignmentRef: m.assignment.versionRef, editToken: m.pkg.summary.editToken }));
             const config = privateMethodConfigurationSchema.parse(response.data);
             if (config.goalRef.id !== m.goal.entityRef.id || config.assignmentRef.id !== m.assignment.entityRef.id || config.assignmentRef.revision !== m.assignment.versionRef.revision)
                 throw Error('Основание методики изменилось');
             setMappingHints({ packageId: config.packageId, goalRef: config.goalRef, assignmentRef: config.assignmentRef, metrics: config.method.mode === 'numeric' ? config.method.rules.map(rule => ({ metricId: rule.metricRef.id, fields: rule.reducer.kind === 'count' ? [] : rule.reducer.kind === 'ratio' ? [rule.reducer.numeratorField, rule.reducer.denominatorField] : [rule.reducer.valueField] })) : [] });
-        } setSourceOpen(true); })}>Настроить источник</button><p>Проверка использует сохранённые поля и реальный серверный предпросмотр пакета. Нового измерения или подтверждения она не создаёт.</p><button type="button" onClick={() => void run(check)}>Проверить готовность</button>{preview && <section aria-label="Влияние пакета"><p>{preview.errors.length ? 'Публикация заблокирована' : 'Пакет прошёл проверку готовности'}</p>{preview.errors.map((p, i) => <div key={i} role="alert">{p.code}{p.details.map((d, j) => <p key={j}>{d.path}: {d.message} ({d.code})</p>)}</div>)}{preview.warnings.map((w, i) => <p key={i}>{w.code}</p>)}<ul>{preview.changes.map((c, i) => <li key={i}>{c.objectRef.entityType} · {c.field}: {JSON.stringify(c.before)} → {JSON.stringify(c.proposed)} {c.conflict ? 'Конфликт' : ''}</li>)}</ul></section>}
-          {model.goal.definition.mode === 'manual_status' && <fieldset><legend>Ручной результат</legend><p>Завершение требует описания результата; возврат в работу требует причины.</p><FieldErrors problems={model.manualProblems} path="/manualStatus"/><p>Текущий статус: {model.manualState ?? 'Не задан'}</p><label>Новый статус<select value={text(transition.targetState)} onChange={e => setTransition({ ...transition, targetState: e.target.value })}><option value="">Выберите статус</option><option value="not_started">Не начато</option><option value="in_progress">В работе</option><option value="completed">Завершено</option></select></label><TextField label="Описание результата" field="resultDescription" value={transition} onChange={setTransition} problems={extraProblems}/><TextField label="Причина возврата" field="reason" value={transition} onChange={setTransition} problems={extraProblems}/><button type="button" disabled={!model.manualTipReady && !manualEntry} onClick={() => void run(transitionManual)}>Сохранить ручной результат</button></fieldset>}</div>
-      </fieldset><footer><button type="button" disabled={busy} onClick={() => void run(save)}>Сохранить черновик</button>{step > 0 && <button type="button" onClick={() => setStep(step - 1)}>Назад</button>}{step < 4 && <button type="button" onClick={() => setStep(step + 1)}>Далее</button>}{busy && <p role="status">Сохраняем и проверяем…</p>}{saved && <p role="status">Черновик сохранён</p>}</footer></>}
+        } setSourceOpen(true); })}>Настроить источник</button><p>Проверка использует сохранённые поля и реальный серверный предпросмотр пакета. Нового измерения или подтверждения она не создаёт.</p><button type="button" onClick={() => void run(check)}>Проверить готовность</button>{preview && <section aria-label="Влияние пакета"><p>{preview.errors.length ? 'Публикация заблокирована' : 'Пакет прошёл проверку готовности'}</p>{preview.errors.map((p, i) => <div key={i} role="alert">{p.code}{p.details.map((d, j) => <p key={j}>{d.path}: {d.message} ({d.code})</p>)}</div>)}{preview.warnings.map((w, i) => <p key={i}>{w.code}</p>)}<PackageDiff changes={preview.changes}/></section>}
+          {model.goal.definition.mode === 'manual_status' && <fieldset><legend>Ручной результат</legend><p>Завершение требует описания результата; возврат в работу требует причины.</p><FieldErrors problems={model.manualProblems} path="/manualStatus"/><p>Текущий статус: {model.manualState ? ({not_started:'Не начата',in_progress:'В работе',completed:'Завершена'} as Record<string,string>)[model.manualState] ?? 'Не определён' : 'Не задан'}</p><label>Новый статус<select value={text(transition.targetState)} onChange={e => {setTransition({ ...transition, targetState: e.target.value });setTransitionDirty(true);}}><option value="">Выберите статус</option><option value="not_started">Не начато</option><option value="in_progress">В работе</option><option value="completed">Завершено</option></select></label><TextField label="Описание результата" field="resultDescription" value={transition} onChange={value=>{setTransition(value);setTransitionDirty(true);}} problems={extraProblems}/><TextField label="Причина возврата" field="reason" value={transition} onChange={value=>{setTransition(value);setTransitionDirty(true);}} problems={extraProblems}/><button type="button" disabled={!model.manualTipReady && !manualEntry} onClick={() => void run(transitionManual)}>Сохранить ручной результат</button></fieldset>}</div>
+      </fieldset><footer><button type="button" disabled={busy} onClick={() => void run(recovery?.action ?? save)}>{recovery?.kind==='readback'?'Повторить чтение':recovery?'Продолжить сохранение':'Сохранить черновик'}</button>{step > 0 && <button type="button" onClick={() => setStep(step - 1)}>Назад</button>}{step < 4 && <button type="button" onClick={() => setStep(step + 1)}>Далее</button>}{progress && (busy || recovery || error !== null) && <p role="status">Сохранено шагов: {progress.completed} из {progress.total}</p>}{busy && <p role="status">Сохраняем и проверяем…</p>}{saved && <p role="status">Черновик сохранён</p>}</footer></>}
   </section>{sourceOpen && model && <WorkbenchSourceSetupWizard goalRef={model.goal.entityRef} sourceRef={model.source.entityRef} packageRef={model.pkg.summary.packageRef} metricHints={mappingHints} onClose={() => { setSourceOpen(false); void run(async () => { const current = await loadSetup(client, ownerKey, model.goal.entityRef, context, choice, packageRef); assertCurrent(); live.current = current; setModel({ ...current }); setSaved(true); setPreview(null); }); }}/>}</div>;
 }

@@ -5,11 +5,13 @@ import { WorkbenchClient } from './api-client';
 import { canonicalPageTarget, goalContextForPath, readRouteState, routeUrl, updateGlobalContext, type ContextPatch, type WorkbenchRouteState } from './route-state';
 
 type WorkbenchValue = { client: WorkbenchClient; session: SessionView | null; preferences: PreferencesRead | null; loading: boolean; error: unknown; refreshSession(): Promise<void>; refreshPreferences(): Promise<PreferencesRead> };
-type GlobalContextValue = WorkbenchRouteState & { setContext(patch: ContextPatch): Promise<void>; navigate(pathname: string, options?: { replace?: boolean }): void; persistenceError: unknown };
+type LeaveGuard = () => boolean;
+type GlobalContextValue = WorkbenchRouteState & { setContext(patch: ContextPatch): Promise<void>; navigate(pathname: string, options?: { replace?: boolean }): void; registerLeaveGuard(guard: LeaveGuard): () => void; persistenceError: unknown };
 const Workbench = createContext<WorkbenchValue | null>(null);
 const Global = createContext<GlobalContextValue | null>(null);
 const ownRequest = { context: null, filter: {}, sort: [], page: { limit: 50, cursor: null } } as const;
 const locationUrl = () => window.location.pathname + window.location.search + window.location.hash;
+export const confirmDiscardChanges = () => window.confirm('Есть несохранённые изменения. Выйти и потерять введённые данные?');
 type ProviderLifetime = { client: WorkbenchClient; active: boolean; ready: boolean; refresh: number; writes: Promise<void> };
 
 export function WorkbenchProvider({ client, children }: { client: WorkbenchClient; children: ReactNode }) {
@@ -20,10 +22,13 @@ export function WorkbenchProvider({ client, children }: { client: WorkbenchClien
   const [persistenceError, setPersistenceError] = useState<unknown>(null);
   const [route, setRoute] = useState<WorkbenchRouteState>(() => ({ pathname: window.location.pathname, context: null, warnings: [] }));
   const routeRef = useRef(route), defaultRef = useRef<GlobalContext | null>(null);
+  const acceptedUrl = useRef(locationUrl()), leaveGuards = useRef(new Set<LeaveGuard>());
+  const registerLeaveGuard = useCallback((guard: LeaveGuard) => { leaveGuards.current.add(guard); return () => { leaveGuards.current.delete(guard); }; }, []);
+  const approveLeave = useCallback(() => ![...leaveGuards.current].some(guard => guard()) || confirmDiscardChanges(), []);
   const lifetime = useRef<ProviderLifetime | null>(null);
   const currentClient = useRef(client); currentClient.current = client;
   const isCurrent = useCallback((owner: ProviderLifetime | null): owner is ProviderLifetime => owner !== null && owner.active && lifetime.current === owner && currentClient.current === owner.client, []);
-  const applyRoute = useCallback((next: WorkbenchRouteState) => { routeRef.current = next; setRoute(next); }, []);
+  const applyRoute = useCallback((next: WorkbenchRouteState) => { acceptedUrl.current = locationUrl(); routeRef.current = next; setRoute(next); }, []);
   const persist = useCallback((context: GlobalContext | null): Promise<void> => {
     const owner = lifetime.current;
     if (!isCurrent(owner) || owner.client !== client || !owner.ready) return Promise.resolve();
@@ -88,32 +93,40 @@ export function WorkbenchProvider({ client, children }: { client: WorkbenchClien
   useEffect(() => {
     const onPopState = () => {
       if (!isCurrent(lifetime.current) || !lifetime.current.ready) return;
+      if (locationUrl() !== acceptedUrl.current && !approveLeave()) {
+        // The browser has already moved its URL. Restore the full accepted
+        // location without rendering or persisting the rejected context.
+        window.history.pushState(null, '', acceptedUrl.current);
+        return;
+      }
       const next = readRouteState(locationUrl(), defaultRef.current);
       window.history.replaceState(null, '', routeUrl(canonicalPageTarget(locationUrl()), next.context)); applyRoute(next);
       void persist(next.context).catch(() => undefined);
     };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
-  }, [applyRoute, persist, isCurrent]);
+  }, [applyRoute, persist, isCurrent, approveLeave]);
   const setContext = useCallback(async (patch: ContextPatch) => {
     if (!isCurrent(lifetime.current) || lifetime.current.client !== client || !lifetime.current.ready) throw Error('Контекст рабочего места ещё загружается');
     const current = routeRef.current;
     if (!current.context) throw Error('Получите опубликованный каталог из main');
     const context = updateGlobalContext(current.context, patch);
+    if (JSON.stringify(context) === JSON.stringify(current.context) || !approveLeave()) return;
     const warnings = JSON.stringify(context.scopePath) !== JSON.stringify(current.context.scopePath) ? ['Вложенная область сброшена после изменения родительской области'] : [];
     window.history.pushState(null, '', routeUrl(current.pathname + window.location.hash, context));
     applyRoute({ ...current, context, warnings });
     await persist(context);
-  }, [applyRoute, persist, client, isCurrent]);
+  }, [applyRoute, persist, client, isCurrent, approveLeave]);
   const navigate = useCallback((pathname: string, options: { replace?: boolean } = {}) => {
     const current = routeRef.current;
     const context = goalContextForPath(pathname, current.context);
     const url = new URL(routeUrl(pathname, context), window.location.origin);
+    if (url.pathname + url.search + url.hash !== locationUrl() && !approveLeave()) return;
     window.history[options.replace ? 'replaceState' : 'pushState'](null, '', url.pathname + url.search + url.hash);
     applyRoute({ ...current, pathname: url.pathname, context });
     if (context?.goalId !== current.context?.goalId) void persist(context).catch(() => undefined);
-  }, [applyRoute, persist]);
-  return <Workbench.Provider value={{ client, session, preferences, loading, error, refreshSession, refreshPreferences }}><Global.Provider value={{ ...route, setContext, navigate, persistenceError }}>{children}</Global.Provider></Workbench.Provider>;
+  }, [applyRoute, persist, approveLeave]);
+  return <Workbench.Provider value={{ client, session, preferences, loading, error, refreshSession, refreshPreferences }}><Global.Provider value={{ ...route, setContext, navigate, registerLeaveGuard, persistenceError }}>{children}</Global.Provider></Workbench.Provider>;
 }
 export function useWorkbench(): WorkbenchValue {
   const value = useContext(Workbench); if (!value) throw Error('WorkbenchProvider is required'); return value;
@@ -121,6 +134,8 @@ export function useWorkbench(): WorkbenchValue {
 export function useGlobalContext(): GlobalContextValue {
   const value = useContext(Global); if (!value) throw Error('WorkbenchProvider is required'); return value;
 }
+/** Standalone personal-workflow screens also use the local/unload guard. */
+export function useWorkbenchLeaveGuard() { return useContext(Global)?.registerLeaveGuard; }
 
 export type WorkbenchQueryState<T> = { data: T | null; response: ApiSuccess<T> | null; loading: boolean; error: unknown };
 /** Both abort and sequence checks are required: a transport can complete after abort. */
