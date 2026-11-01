@@ -34,7 +34,8 @@ function fixture() {
     main={...main,commit:'b'.repeat(40),files:new Map([...main.files,[`records/core_goal_definition/${value.id}/2.json`,canonicalBytes(value)]])};
   };
   const proposed=async(result:PackagePreviewResult)=>[...(await artifacts.readRevision(result.packageRevision))].filter(([name])=>name.startsWith(`records/core_goal_definition/${f.input.goal.id}/`)).map(([,bytes])=>JSON.parse(Buffer.from(bytes).toString())).sort((a,b)=>b.revision-a.revision)[0];
-  return {...f,deps,publishing:service,artifacts,command,preview,editGoal,setGoalInMain,proposed,
+  const prepare=async()=>{const ready=await f.prepare();const ownership=createWorkspaceOwnership(f.repository);for(const ref of [ready.basisRef,ready.resultRef]) ownership.bind({moduleId:'core',key:`${ref.entityType}/${ref.id}/${ref.revision}`,installationId:f.context.installationId,personId:f.context.ownAccess.personId,provenance:'created'});return ready;};
+  return {...f,prepare,deps,publishing:service,artifacts,command,preview,editGoal,setGoalInMain,proposed,
     main:()=>main,setMain:(next:VerifiedMain)=>{main=next;},setReadHook:(hook:typeof readHook)=>{readHook=hook;}};
 }
 it.each([false,true])('blocks incompatible incoming assignment after merged goal/source mode change (population repaired: %s)',async repairPopulation=>{
@@ -90,18 +91,17 @@ it('previews through the actual async registry and reuses immutable revision byt
   expect(f.count('core_goal_definition')).toBe(0); expect(f.count('attestation')).toBe(0);
   expect(f.repository.readPublishedHead({entityType:'core_goal_definition',id:f.input.goal.id})).toEqual(f.input.goal);
 });
-it.each(['owned','foreign_binding','restored_binding'] as const)('resolves unpublished capture EntityRefs only for their trusted owner: %s', async mode => {
+it.each(['owned','missing_binding','foreign_binding','restored_binding'] as const)('resolves unpublished capture EntityRefs only for their trusted owner: %s', async mode => {
   const f = fixture(), originalActor = { ...f.context.actor, installationId: mode === 'restored_binding' ? fixtureId(222900) : f.context.installationId };
   const capture = { ...f.input.captures[0], id: fixtureId(222901), publicationAnchorId: null, actor: originalActor };
   const fact = { ...f.input.facts[0], id: fixtureId(222902), captureId: capture.id, publicationAnchorId: null, actor: originalActor, factKey: 'synthetic-own-unpublished-fact', lineage: { ...f.input.facts[0].lineage, captureId: capture.id } };
   f.repository.transaction(() => { f.repository.append('capture', capture, null); f.repository.append('observed_fact', fact, null); });
   const ownership = createWorkspaceOwnership(f.repository);
-  if (mode === 'restored_binding') for (const [type, value] of [['capture', capture], ['observed_fact', fact]] as const) ownership.bind({ moduleId: 'core', key: `${type}/${value.id}/1`, installationId: f.context.installationId, personId: f.context.ownAccess.personId, provenance: 'restore' });
+  if (mode !== 'missing_binding') for (const [type, value] of [['capture', capture], ['observed_fact', fact]] as const) ownership.bind({ moduleId: 'core', key: `${type}/${value.id}/1`, installationId: f.context.installationId, personId: mode === 'foreign_binding' && type === 'capture' ? fixtureId(222999) : f.context.ownAccess.personId, provenance: mode === 'restored_binding' ? 'restore' : 'created' });
   const correction = await f.open('manual_correction');
   await f.execute('fact.correct', { draftId: correction.draftId, factKey: fact.factKey, originalFactRefs: [{ entityType: 'observed_fact', id: fact.id, revision: 1 }], replacement: '99', reason: 'Synthetic correction for exact captured input' });
-  if (mode === 'foreign_binding') ownership.bind({ moduleId: 'core', key: `capture/${capture.id}/1`, installationId: f.context.installationId, personId: fixtureId(222999), provenance: 'created' });
   const result = await f.preview(), files = await f.artifacts.readRevision(result.packageRevision);
-  if (mode === 'foreign_binding') {
+  if (mode === 'foreign_binding' || mode === 'missing_binding') {
     expect(result.errors).toContainEqual(expect.objectContaining({ code: 'REFERENCE_NOT_FOUND' }));
     expect([...files.keys()]).not.toContain(`records/capture/${capture.id}/1.json`);
   } else {
@@ -263,6 +263,8 @@ it('binds tokens to actual fact revisions in saved calculation contexts without 
   const capture={...f.input.captures[0],id:fixtureId(222000),operationId:fixtureId(222001),actor:f.context.actor,publicationAnchorId:null,capturedAt:'2026-10-23T12:01:00Z',sourceUpdatedAt:'2026-10-23T12:01:00Z',payloadHash:`sha256:${'d'.repeat(64)}`,canonicalRows:f.input.captures[0].canonicalRows.map(row=>({...row,numbers:{demo_value:'93'}})),rawRows:f.input.captures[0].rawRows.map(row=>({...row,cells:{demo_value:{kind:'number' as const,original:'93'}}}))};
   const fact={...f.input.facts[0],revision:2,actor:f.context.actor,publicationAnchorId:null,recordedAt:'2026-10-23T12:01:00Z',captureId:capture.id,value:'93',sourceUpdatedAt:capture.sourceUpdatedAt,lineage:{...f.input.facts[0].lineage,captureId:capture.id}};
   f.repository.transaction(()=>{f.repository.append('capture',capture,null);f.repository.append('observed_fact',fact,1);}); f.setNow('2026-10-23T12:02:00Z');
+  const ownership=createWorkspaceOwnership(f.repository);
+  for(const [type,value] of [['capture',capture],['observed_fact',fact]] as const) ownership.bind({moduleId:'core',key:`${type}/${value.id}/${value.revision}`,installationId:f.context.installationId,personId:f.context.ownAccess.personId,provenance:'created'});
   await expect(f.publishing.assertPreview(f.context,{packageId:f.packageId(),previewToken:first.previewToken})).rejects.toMatchObject({code:'PREVIEW_STALE'});
   const next=await f.preview(); expect(next.errors).toEqual([]); expect(next.packageRevision.revision).toBe(first.packageRevision.revision+1);
   expect(await f.artifacts.readRevision(first.packageRevision)).toEqual(saved);
@@ -285,12 +287,33 @@ it('rejects a main capsule whose declared manifest no longer matches its bytes',
   f.setMain({...f.main(),commit:'d'.repeat(40),files:new Map([...f.main().files,...changed])});
   const {job}=await f.command(); expect(job.status).toBe('failed'); expect(job.error?.code).toBe('INTEGRITY_MISMATCH');
 });
-it('blocks an attestation when main changes its saved semantic basis and never replaces the saved result',async()=>{
+it('retains an exact historical attestation when current main definitions change',async()=>{
   const f=fixture(); const ready=await f.prepare(); const draft=await f.open('attestation');
   await f.execute('result.confirm',{draftId:draft.draftId,resultRef:ready.resultRef,comment:'Exact basis review',evidenceIds:[]});
   const stored=structuredClone(f.repository.readVersion(ready.resultRef)); f.setGoalInMain({title:'Новая редакция определения'});
-  const preview=await f.preview(); expect(preview.errors).toContainEqual(expect.objectContaining({code:'BASIS_MISMATCH'}));
+  const preview=await f.preview(); expect(preview.errors).toEqual([]);
   expect(f.repository.readVersion(ready.resultRef)).toEqual(stored); expect(f.count('attestation')).toBe(0);
+});
+it('validates saved freshness at its evaluatedAt after the current freshness window expires',async()=>{
+  const f=fixture(), ready=await f.prepare(), draft=await f.open('attestation');
+  await f.execute('result.confirm',{draftId:draft.draftId,resultRef:ready.resultRef,comment:'Historical fresh result',evidenceIds:[]});
+  const initial=await f.preview(), bytes=await f.artifacts.readRevision(initial.packageRevision);
+  f.setNow('2026-11-01T12:00:00Z');
+  const later=await f.preview(); expect(later.errors.map(error=>error.code)).toEqual(['BASIS_NOT_CONFIRMABLE']);
+  expect(await f.artifacts.readRevision(later.packageRevision)).toEqual(bytes);
+});
+it.each([['missing',false],['foreign',false],['missing',true],['foreign',true]] as const)('does not change own preview from %s trusted ownership of another fact at the same scope and time (attestation %s)',async(binding,attestation)=>{
+  const f=fixture();
+  if(attestation){const ready=await f.prepare(),draft=await f.open('attestation');await f.execute('result.confirm',{draftId:draft.draftId,resultRef:ready.resultRef,comment:'Trusted own proof',evidenceIds:[]});}
+  else {const assignment=await f.open('goal_assignment',{entityType:'goal_assignment',id:f.input.assignment.id});await f.execute('calculation.prepare',{assignmentRef:f.service.readOwnEntry(f.context,assignment.draftId).versionRef,businessTime:f.input.context.businessTime});}
+  const first=await f.preview(), bytes=await f.artifacts.readRevision(first.packageRevision);
+  const capture={...f.input.captures[0],id:fixtureId(223001),actor:f.context.actor,publicationAnchorId:null,capturedAt:'2026-10-23T12:01:00Z'};
+  const fact={...f.input.facts[0],id:fixtureId(223002),actor:f.context.actor,publicationAnchorId:null,captureId:capture.id,recordedAt:'2026-10-23T12:01:00Z',value:'1',lineage:{...f.input.facts[0].lineage,captureId:capture.id}};
+  f.repository.transaction(()=>{f.repository.append('capture',capture,null);f.repository.append('observed_fact',fact,null);});
+  if(binding==='foreign') for(const [type,value] of [['capture',capture],['observed_fact',fact]] as const) createWorkspaceOwnership(f.repository).bind({moduleId:'core',key:`${type}/${value.id}/1`,installationId:f.context.installationId,personId:fixtureId(223099),provenance:'created'});
+  f.setNow('2026-10-23T12:02:00Z');
+  const next=await f.preview(); expect(next.errors).toEqual([]); expect(next.packageRevision).toEqual(first.packageRevision);
+  expect(await f.artifacts.readRevision(next.packageRevision)).toEqual(bytes);
 });
 it('cancels a waiting preview without replacing the previous ready package',async()=>{
   const f=fixture(); await f.editGoal({description:'Сохранённый предпросмотр'}); const first=await f.preview();

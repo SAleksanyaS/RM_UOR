@@ -14,7 +14,7 @@ export function makeSourceRow(rowKey: string, numbers: Record<string, Decimal | 
   return { rowKey, numbers, dimensions: {}, businessTime: { kind: 'as_of', date: '2026-10-23' }, unitCode: 'demo_unit' };
 }
 export function makePublicationAnchor(overrides: Partial<PublicationAnchor> = {}): PublicationAnchor {
-  return { schemaVersion: 1, id: fixtureId(2), packageId: fixtureId(3), revision: 1, contentHash: `sha256:${'a'.repeat(64)}`, repositoryId: 'demo-repository', targetBranch: 'main', pullRequestId: 'demo-pr-1', proposalCommit: 'a'.repeat(40), mainCommit: 'b'.repeat(40), publicationState: 'confirmed', timeVerification: 'verified', mergedAt: '2026-10-23T08:00:00Z', verifiedAt: '2026-10-23T08:01:00Z', reason: null, ...overrides };
+  return { schemaVersion: 1, id: fixtureId(2), packageId: overrides.id ?? fixtureId(2), revision: 1, contentHash: `sha256:${'a'.repeat(64)}`, repositoryId: 'demo-repository', targetBranch: 'main', pullRequestId: 'demo-pr-1', proposalCommit: 'a'.repeat(40), mainCommit: 'b'.repeat(40), publicationState: 'confirmed', timeVerification: 'verified', mergedAt: '2026-10-23T08:00:00Z', verifiedAt: '2026-10-23T08:01:00Z', reason: null, ...overrides };
 }
 type NumericFixtureOptions = { seedBase?: number; scope?: ScopeRef; values?: Array<Decimal | null>; weights?: Decimal[]; mandatory?: boolean[]; targets?: Decimal[]; scoreTarget?: Decimal; expectedPopulation?: ScopeRef[]; observedPopulation?: ScopeRef[]; context?: EvaluationContext };
 
@@ -41,7 +41,7 @@ export function makeNumericFixture(options: NumericFixtureOptions = {}): Evaluat
     assignment: { ...header(15), goalId: id(11), scope, methodBinding: { kind: 'standalone', methodRef: ref('method_version', 14) }, officialDueOn: null, expectedPopulation },
     goal: { ...header(11), title: 'demo_goal', description: '', mode: 'numeric', measurementMode: context.businessTime.kind, sourceId: id(12), primaryCuratorPersonId: id(17), coCuratorPersonIds: [], lifecycle: 'active', archiveReason: null },
     method, metrics, captures: [capture], facts, applicability: [], corrections: [], context,
-    resolution: { basisRef: ref('evaluation_basis', 16), templateRef: null, directoryLinkRefs: [], publicationAnchors: [makePublicationAnchor({ id: id(2), packageId: id(3) })], actor: header(1).actor },
+    resolution: { basisRef: ref('evaluation_basis', 16), templateRef: null, directoryLinkRefs: [], publicationAnchors: [makePublicationAnchor({ id: id(2), packageId: id(2) })], actor: header(1).actor },
   };
 }
 

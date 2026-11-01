@@ -5,7 +5,7 @@ import { WorkbenchError } from '../../../domain/workbench/errors';
 import type { CommandContext } from '../../../server/workbench/command-registry';
 import { WorkbenchHttpError, type Problem } from '../../../server/workbench/protocol';
 import type { WorkbenchRepository } from '../../../server/storage/workbench-repository';
-import { isOwnCoreVersion } from '../../../server/storage/workbench-ownership';
+import { isTrustedOwnPublicationVersion } from './trusted-ownership';
 import type { DraftService } from '../../catalog/workbench-drafts';
 import { businessDefinition } from '../../catalog/workbench-drafts';
 import { inspectMerge } from '../merge-object';
@@ -16,6 +16,7 @@ import { canonicalBasis, digestBasis } from '../../evaluation/workbench/basis';
 import { evaluateAssignment } from '../../evaluation/workbench/evaluate';
 import { buildPackageManifest, canonicalBytes, hashBytes, integrity, validatePortablePaths } from './package-manifest';
 import { gitOidSchema, packageManifestSchema, type PackageChange, type VerifiedMain } from './contracts';
+import { buildHistoricalEvaluationInput } from './historical-input';
 
 export const objectKey=(ref:EntityRef)=>`${ref.entityType}/${ref.id}`;
 export const versionKey=(ref:VersionRef)=>`${objectKey(ref)}/${ref.revision}`;
@@ -71,7 +72,8 @@ export type PackageProjection=ReturnType<typeof buildPackageProjection>;
 /** Pure, in-memory semantic merge and reference closure. It never rewrites a draft. */
 export function buildPackageProjection(context:CommandContext,packageId:string,drafts:DraftService,main:VerifiedMain) {
   const pkg=drafts.readOwnPackage(context,packageId); const mainData=readMainProjection(main);
-  const errors=drafts.validateDraftPackage(packageId,{allowRebase:true}).problems.map(p=>problem(p.code,[p]));
+  const acceptsCoreVersion=(type:string,value:Header)=>Boolean(value.publicationAnchorId && context.repository.readPublicationAnchor({entityType:'publication_anchor',id:value.publicationAnchorId})?.publicationState==='confirmed') || isTrustedOwnPublicationVersion(context.repository,type,value,{installationId:context.installationId,personId:context.ownAccess.personId});
+  const errors=drafts.validateDraftPackage(packageId,{allowRebase:true,acceptsCoreVersion}).problems.map(p=>problem(p.code,[p]));
   const frozen=drafts.readDraftVersions(packageId); const ownVersions=new Map(frozen.map(v=>[versionKey(headerRef(v.entityRef.entityType,v.value)),{type:v.entityRef.entityType,value:v.value as WorkbenchEntity}]));
   const roots=new Map<string,TypedValue>(); const changes:PackageChange[]=[];
   const remap=new Map<string,VersionRef>();
@@ -125,8 +127,7 @@ export function buildPackageProjection(context:CommandContext,packageId:string,d
   const ownCore=(ref:EntityRef|VersionRef):WorkbenchEntity|null=>{
     const value='revision' in ref?context.repository.readVersion<WorkbenchEntity>(ref):context.repository.readPublishedHead<WorkbenchEntity>(ref)??context.repository.getHead<WorkbenchEntity>(ref);
     if(!value) return null;
-    const published=value.publicationAnchorId && context.repository.readPublicationAnchor({entityType:'publication_anchor',id:value.publicationAnchorId})?.publicationState==='confirmed';
-    return published || isOwnCoreVersion(context.repository,ref.entityType,value,{installationId:context.installationId,personId:context.ownAccess.personId}) ? value:null;
+    return acceptsCoreVersion(ref.entityType,value) ? value:null;
   };
   const read=(ref:EntityRef|VersionRef):WorkbenchEntity|null=>{
     const current=roots.get(objectKey(ref)); if(current && (!('revision' in ref)||current.value.revision===ref.revision)) return current.value;
@@ -187,12 +188,17 @@ export function buildPackageProjection(context:CommandContext,packageId:string,d
     readEvaluationCandidates(query) {
       const existing=context.repository.readEvaluationCandidates(query);
       const merged=<T extends Header>(type:string,prior:T[]):T[]=>{
-        const values=new Map(prior.map(v=>[v.id,v]));
-        for(const item of [...mainData.heads.values(),...roots.values()]) if(item.type===type && (values.get(item.value.id)?.revision??0)<=item.value.revision) values.set(item.value.id,schemaForEntity(type).parse(item.value) as T);
+        // Keep exact older lineage revisions; only the pure selector chooses heads.
+        const values=new Map(prior.filter(v=>ownCore(headerRef(type,v))!==null).map(v=>[versionKey(headerRef(type,v)),v]));
+        for(const item of [...mainData.versions.values(),...roots.values()]) if(item.type===type) values.set(versionKey(headerRef(type,item.value)),schemaForEntity(type).parse(item.value) as T);
         return [...values.values()];
       };
       return {facts:merged('observed_fact',existing.facts),captures:merged('capture',existing.captures),applicability:merged('applicability',existing.applicability),corrections:merged('manual_correction',existing.corrections)};
     },
+  };
+  const accepts=(value:Header,ref:EntityRef)=>{
+    const allowed=read({...ref,revision:value.revision});
+    return allowed!==null && hashBytes(canonicalBytes(allowed))===hashBytes(canonicalBytes(value));
   };
   const contexts=new Map<string,EvaluationBasis>();
   for(const basis of [...drafts.readPackageBasisContexts(context,packageId),...[...exported.values()].filter(v=>v.type==='evaluation_basis').map(v=>v.value as EvaluationBasis)]) contexts.set(JSON.stringify([basis.assignmentRef.id,basis.businessTime]),basis);
@@ -202,7 +208,7 @@ export function buildPackageProjection(context:CommandContext,packageId:string,d
     try {
       const assignment=read({entityType:'goal_assignment',id:basis.assignmentRef.id}) as GoalAssignment|null;
       if(!assignment) return fail('REFERENCE_NOT_FOUND');
-      const input=resolveEvaluationInput({assignmentRef:headerRef('goal_assignment',assignment),businessTime:basis.businessTime},evaluationRepository,context.clock,context.actor,{read,accepts:()=>true});
+      const input=resolveEvaluationInput({assignmentRef:headerRef('goal_assignment',assignment),businessTime:basis.businessTime},evaluationRepository,context.clock,context.actor,{read,accepts});
       const digest=digestBasis(canonicalBasis(input)); basisDigests.push(digest);
       if(input.goal.mode==='numeric') {const result=evaluateAssignment(input); if(result.calculation==='blocked') errors.push(problem('EVALUATION_BLOCKED'));}
     } catch(error) {errors.push(problem((error as {code?:string}).code??'EVALUATION_BLOCKED'));}
@@ -210,7 +216,7 @@ export function buildPackageProjection(context:CommandContext,packageId:string,d
   for(const item of exported.values()) if(item.type==='evaluation_basis') {
     const basis=item.value as EvaluationBasis;
     try {
-      const input=resolveEvaluationInput({assignmentRef:basis.assignmentRef,businessTime:basis.businessTime},evaluationRepository,context.clock,context.actor,{read,accepts:()=>true});
+      const input=buildHistoricalEvaluationInput(basis,ref=>ref.entityType==='publication_anchor'?context.repository.readPublicationAnchor(ref):read(ref));
       if(digestBasis(canonicalBasis(input))!==basis.digest) errors.push(problem('BASIS_MISMATCH'));
       // Pure recomputation is a check, never a replacement of saved result bytes.
       for(const result of exported.values()) if(result.type==='calculation_result' && (result.value as CalculationResult).basisRef.id===basis.id) {

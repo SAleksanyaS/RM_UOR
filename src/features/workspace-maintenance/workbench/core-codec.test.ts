@@ -1,10 +1,21 @@
 import { afterEach, expect, it } from 'vitest';
 import { createCoreWorkspaceArchiveCodec } from './core-codec';
 import { fixture } from './test-fixture';
-import { makeEntityGraph } from '../../../../tests/fixtures/workbench/factories';
+import { fixtureId, makeEntityGraph, makeNumericFixture, makePublicationAnchor } from '../../../../tests/fixtures/workbench/factories';
 import { seedGraph } from '../../../../tests/fixtures/workbench/repository';
 import { createWorkspaceArchive, validateWorkspaceArchive } from './workspace-archive';
 const cleanup: Array<() => Promise<void>> = []; afterEach(async () => { for (const c of cleanup.splice(0)) await c(); });
+it('rejects mismatched publication anchor identity in typed archives before writing any record', async () => {
+  const f = await fixture(); cleanup.push(() => f.dispose()); const codec = createCoreWorkspaceArchiveCodec();
+  const bad = makePublicationAnchor({ id: fixtureId(910030), packageId: fixtureId(910031) });
+  const record = { moduleId: 'core', schemaId: 'core.publication_anchor', schemaVersion: 1, key: `publication_anchor/${bad.id}/1`, value: bad };
+  expect(() => codec.validate(record)).toThrow();
+  const metric = { ...makeNumericFixture().metrics[0], publicationAnchorId: null };
+  const before = f.deps.repository.getStateRevision();
+  expect(() => codec.restoreRecords(f.deps.repository, [{ moduleId: 'core', schemaId: 'core.metric_definition', schemaVersion: 1, key: `metric_definition/${metric.id}/1`, value: metric }, record])).toThrow();
+  expect(f.deps.repository.exportWorkspaceCore()).toEqual([]);
+  expect(f.deps.repository.getStateRevision()).toBe(before);
+});
 it('core codec refuses unknown schema, actor rebinding, malformed identities, and arbitrary SQL payloads', () => {
   const codec = createCoreWorkspaceArchiveCodec();
   for (const record of [

@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
+import { DatabaseSync } from 'node:sqlite';
 import { createWorkbenchRepository } from './workbench-repository';
 import type { WorkbenchRepository } from './workbench-repository';
 import type { MetricDefinition } from '../../domain/workbench/entities';
@@ -18,11 +19,38 @@ function setup() {
   const instances: WorkbenchRepository[] = [];
   const open = () => { const repository = createWorkbenchRepository(options); instances.push(repository); return repository; };
   cleanups.push(() => { instances.forEach(r => r.close()); if (!path.basename(root).startsWith('uor-wb-')) throw new Error('Unexpected test path'); rmSync(root, { recursive: true, force: true }); });
-  return { repository: open(), open };
+  return { repository: open(), open, filename: options.filename };
 }
 afterEach(() => { while (cleanups.length) cleanups.pop()!(); });
 
 describe('append-only workbench repository', () => {
+  it('rejects mismatched publication anchor identity without partial append or restore writes', () => {
+    const { repository: r } = setup();
+    const metric = { ...makeNumericFixture().metrics[0], publicationAnchorId: null };
+    const bad = makePublicationAnchor({ id: fixtureId(910010), packageId: fixtureId(910011) });
+    const before = r.getStateRevision();
+    expect(() => r.transaction(() => { r.append('metric_definition', metric, null); r.appendPublicationAnchor(bad, null); })).toThrow();
+    expect(r.getHead({ entityType: 'metric_definition', id: metric.id })).toBeNull();
+    expect(r.readPublicationAnchor({ entityType: 'publication_anchor', id: bad.id })).toBeNull();
+    expect(r.getStateRevision()).toBe(before);
+    expect(() => r.restoreWorkspaceCore([{ entityType: 'metric_definition', version: 1, value: metric }, { entityType: 'publication_anchor', version: 1, value: bad }])).toThrow();
+    expect(r.exportWorkspaceCore()).toEqual([]);
+    expect(r.getStateRevision()).toBe(before);
+  });
+
+  it('diagnoses existing incompatible publication anchor identity without rewriting historical bytes', () => {
+    const { repository: r, open, filename } = setup();
+    r.close();
+    const bad = makePublicationAnchor({ id: fixtureId(910020), packageId: fixtureId(910021) });
+    const payload = JSON.stringify(bad), legacy = new DatabaseSync(filename);
+    legacy.prepare('INSERT INTO wb_publication_anchors VALUES(?,?,?,?,?)').run(bad.id, 1, payload, bad.publicationState, bad.mergedAt);
+    legacy.close();
+    expect(() => open()).toThrowError(expect.objectContaining({ code: 'PUBLICATION_ANCHOR_IDENTITY_MISMATCH' }));
+    const preserved = new DatabaseSync(filename, { readOnly: true });
+    expect(preserved.prepare('SELECT payload_json FROM wb_publication_anchors WHERE id=?').get(bad.id)).toEqual({ payload_json: payload });
+    preserved.close();
+  });
+
   it('attaches verified publication metadata once while retaining the exact original immutable version', () => {
     const { repository: r, open } = setup(), actor = { hostname: 'original-installation', installationId: fixtureId(7501), profilePersonId: fixtureId(17) };
     const local = { ...makeNumericFixture().metrics[0], publicationAnchorId: null, actor }, anchor = makePublicationAnchor();
@@ -127,7 +155,7 @@ describe('append-only workbench repository', () => {
     expect(metaRef.revision).toBe(2);
     expect(r.readPublicationAnchor({ entityType: 'publication_anchor', id: unknown.id })?.revision).toBe(1);
     expect(() => r.appendPublicationAnchor(unknown, 1)).toThrowError(expect.objectContaining({ code: 'REVISION_CONFLICT' }));
-    const pending = makePublicationAnchor({ id: fixtureId(50), packageId: fixtureId(51), publicationState: 'unconfirmed', timeVerification: 'unknown', mainCommit: null, mergedAt: null, verifiedAt: null });
+    const pending = makePublicationAnchor({ id: fixtureId(50), packageId: fixtureId(50), publicationState: 'unconfirmed', timeVerification: 'unknown', mainCommit: null, mergedAt: null, verifiedAt: null });
     r.appendPublicationAnchor(pending, null);
     r.append('goal_assignment', { ...assignment, revision: 2, publicationAnchorId: pending.id }, 1);
     expect(r.getHead(ref)?.revision).toBe(2); expect(r.readPublishedHead(ref)?.revision).toBe(1);

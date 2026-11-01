@@ -22,6 +22,7 @@ import { gitOidSchema, mergeEvidenceSchema, packageManifestSchema, proposalLinkS
 import { canonicalBytes, hashBytes, integrity } from './package-manifest';
 import { fail, objectKey, problem, readMainProjection, versionKey } from './package-projection';
 import { verifyPublicationAnchor } from './publication-anchor';
+import { buildHistoricalEvaluationInput, historicalBasisDefinitions } from './historical-input';
 
 export type PublicationApplyResult = { appliedCommit: string; appliedAt: string | null; stateRevision: string; anchors: PublicationAnchor[]; warnings: Problem[] };
 export type PublicationApplyDependencies = { repository: WorkbenchRepository; git: PublicationGitPort; artifacts: PackageArtifactStore; clock: Clock; bitbucket: BitbucketPort | null; publication?: PublicationClassification; recheck?: () => Promise<void>; knownProposal?: (packageId: string) => ProposalLink | null; evidence?: { stagePublished(context:CommandContext,evidence:Evidence,bytes:Uint8Array):Promise<{commit():void}> } };
@@ -117,23 +118,7 @@ function validateIncoming(repository: WorkbenchRepository, selected: Capsule[], 
   for (const item of incoming.versions.values()) if (item.type === 'manual_correction') { const correction = item.value as ManualCorrection; validateCorrection(correction, correction.originalFactRefs.map(ref => exact<ObservedFact>(ref))); }
 
   const all = new Map([...combined.values(), ...incoming.versions.values()].map(item => [versionKey(refOf(item)), item]));
-  const basisDefinitions = (basis: EvaluationBasis) => {
-    const assignment = exact<GoalAssignment>(basis.assignmentRef), goal = exact<CoreGoalDefinition>(basis.goalRef), method = exact<MethodVersion>(basis.methodRef);
-    if (assignment.goalId !== goal.id || goal.mode !== method.mode || goal.measurementMode !== basis.businessTime.kind || (goal.mode === 'numeric') !== (assignment.expectedPopulation !== null)) return fail('BASIS_MISMATCH');
-    if (assignment.methodBinding.kind === 'standalone') {
-      if (basis.templateRef !== null || !equal(assignment.methodBinding.methodRef, basis.methodRef)) return fail('BASIS_MISMATCH');
-    } else {
-      if (!basis.templateRef || basis.templateRef.id !== assignment.methodBinding.templateId || !equal(exact<Template>(basis.templateRef).methodRef, basis.methodRef)) return fail('BASIS_MISMATCH');
-    }
-    return { assignment, goal, method };
-  };
-  const basisInput = (basis: EvaluationBasis): EvaluationInput => {
-    if (!basis.evaluatedAt) return fail('BASIS_EVALUATION_TIME_UNKNOWN');
-    const { assignment, goal, method } = basisDefinitions(basis);
-    const facts = basis.factRefs.map(ref => exact<ObservedFact>(ref));
-    const captures = [...new Map(facts.map(fact => [fact.captureId, exact<Capture>({ entityType: 'capture', id: fact.captureId })])).values()];
-    return { assignment, goal, method, metrics: method.mode === 'numeric' ? method.rules.map(rule => exact<MetricDefinition>(rule.metricRef)) : [], facts, captures, corrections: basis.correctionRefs.map(ref => exact(ref)), applicability: basis.applicabilityRefs.map(ref => exact(ref)), context: { evaluatedAt: basis.evaluatedAt, businessTime: basis.businessTime }, resolution: { basisRef: { entityType: 'evaluation_basis', id: basis.id, revision: basis.revision }, templateRef: basis.templateRef, directoryLinkRefs: basis.directoryLinkRefs, publicationAnchors: anchors, actor: basis.actor } };
-  };
+  const basisInput = (basis: EvaluationBasis) => buildHistoricalEvaluationInput(basis,read,anchors);
   const resultFor = (basis: EvaluationBasis): CalculationResult | null => {
     const result = [...all.values()].find(item => item.type === 'calculation_result' && equal((item.value as CalculationResult).basisRef, { entityType: 'evaluation_basis', id: basis.id, revision: basis.revision }));
     if (result) return result.value as CalculationResult;
@@ -143,7 +128,7 @@ function validateIncoming(repository: WorkbenchRepository, selected: Capsule[], 
   for (const item of incoming.versions.values()) {
     if (item.type === 'evaluation_basis') {
       const basis = item.value as EvaluationBasis;
-      basisDefinitions(basis);
+      historicalBasisDefinitions(basis,read);
       const { schemaVersion: _schema, id: _id, revision: _revision, recordedAt: _recorded, actor: _actor, publicationAnchorId: _anchor, evaluatedAt: _at, digest: _digest, ...content } = basis;
       if (digestBasis(content) !== basis.digest || basis.evaluatedAt && digestBasis(canonicalBasis(basisInput(basis))) !== basis.digest) return fail('BASIS_MISMATCH');
     }

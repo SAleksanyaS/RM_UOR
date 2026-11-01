@@ -36,6 +36,8 @@ export type PendingManualTransition={draftId:string;ref:VersionRef;targetState:M
 export type DraftOwnerSave = { context: CommandContext; entry: StoredDraft; definition: Record<string, unknown>; previous: Header | null };
 /** Complete directory of the exact package projection; point lookups cannot expose additions/removals. */
 export type DraftDirectoryInventory = { entities: DirectoryEntity[]; links: DirectoryLink[] };
+/** Optional stricter core policy for publication preflight; package-owned forms keep their own access checks. */
+export type DraftCoreAcceptance = (entityType: string, value: Header) => boolean;
 export type DraftOwnerPolicy = {
   initialDefinition?(entityType: string): Record<string, unknown>;
   validateSave?(input: DraftOwnerSave): void | FieldProblem[];
@@ -159,7 +161,7 @@ export function createDraftService({ repository, store, clock, prepareEvaluation
       return { result: { draftId, entityRef: entry.entityRef, versionRef: store.getEntry(draftId)!.versionRef, ...state }, changedRefs: [entry.entityRef], editToken };
     }).result;
   };
-  const evaluationInput = (context: CommandContext, request: { assignmentRef: VersionRef; businessTime: EvaluationInput['context']['businessTime'] }, packageOverride?: StoredPackage): EvaluationInput => {
+  const evaluationInput = (context: CommandContext, request: { assignmentRef: VersionRef; businessTime: EvaluationInput['context']['businessTime'] }, packageOverride?: StoredPackage, acceptsCoreVersion?: DraftCoreAcceptance): EvaluationInput => {
     const drafts = store.findOwn(context.installationId, context.ownAccess.personId, request.assignmentRef).filter(e => e.header.revision === request.assignmentRef.revision);
     if (drafts.length > 1) return fail('DRAFT_REFERENCE_AMBIGUOUS', 409);
     const pkg = packageOverride ?? (drafts[0] ? ownPackage(context, drafts[0].packageId) : undefined);
@@ -174,8 +176,9 @@ export function createDraftService({ repository, store, clock, prepareEvaluation
     };
     const filtered: WorkbenchRepository = { ...repository, readEvaluationCandidates(query) {
       const candidates = repository.readEvaluationCandidates(query);
-      const captures = candidates.captures.filter(c => accessible(context, c,'capture')); const ids = new Set(captures.map(c => c.id));
-      return { captures, facts: candidates.facts.filter(f => accessible(context, f,'observed_fact') && ids.has(f.captureId)), applicability: candidates.applicability, corrections: candidates.corrections };
+      const accepts=(type:string,value:Header)=>acceptsCoreVersion?acceptsCoreVersion(type,value):accessible(context,value,type);
+      const captures = candidates.captures.filter(c => accepts('capture',c)); const ids = new Set(captures.map(c => c.id));
+      return { captures, facts: candidates.facts.filter(f => accepts('observed_fact',f) && ids.has(f.captureId)), applicability: candidates.applicability.filter(v=>accepts('applicability',v)), corrections: candidates.corrections.filter(v=>accepts('manual_correction',v)) };
     } };
     return resolveEvaluationInput(request, filtered, clock, context.actor, pkg ? { read: findLocal, accepts: (value, ref) => checked.has(`${ref.entityType}/${value.id}/${value.revision}`) } : undefined);
   };
@@ -184,8 +187,8 @@ export function createDraftService({ repository, store, clock, prepareEvaluation
     if (local) { ownPackage(context, local.packageId); if (pkg && pkg.packageId !== local.packageId) return fail('REFERENCE_NOT_FOUND', 404); return local.value as T; }
     return repository.readVersion<T>(ref);
   };
-  const currentBasis = (context: CommandContext, basis: EvaluationBasis, pkg: StoredPackage | undefined, code: string) => {
-    const input = evaluationInput(context, { assignmentRef: basis.assignmentRef, businessTime: basis.businessTime }, pkg);
+  const currentBasis = (context: CommandContext, basis: EvaluationBasis, pkg: StoredPackage | undefined, code: string, acceptsCoreVersion?: DraftCoreAcceptance) => {
+    const input = evaluationInput(context, { assignmentRef: basis.assignmentRef, businessTime: basis.businessTime }, pkg, acceptsCoreVersion);
     const currentAssignment = pkg?.entries.find(entry => entry.entityRef.entityType === 'goal_assignment' && entry.entityRef.id === input.assignment.id)?.versionRef ?? repository.readPublishedHead<GoalAssignment>({ entityType: 'goal_assignment', id: input.assignment.id });
     if (currentAssignment && currentAssignment.revision !== basis.assignmentRef.revision || digestBasis(canonicalBasis(input)) !== basis.digest) return fail(code);
     return input;
@@ -228,11 +231,11 @@ export function createDraftService({ repository, store, clock, prepareEvaluation
       if (!chain.has(refKey(entry.versionRef))) return fail('REVISION_CONFLICT', 409);
     }
   };
-  const currentConfirmation = (context: CommandContext, resultRef: VersionRef, pkg?: StoredPackage) => {
+  const currentConfirmation = (context: CommandContext, resultRef: VersionRef, pkg?: StoredPackage, acceptsCoreVersion?: DraftCoreAcceptance) => {
     if (resultRef.entityType !== 'calculation_result') return fail('BASIS_NOT_CONFIRMABLE');
     const result = derived<CalculationResult>(context, resultRef, pkg); if (!result) return fail('BASIS_NOT_CONFIRMABLE');
     const basis = derived<EvaluationBasis>(context, result.basisRef, pkg); if (!basis) return fail('BASIS_NOT_CONFIRMABLE');
-    const input = currentBasis(context, basis, pkg, 'BASIS_NOT_CONFIRMABLE');
+    const input = currentBasis(context, basis, pkg, 'BASIS_NOT_CONFIRMABLE', acceptsCoreVersion);
     const fresh = evaluateAssignment({ ...input, resolution: { ...input.resolution, basisRef: result.basisRef } });
     if (!fresh.canConfirm || !result.canConfirm || sourceState.readLatestAttempt({ installationId: context.installationId, goalId: input.goal.id })?.complete === false) return fail('BASIS_NOT_CONFIRMABLE');
     return { basis, result, input };
@@ -340,7 +343,7 @@ export function createDraftService({ repository, store, clock, prepareEvaluation
       policy?.validateMaterialization?.({entityType,value:checked,resolve:read});
       if(original) policy?.validatePackage?.({context,entry:{...original,definition:businessDefinition(checked),header:checked},value:checked,previous,resolve:read,directoryInventory});
     },
-    validateDraftPackage(packageId: string, options?: { allowRebase?: boolean }): DraftValidation {
+    validateDraftPackage(packageId: string, options?: { allowRebase?: boolean; acceptsCoreVersion?: DraftCoreAcceptance }): DraftValidation {
       const pkg = store.getPackage(packageId); if (!pkg) return fail('DRAFT_NOT_FOUND', 404);
       const problems: FieldProblem[] = []; const candidates = new Map<string, WorkbenchEntity>();
       const context: CommandContext = { repository, clock, installationId: pkg.installationId, commandId: newUuid(), requestId: newUuid(), actor: { hostname: 'package-validation', installationId: pkg.installationId, profilePersonId: pkg.ownerPersonId }, ownAccess: { role: 'curator', personId: pkg.ownerPersonId, displayName: null, policyState: 'local_preview', checkedAt: null } };
@@ -361,7 +364,7 @@ export function createDraftService({ repository, store, clock, prepareEvaluation
         const local = 'revision' in ref ? store.readDerived(ref) : null;
         if (local?.packageId === packageId) return local.value;
         const value = 'revision' in ref ? repository.readVersion(ref) : repository.readPublishedHead(ref);
-        if (!value || !isPublished(value) && (!['observed_fact','capture','evaluation_basis','calculation_result'].includes(ref.entityType) || !accessible(context, value,ref.entityType))) return null; return value;
+        if (!value || !isPublished(value) && (!['observed_fact','capture','evaluation_basis','calculation_result'].includes(ref.entityType) || !(options?.acceptsCoreVersion?options.acceptsCoreVersion(ref.entityType,value):accessible(context, value,ref.entityType)))) return null; return value;
       };
       for (const entry of pkg.entries as StoredDraft[]) {
         const value = candidates.get(`${entry.entityRef.entityType}/${entry.entityRef.id}`); if (!value) continue;
@@ -379,12 +382,12 @@ export function createDraftService({ repository, store, clock, prepareEvaluation
             const attestation = value as Attestation;
             const proof = store.readProof<{ resultRef: VersionRef }>(entry.draftId, 'result-confirmation');
             if (!proof) fail('CONFIRMATION_PROOF_REQUIRED');
-            const checked = currentConfirmation(context, proof!.resultRef, pkg); if (checked.basis.digest !== attestation.basisDigest) fail('BASIS_NOT_CONFIRMABLE');
+            const checked = currentConfirmation(context, proof!.resultRef, pkg, options?.acceptsCoreVersion); if (checked.basis.digest !== attestation.basisDigest) fail('BASIS_NOT_CONFIRMABLE');
           }
           if (entry.entityRef.entityType === 'agreed_snapshot') {
             const snapshot = value as AgreedSnapshot; const basis = derived<EvaluationBasis>(context, snapshot.basisRef, pkg);
             if (!store.readProof(entry.draftId, 'snapshot')) fail('SNAPSHOT_PROOF_REQUIRED');
-            if (!basis) fail('BASIS_MISMATCH'); else currentBasis(context, basis, pkg, 'BASIS_MISMATCH');
+            if (!basis) fail('BASIS_MISMATCH'); else currentBasis(context, basis, pkg, 'BASIS_MISMATCH', options?.acceptsCoreVersion);
           }
           if (entry.entityRef.entityType === 'manual_status_event') {
             const event = value as ManualStatusEvent; const published = repository.readPublishedHead<ManualStatusEvent>(entry.entityRef);

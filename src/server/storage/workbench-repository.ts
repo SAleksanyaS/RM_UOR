@@ -81,6 +81,15 @@ export function createWorkbenchRepository(options: { filename: string; artifactR
   if (!readOnly) mkdirSync(artifactRoot, { recursive: true });
   const db = readOnly ? openReadonlyWorkbenchDatabase(options.filename) : new DatabaseSync(options.filename);
   if (!readOnly) migrateWorkbench(db);
+  // Earlier schemas accepted two different identities. Do not activate or silently
+  // rename those historical rows: leave the original bytes available for recovery.
+  const incompatibleAnchor = db.prepare(`SELECT id,revision FROM wb_publication_anchors
+    WHERE id IS NOT json_extract(payload_json,'$.id')
+       OR id IS NOT json_extract(payload_json,'$.packageId') LIMIT 1`).get() as { id: string; revision: number } | undefined;
+  if (incompatibleAnchor) {
+    db.close();
+    throw new WorkbenchError('PUBLICATION_ANCHOR_IDENTITY_MISMATCH', incompatibleAnchor);
+  }
   const registrations = new Map<string, EntityRegistration<Header>>();
   const projections = new Map<string, (type: string, value: Header) => void>();
   const catalogProjections=new Map<string,(refs:EntityRef[])=>void>();
