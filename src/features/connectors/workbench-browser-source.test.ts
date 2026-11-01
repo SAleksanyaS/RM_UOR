@@ -1,3 +1,4 @@
+import { testBrowserSelection } from '../../../tests/fixtures/workbench/test-browser-selection';
 import { afterEach, expect, it } from 'vitest';
 import { draftCleanups, draftFixture } from '../../../tests/fixtures/workbench/drafts';
 import { fixtureId, makeHeader, makeNumericFixture } from '../../../tests/fixtures/workbench/factories';
@@ -138,7 +139,7 @@ it.each(['401', '403', 'login', 'fetch401', 'form403', 'unrelated403', 'cancel']
   });
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve)); const origin = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
   try {
-    const profile = await f.profiles.getOwn(f.context, f.source.id); await f.profiles.set(f.context, { sourceId: f.source.id, profileId: 'synthetic', expectedRevision: profile.revision, profile: privateProfileSchema.parse({ allowedOrigins: [origin], timeoutMs: 1500, browser: { channel: 'msedge', profileDirectory: 'review-edge', headless: true } }) });
+    const profile = await f.profiles.getOwn(f.context, f.source.id); await f.profiles.set(f.context, { sourceId: f.source.id, profileId: 'synthetic', expectedRevision: profile.revision, profile: privateProfileSchema.parse({ allowedOrigins: [origin], timeoutMs: 1500, browser: { ...testBrowserSelection(), profileDirectory: 'review-edge', headless: true } }) });
     f.repository.transaction(() => { f.repository.append('browser_scenario', { ...f.scenario, revision: 2, startUrl: origin + '/report' }, 1); const source = f.repository.readPublishedHead<SourceDefinition>({ entityType: 'source_definition', id: f.source.id })!; f.repository.append('source_definition', { ...source, revision: 3, browserScenarioRef: { ...ref('browser_scenario', f.scenario), revision: 2 } }, 2); });
     f.runtime.replay = createBrowserRuntime({ runtimeRoot: f.root, launcher: { launchPersistent: async (_profile, folder, options) => { const context = await chromium.launchPersistentContext(folder, { ...options, headless: true }); contexts.push(context); return context; } } }).replay;
     expect((await f.capture()).status).toBe('succeeded'); const previous = f.fallback(); responseMode = mode;

@@ -1,4 +1,5 @@
 import { access, mkdtemp, rm } from 'node:fs/promises';
+import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
 import { chromium, type BrowserContext, type Page } from 'playwright';
@@ -24,7 +25,10 @@ export async function createNativeBrowserFixture(existingReport?: Awaited<Return
   const owners = new Map<string, BrowserOwner>();
   const history: BrowserContext[] = [], launchWaiters: Array<{ after: number; resolve(context: BrowserContext): void }> = [];
   const runtime = createBrowserRuntime({ runtimeRoot: root, launcher: { async launchPersistent(_profile, folder, launchOptions) {
-    const context = await chromium.launchPersistentContext(folder, launchOptions);
+    assert.equal(launchOptions.chromiumSandbox, true);
+    // The fixture controls the real native page. Login intentionally requests a
+    // visible window in production; this automated driver runs without a display.
+    const context = await chromium.launchPersistentContext(folder, { ...launchOptions, headless: true });
     contexts.add(context); latest = context; options.push(launchOptions); history.push(context); for (const waiter of launchWaiters.splice(0)) waiter.resolve(context); context.once('close', () => contexts.delete(context)); return context;
   } } });
   const owner = { installationId: fixtureId(950001), profilePersonId: fixtureId(17) };

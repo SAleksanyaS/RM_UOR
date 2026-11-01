@@ -1,3 +1,4 @@
+import { testBrowserSelection } from '../../../tests/fixtures/workbench/test-browser-selection';
 import { EventEmitter } from 'node:events';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
@@ -133,7 +134,7 @@ it('records a real authenticated Edge export, ends on completion, and replays ex
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   const origin = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
   const contexts: BrowserContext[] = [];
-  const profile = privateProfileSchema.parse({ allowedOrigins: [origin], timeoutMs: 5000, browser: { channel: 'msedge', profileDirectory: 'own', headless: true } });
+  const profile = privateProfileSchema.parse({ allowedOrigins: [origin], timeoutMs: 5000, browser: { ...testBrowserSelection(), profileDirectory: 'own', headless: true } });
   const runtime = createBrowserRuntime({ runtimeRoot: root, launcher: { launchPersistent: async (_profile, folder, options) => { expect(options.downloadsPath).toBeTruthy(); expect(options.ignoreHTTPSErrors).toBe(false); const context = await chromium.launchPersistentContext(folder, { ...options, headless: true }); contexts.push(context); return context; } } });
   const owner = { installationId: fixtureId(1), profilePersonId: fixtureId(2) };
   try {

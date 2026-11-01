@@ -177,7 +177,7 @@ export async function createBrowserIntegrationHarness() {
       let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
       uiClosers.push(async () => { await browser?.close(); await vite.close(); });
       await vite.listen(); const address = vite.httpServer!.address() as { port: number }; const uiOrigin = 'http://127.0.0.1:' + address.port; allowedOrigins.push(uiOrigin);
-      browser = await chromium.launch({ executablePath: native.executablePath, headless: true }); const page = await browser.newPage(); await page.goto(uiOrigin + '/data');
+      browser = await chromium.launch({ executablePath: native.executablePath, headless: true, chromiumSandbox: true }); const page = await browser.newPage(); await page.goto(uiOrigin + '/data');
       return { page, origin: uiOrigin };
     }
     const sourceRef = () => ref('source_definition', repository.readPublishedHead<SourceDefinition>({ entityType: 'source_definition', id: source.id })!);

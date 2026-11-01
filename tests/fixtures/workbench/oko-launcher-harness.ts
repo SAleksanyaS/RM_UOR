@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
 import { spawn, type ChildProcess } from 'node:child_process';
-import { cp, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import { access, cp, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { chromium } from 'playwright';
 import ExcelJS from 'exceljs';
 import { closeOkoLauncherResources, stopOkoLauncher } from './oko-launcher-cleanup';
+import { testBrowserSelection } from './test-browser-selection';
 
 /** Test owns the entire project, report and browsers. Production imports no fixture. */
 export async function createOkoLauncherHarness() {
@@ -37,9 +38,11 @@ export async function createOkoLauncherHarness() {
     response.setHeader('content-type', 'text/html'); response.end(await readFile(path.join(repository, 'tests/fixtures/workbench/oko-launcher-report.html'), 'utf8'));
   });
   let launcher: ChildProcess | undefined, browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
+  let managedBrowserExecutable: string | null = null;
+  let nativeArgumentsPath: string | null = null;
   const stop = () => stopOkoLauncher(launcher);
   const close = async (primaryError?: unknown) => closeOkoLauncherResources({
-    saveEvidence: async () => { const directory = path.join(repository, '.runtime/validation/workbench/continuation'); await mkdir(directory, {recursive:true}); await writeFile(path.join(directory, 'oko-launcher-process.log'), logs.join('')); },
+    saveEvidence: async () => { const directory = path.join(repository, '.runtime/validation/workbench/continuation'); await mkdir(directory, {recursive:true}); await writeFile(path.join(directory, 'oko-launcher-process.log'), logs.join('')); if (nativeArgumentsPath) { const args = await readFile(nativeArgumentsPath, 'utf8').catch(() => 'No managed launch recorded\n'); await writeFile(path.join(directory, 'oko-launcher-native-argv.txt'), args); } },
     closeBrowser: async () => browser?.close(), stopLauncher: stop,
     closeReport: () => new Promise<void>(resolve => { report.closeAllConnections(); report.close(() => resolve()); }),
     removeProject: async () => {
@@ -48,6 +51,22 @@ export async function createOkoLauncherHarness() {
     },
   }, primaryError);
   try {
+    const installed = process.env.UOR_TEST_BROWSER_EXECUTABLE;
+    if (installed) {
+      await access(installed);
+      managedBrowserExecutable = installed;
+      if (process.platform !== 'win32') {
+        // The standard launcher remains a separate unmodified production process.
+        // Only this explicitly selected test executable adapts its real native UI
+        // to a display-free runner. It changes no origin, TLS or sandbox option.
+        const quote = (value: string) => "'" + value.replace(/'/g, "'\\''") + "'";
+        nativeArgumentsPath = path.join(root, 'managed-browser-arguments.txt');
+        managedBrowserExecutable = path.join(root, 'installed-headless-browser.sh');
+        await writeFile(managedBrowserExecutable, '#!/bin/sh\n' +
+          `printf '%s\\n' ${quote('BEGIN NATIVE TEST BROWSER')} ${quote(installed)} '--headless' "$@" >> ${quote(nativeArgumentsPath)}\n` +
+          `exec ${quote(installed)} --headless "$@"\n`, { mode: 0o700, flag: 'wx' });
+      }
+    }
     await Promise.all([cp(path.join(repository, 'src'), path.join(root, 'src'), { recursive: true }), mkdir(path.join(root, 'scripts')), mkdir(path.join(root, 'config'))]);
     await Promise.all(['package.json', 'tsconfig.json'].map(name => cp(path.join(repository, name), path.join(root, name))));
     await cp(path.join(repository, 'scripts/oko.ts'), path.join(root, 'scripts/oko.ts'));
@@ -67,9 +86,10 @@ export async function createOkoLauncherHarness() {
       await waitFor(() => ready || launcher!.exitCode !== null, 'Standard launcher did not become ready');
       assert.equal(launcher.exitCode, null, logs.join(''));
     };
-    await start(); browser = await chromium.launch({ channel: 'chrome', headless: true });
+    await start(); browser = await chromium.launch({ ...testBrowserSelection('chrome'), headless: true, chromiumSandbox: true });
     const page = await browser.newPage({ acceptDownloads: true }); page.setDefaultTimeout(18000);
-    return { root, page, url, reportUrl, logs, telemetry, start, stop, close, exportBytes, downloads,
+    return { root, page, url, reportUrl, logs, telemetry, start, stop, close, exportBytes, downloads, managedBrowserExecutable,
+      nativeArguments: () => nativeArgumentsPath ? readFile(nativeArgumentsPath, 'utf8') : Promise.resolve(null),
       expire: () => { authenticated = false; },
       reportAction: async (action: 'login' | 'marker' | 'record') => {
         const id = ++serial; control = { id, action }; await waitFor(() => acknowledged === id, `Managed report did not perform ${action}. Telemetry: ${JSON.stringify(telemetry.slice(-8))}`);
