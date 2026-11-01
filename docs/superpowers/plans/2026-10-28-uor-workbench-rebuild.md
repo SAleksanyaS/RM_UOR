@@ -140,7 +140,7 @@ flowchart LR
 - [x] Whole-branch review3d8704e→fba0ce6 завершён:0Critical/3Important/3Minor,changes required.
 - [x] Scoped f1331c4 принял I2/I3/M1/M3, но I1NOT ADDRESSED(SQL JSON parsing). Исходный неуспешный verdict сохранён.
 - [x] Текущая source a445c23385c9f32f4a284537d944c228430df11e завершила I1true covering indexes; main6files104PASSexit0,78.45s/type+buildPASS1.99s/native-entry5PASS23.64s. Тот же scoped reviewer подтвердил I1ADDRESSED, без нового breakage. Все I1–I3/M1/M3 закрыты,M2cosmetic DEFERRED. Полный260/1892 относится к pre-fix fba0ce6.
-- [ ] **PENDING_LOCAL:** фактический filtered/extracted artifact build и финальная release-docs запись.
+- [x] Локальный комплект T41/подготовка T48 завершены. Фактический D1архив docs commit82243cae289017791a34892bfc9900dfef511f2b:834файла/manifest hashes PASS/private entries0/required HTML+docs PASS; распакованный build PASSexit0,Vite1.93s и2actual production smoke boots PASS. Sourcecode a445c23 неизменен, Git revision конкретного архива указана в DISTRIBUTION_MANIFEST.
 - [ ] **BLOCKED_BANK_INPUT:** реальные BP-01–BP-06, целевой СберБраузер/SSO T48 и банковская приёмка/перенос T41.
 
 Поставка локальной части и фактическая банковская приёмка — отдельные результаты; текущие доказательства приведены в [матрице](../../validation/workbench-acceptance.md) и [кандидате0.5.0](../../releases/workbench-candidate.md).
