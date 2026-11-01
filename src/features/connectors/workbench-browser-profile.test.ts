@@ -41,3 +41,12 @@ it('detects stale binding-only writes between two already configured profiles', 
   await expect(service.set(context, { sourceId, profileId: 'b', profile: b, expectedRevision: second.revision })).rejects.toMatchObject({ code: 'REVISION_CONFLICT' });
   expect(await service.getOwn(context, sourceId)).toMatchObject({ profileId: 'a', revision: latest.revision });
 });
+it.runIf(process.platform === 'win32')('rejects a Windows profile path exceeding MAX_PATH before replacing working settings', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'uor-browser-long-profile-extended-path-')); roots.push(root);
+  const service = createBrowserProfileService({ runtimeRoot: root, repository: context.repository, clock: { now: () => '2026-10-28T09:00:00Z' } });
+  const profile = privateProfileSchema.parse({ allowedOrigins: ['https://report.example.invalid'], browser: { executablePath: process.execPath, profileDirectory: 'oko' } });
+  const saved = await service.set(context, { sourceId, profileId: 'report', profile, expectedRevision: null });
+  expect(path.join(root, 'workbench-browser', installationId, 'unassigned', 'browser-profiles', 'x'.repeat(100)).length).toBeGreaterThanOrEqual(260);
+  await expect(service.set(context, { sourceId, profileId: 'report', profile: { ...profile, browser: { ...profile.browser!, profileDirectory: 'x'.repeat(100) } }, expectedRevision: saved.revision })).rejects.toMatchObject({ code: 'BROWSER_CONFIGURATION_INVALID', message: expect.stringMatching(/коротк/) });
+  expect(await service.getOwn(context, sourceId)).toMatchObject({ revision: saved.revision, profile: { browser: { profileDirectory: 'oko' } } });
+});

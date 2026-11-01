@@ -3,6 +3,13 @@ import path from 'node:path';
 import { afterEach, expect, it } from 'vitest';
 import { draftCleanups, draftFixture } from '../../../tests/fixtures/workbench/drafts';
 import { fixtureId, makePublicationAnchor } from '../../../tests/fixtures/workbench/factories';
+import { createWorkbenchRepository } from '../../server/storage/workbench-repository';
+import { createSourceArchiveOwners } from '../workspace-maintenance/workbench/source-archive-owners';
+import { createSubjectArchiveOwners } from '../workspace-maintenance/workbench/subject-archive-owners';
+import { createEvidenceService } from './workbench-evidence';
+import { createDraftStore } from '../catalog/workbench-draft-store';
+import { createFileStore,defaultFileLimits } from '../../server/workbench/files';
+import { randomUUID } from 'node:crypto';
 
 afterEach(async () => { while (draftCleanups.length) await draftCleanups.pop()!(); });
 export async function saveEvidence(f: ReturnType<typeof draftFixture>, text = 'Synthetic proof') {
@@ -14,6 +21,18 @@ export async function saveEvidence(f: ReturnType<typeof draftFixture>, text = 'S
 }
 const queryContext = (f: ReturnType<typeof draftFixture>) => ({ requestId: fixtureId(555), installationId: f.context.installationId, clock: f.clock, repository: f.repository, ownAccess: f.context.ownAccess });
 export async function readBytes(stream: AsyncIterable<Uint8Array>) { const chunks = []; for await (const chunk of stream) chunks.push(Buffer.from(chunk)); return Buffer.concat(chunks); }
+
+it('restores private and published evidence bytes with historical revisions under the new active root',async()=>{
+ const f=draftFixture(),first=await saveEvidence(f,'Historical private proof'),published={...first.entry.header,...first.entry.definition,publicationAnchorId:makePublicationAnchor().id} as import('../../domain/workbench/entities').Evidence;f.repository.append('evidence',published,null);const prepared=await f.evidence.stagePublished(f.context,published,first.bytes);prepared.commit();
+ const bytes=Buffer.from('Second proof'),staged=await f.files.stage({installationId:f.context.installationId,profilePersonId:f.context.ownAccess.personId,purpose:'evidence',name:'second.txt',mediaType:'text/plain',stream:(async function*(){yield bytes;})()});await f.execute('evidence.draft.save',{draftId:first.draft.draftId,kind:'file',fileHandle:staged.fileHandle});const second=(f.store.getEntry(first.draft.draftId)!.definition as any).file;
+ const environment={installationId:f.context.installationId,personId:()=>f.context.ownAccess.personId,localPreview:false,subjectRoot:()=>f.root},owner=createSourceArchiveOwners(f.repository,environment).find(o=>o.moduleId==='evidence')!,records=owner.exportRecords(f.repository),files=await owner.files(f.repository,records),draftOwner=createSubjectArchiveOwners(f.repository,environment).find(o=>o.moduleId==='drafts')!,drafts=draftOwner.exportRecords(f.repository);
+ expect(records.filter(r=>r.schemaId==='private')).toHaveLength(2);expect(records.filter(r=>r.schemaId==='published')).toHaveLength(1);
+ const root=path.join(f.root,'restored'),repository=createWorkbenchRepository({filename:':memory:',artifactRoot:root}),installationId=randomUUID(),personId=f.context.ownAccess.personId!;draftCleanups.push(()=>repository.close());const context={installationId,personId,files:new Map(files.map(file=>[file.path,file.bytesValue])),stagedRoot:root,subjectPath:(ns:'evidence'|'uploads'|'publishing'|'legacy',id:string)=>path.join(root,ns,id)};
+ createSubjectArchiveOwners(repository,{...environment,installationId,subjectRoot:()=>root});createSourceArchiveOwners(repository,{...environment,installationId,subjectRoot:()=>root});repository.restoreWorkspaceCore(f.repository.exportWorkspaceCore());draftOwner.restoreRecords(repository,drafts,context);owner.restoreRecords(repository,records,context);expect(owner.exportRecords(repository)).toEqual(records);
+ const store=createDraftStore({repository,artifactDirectory:()=>path.join(root,'evidence')}),evidence=createEvidenceService({repository,store,files:createFileStore({directory:path.join(root,'uploads'),limits:defaultFileLimits}),clock:f.clock}),query={...queryContext(f),repository,installationId};
+ expect(await readBytes((await evidence.readArtifactForContext(query,first.file.artifactId)).stream)).toEqual(first.bytes);expect(await readBytes((await evidence.readArtifactForContext(query,second.artifactId)).stream)).toEqual(bytes);
+ const bad={...records.find(r=>r.schemaId==='private')!,value:{...(records.find(r=>r.schemaId==='private')!.value as object),artifactId:'../escape'}};expect(()=>owner.validate(bad)).toThrow();
+});
 
 it('file_evidence_uses_own_verified_handle_and_never_accepts_client_artifact_paths', async () => {
   const f = draftFixture(); const saved = await saveEvidence(f);

@@ -9,6 +9,7 @@ import { PublishingService, type PublishingDependencies } from './publishing-ser
 import { registerPublishingCommands } from './register-commands';
 import { packagePreviewResultSchema, type PackagePreviewResult, type VerifiedMain } from './contracts';
 import { preparePackagePreview } from './package-preview';
+import { createWorkspaceOwnership } from '../../../server/storage/workbench-ownership';
 
 afterEach(async () => { for (const cleanup of draftCleanups.splice(0)) await cleanup(); });
 function fixture() {
@@ -88,6 +89,26 @@ it('previews through the actual async registry and reuses immutable revision byt
   expect(f.publishing.readPort.readOwnPackage(f.context,f.packageId())?.state).toBe('preview_ready');
   expect(f.count('core_goal_definition')).toBe(0); expect(f.count('attestation')).toBe(0);
   expect(f.repository.readPublishedHead({entityType:'core_goal_definition',id:f.input.goal.id})).toEqual(f.input.goal);
+});
+it.each(['owned','foreign_binding','restored_binding'] as const)('resolves unpublished capture EntityRefs only for their trusted owner: %s', async mode => {
+  const f = fixture(), originalActor = { ...f.context.actor, installationId: mode === 'restored_binding' ? fixtureId(222900) : f.context.installationId };
+  const capture = { ...f.input.captures[0], id: fixtureId(222901), publicationAnchorId: null, actor: originalActor };
+  const fact = { ...f.input.facts[0], id: fixtureId(222902), captureId: capture.id, publicationAnchorId: null, actor: originalActor, factKey: 'synthetic-own-unpublished-fact', lineage: { ...f.input.facts[0].lineage, captureId: capture.id } };
+  f.repository.transaction(() => { f.repository.append('capture', capture, null); f.repository.append('observed_fact', fact, null); });
+  const ownership = createWorkspaceOwnership(f.repository);
+  if (mode === 'restored_binding') for (const [type, value] of [['capture', capture], ['observed_fact', fact]] as const) ownership.bind({ moduleId: 'core', key: `${type}/${value.id}/1`, installationId: f.context.installationId, personId: f.context.ownAccess.personId, provenance: 'restore' });
+  const correction = await f.open('manual_correction');
+  await f.execute('fact.correct', { draftId: correction.draftId, factKey: fact.factKey, originalFactRefs: [{ entityType: 'observed_fact', id: fact.id, revision: 1 }], replacement: '99', reason: 'Synthetic correction for exact captured input' });
+  if (mode === 'foreign_binding') ownership.bind({ moduleId: 'core', key: `capture/${capture.id}/1`, installationId: f.context.installationId, personId: fixtureId(222999), provenance: 'created' });
+  const result = await f.preview(), files = await f.artifacts.readRevision(result.packageRevision);
+  if (mode === 'foreign_binding') {
+    expect(result.errors).toContainEqual(expect.objectContaining({ code: 'REFERENCE_NOT_FOUND' }));
+    expect([...files.keys()]).not.toContain(`records/capture/${capture.id}/1.json`);
+  } else {
+    expect(result.errors).toEqual([]);
+    const published = JSON.parse(Buffer.from(files.get(`records/capture/${capture.id}/1.json`)!).toString());
+    expect(published.actor).toEqual(originalActor); expect(published.rawRows).toEqual(capture.rawRows);
+  }
 });
 it('combines independent fields and reports explicit same-field conflicts without altering a draft',async()=>{
   const f=fixture(); const opened=await f.editGoal({description:'Моё описание'}); f.setGoalInMain({title:'Название main'});

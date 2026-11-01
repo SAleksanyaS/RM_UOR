@@ -55,7 +55,7 @@ export function createStableWorkbenchRepository(initial: WorkbenchRepository): {
     registerCatalogProjection(name, project) { assertLease(); active.registerCatalogProjection(name, project); catalogProjections.set(name, project); },
     close() { if (closed) return; assertQuiescent(); active.close(); closed = true; },
   };
-  const writes = new Set<PropertyKey>(['append', 'importPublishedVersion', 'restoreWorkspaceCore', 'appendPublicationAnchor']);
+  const writes = new Set<PropertyKey>(['append', 'importPublishedVersion', 'attachVerifiedPublicationAnchor', 'restoreWorkspaceCore', 'appendPublicationAnchor']);
   const repository = new Proxy(initial, {
     get(_target, key) {
       if (Object.hasOwn(special, key)) return special[key as keyof typeof special];

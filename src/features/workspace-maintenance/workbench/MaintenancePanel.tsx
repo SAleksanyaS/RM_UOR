@@ -15,19 +15,19 @@ const backupUrl=(id:string)=>'/api/v1/backups/'+encodeURIComponent(id)+'/file';
 const errorText=(code:string,message:string)=>code==='PREVIEW_STALE'?'Данные изменились. Выполните новый предпросмотр перед заменой.':code==='RECOVERY_REQUIRED'?'Запись заблокирована: требуется безопасное восстановление. Перезапустите приложение для проверки журнала восстановления. Если блокировка сохраняется, передайте сопровождающему код RECOVERY_REQUIRED; защитная копия остаётся доступна.':message+' ('+code+')';
 
 export function MaintenancePanel({onClose}:{onClose():void}) {
- const {client,session,loading}=useWorkbench();
+ const {client,session,loading,refreshSession}=useWorkbench();
  const [file,setFile]=useState<File|null>(null),[handle,setHandle]=useState<string|null>(null),[preview,setPreview]=useState<RestorePreviewResult|null>(null),[confirmed,setConfirmed]=useState(false),[partial,setPartial]=useState(false);
  const [operation,setOperation]=useState<Operation|null>(null),[job,setJob]=useState<JobSnapshot|null>(null),[check,setCheck]=useState<PublicationCheckResult|null>(null),[error,setError]=useState<string|null>(null),[recovery,setRecovery]=useState(false),[sending,setSending]=useState(false);
  const [backups,setBackups]=useState<BackupsRead|null>(null),[listError,setListError]=useState(false);
  const [pollRevision,setPollRevision]=useState(0),[pollError,setPollError]=useState(false),[readingJob,setReadingJob]=useState(false);
- const dialog=useRef<HTMLDivElement>(null),close=useRef<HTMLButtonElement>(null),alive=useRef(0),handled=useRef('');
+ const dialog=useRef<HTMLDivElement>(null),close=useRef<HTMLButtonElement>(null),alive=useRef(0),handled=useRef(''),listSequence=useRef(0);
  const storageKey='uor.maintenance.operation.'+(session?.personId??'installation');
  const active=!!operation&&(!job||!terminal.has(job.status));
  const blocked=loading||!session||sending||active||recovery;
  const allowed=(name:string)=>!!session?.allowedCommands.includes(name);
  const remember=(value:Operation)=>{setOperation(value);try{sessionStorage.setItem(storageKey,JSON.stringify(value));}catch{/* Current tab remains authoritative if storage is unavailable. */}};
  function fail(value:unknown){if(value instanceof WorkbenchApiError){setError(errorText(value.problem.code,value.problem.message));if(value.problem.code==='RECOVERY_REQUIRED')setRecovery(true);}else setError('Результат операции неизвестен. Проверьте сохранённую операцию; повторная замена не отправляется.');}
- async function list(cursor:string|null=null){const generation=alive.current;try{const response=await client.query<BackupsRead>('backups.list',{...own,page:{limit:50,cursor}});if(generation===alive.current){setBackups(previous=>cursor&&previous?{...response.data,items:[...previous.items,...response.data.items]}:response.data);setListError(false);}}catch{if(generation===alive.current)setListError(true);}}
+ async function list(cursor:string|null=null){const generation=alive.current,sequence=++listSequence.current;try{const response=await client.query<BackupsRead>('backups.list',{...own,page:{limit:50,cursor}});if(generation===alive.current&&sequence===listSequence.current){setBackups(previous=>cursor&&previous?{...response.data,items:[...previous.items,...response.data.items]}:response.data);setListError(false);}}catch{if(generation===alive.current&&sequence===listSequence.current)setListError(true);}}
  useEffect(()=>{close.current?.focus();},[]);
  useEffect(()=>{
   const generation=++alive.current;handled.current='';setOperation(null);setJob(null);setCheck(null);setError(null);setRecovery(false);setSending(false);setFile(null);setHandle(null);setPreview(null);setConfirmed(false);setBackups(null);setPollError(false);setReadingJob(false);
@@ -35,10 +35,15 @@ export function MaintenancePanel({onClose}:{onClose():void}) {
   return()=>{if(alive.current===generation)alive.current++;};
  },[client,session?.personId,!!session]);
  useEffect(()=>{
-  if(!operation?.jobId||!session)return;let stopped=false,timer:ReturnType<typeof setTimeout>|undefined;const generation=alive.current;
-  const poll=async()=>{setReadingJob(true);try{const response=await client.job(operation.jobId!);if(stopped||generation!==alive.current)return;if(response.data.commandId!==operation.commandId)throw Error('Operation identity mismatch');setPollError(false);setJob(response.data);if(!terminal.has(response.data.status))timer=setTimeout(()=>void poll(),1000);}catch{if(!stopped&&generation===alive.current)setPollError(true);}finally{if(!stopped&&generation===alive.current)setReadingJob(false);}};
+  if(!operation?.jobId||!session)return;let stopped=false,renewed=false,maintenanceReads=0,timer:ReturnType<typeof setTimeout>|undefined;const generation=alive.current;
+  const poll=async()=>{setReadingJob(true);try{const response=await client.job(operation.jobId!);if(stopped||generation!==alive.current)return;if(response.data.commandId!==operation.commandId)throw Error('Operation identity mismatch');setPollError(false);setJob(response.data);if(!terminal.has(response.data.status))timer=setTimeout(()=>void poll(),1000);}catch(failure){
+   if(stopped||generation!==alive.current)return;
+   if(failure instanceof WorkbenchApiError&&failure.status===503&&failure.problem.code==='WORKSPACE_MAINTENANCE'&&maintenanceReads++<120){setPollError(false);timer=setTimeout(()=>void poll(),1000);}
+   else if(failure instanceof WorkbenchApiError&&failure.status===401&&failure.problem.code==='SESSION_REQUIRED'&&!renewed){renewed=true;await refreshSession();if(!stopped&&generation===alive.current)timer=setTimeout(()=>void poll(),0);}
+   else setPollError(true);
+  }finally{if(!stopped&&generation===alive.current)setReadingJob(false);}};
   void poll();return()=>{stopped=true;clearTimeout(timer);};
- },[client,operation?.jobId,operation?.commandId,session,pollRevision]);
+ },[client,operation?.jobId,operation?.commandId,session,pollRevision,refreshSession]);
  useEffect(()=>{
   if(!job||!operation||!terminal.has(job.status)||handled.current===job.jobId)return;handled.current=job.jobId;
   if(job.status==='failed'){const code=job.error!.code;setError(errorText(code,job.error!.message));if(code==='PREVIEW_STALE'){setPreview(null);setConfirmed(false);setCheck(null);}if(code==='RECOVERY_REQUIRED')setRecovery(true);return;}

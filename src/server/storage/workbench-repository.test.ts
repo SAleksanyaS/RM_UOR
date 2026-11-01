@@ -9,6 +9,7 @@ import type { MetricDefinition } from '../../domain/workbench/entities';
 import { headerShape } from '../../domain/workbench/primitives';
 import { fixtureId, makeEntityGraph, makeHeader, makeNumericFixture, makePublicationAnchor, versionRef } from '../../../tests/fixtures/workbench/factories';
 import { seedGraph } from '../../../tests/fixtures/workbench/repository';
+import { createWorkspaceOwnership } from './workbench-ownership';
 
 const cleanups: Array<() => void> = [];
 function setup() {
@@ -22,6 +23,42 @@ function setup() {
 afterEach(() => { while (cleanups.length) cleanups.pop()!(); });
 
 describe('append-only workbench repository', () => {
+  it('attaches verified publication metadata once while retaining the exact original immutable version', () => {
+    const { repository: r, open } = setup(), actor = { hostname: 'original-installation', installationId: fixtureId(7501), profilePersonId: fixtureId(17) };
+    const local = { ...makeNumericFixture().metrics[0], publicationAnchorId: null, actor }, anchor = makePublicationAnchor();
+    const owner = { installationId: fixtureId(7502), personId: fixtureId(17) };
+    r.append('metric_definition', local, null);
+    createWorkspaceOwnership(r).bind({ moduleId: 'core', key: `metric_definition/${local.id}/1`, ...owner, provenance: 'restore' });
+    const accepted = { ...local, publicationAnchorId: anchor.id }, before = r.getStateRevision();
+    r.transaction(() => { r.appendPublicationAnchor(anchor, null); r.attachVerifiedPublicationAnchor('metric_definition', accepted, owner); });
+    expect(r.readVersion({ entityType: 'metric_definition', id: local.id, revision: 1 })).toEqual(accepted);
+    expect(r.readPublishedHead({ entityType: 'metric_definition', id: local.id })).toEqual(accepted);
+    expect(r.getStateRevision()).toBe((BigInt(before) + 1n).toString());
+    const state = r.getStateRevision(); r.attachVerifiedPublicationAnchor('metric_definition', accepted, owner); expect(r.getStateRevision()).toBe(state);
+    expect(() => r.importPublishedVersion('metric_definition', { ...accepted, name: 'Changed immutable body' })).toThrowError(expect.objectContaining({ code: 'VERSION_CONTENT_IMMUTABLE' }));
+    const exported = r.exportWorkspaceCore(); r.close(); const reopened = open();
+    expect(reopened.exportWorkspaceCore()).toEqual(exported); expect(reopened.readVersion({ entityType: 'metric_definition', id: local.id, revision: 1 })?.actor).toEqual(actor);
+  });
+
+  it.each(['body','actor','recordedAt','foreign_binding','unconfirmed','already_anchored'] as const)('rejects invalid publication metadata attachment: %s', fault => {
+    const { repository: r } = setup(), graph = makeEntityGraph(); seedGraph(r, graph);
+    const actor = { hostname: 'own-installation', installationId: fixtureId(7502), profilePersonId: fixtureId(17) }, owner = { installationId: actor.installationId, personId: actor.profilePersonId };
+    const local = { ...graph.input.metrics[0], id: fixtureId(7510), publicationAnchorId: fault === 'already_anchored' ? graph.anchors[0].id : null, actor };
+    r.append('metric_definition', local, null);
+    const anchor = makePublicationAnchor({ id: fixtureId(7511), packageId: fixtureId(7511) });
+    if (fault !== 'unconfirmed') r.appendPublicationAnchor(anchor, null);
+    if (fault === 'foreign_binding') createWorkspaceOwnership(r).bind({ moduleId: 'core', key: `metric_definition/${local.id}/1`, installationId: owner.installationId, personId: fixtureId(7599), provenance: 'created' });
+    const accepted = { ...local, publicationAnchorId: anchor.id, ...(fault === 'body' ? { name: 'Tampered' } : fault === 'actor' ? { actor: { ...actor, hostname: 'Tampered' } } : fault === 'recordedAt' ? { recordedAt: '2026-10-24T10:00:00Z' } : {}) };
+    const before = r.getStateRevision(); expect(() => r.attachVerifiedPublicationAnchor('metric_definition', accepted, owner)).toThrowError(expect.objectContaining({ code: fault === 'foreign_binding' ? 'PUBLICATION_ATTACHMENT_FORBIDDEN' : fault === 'unconfirmed' ? 'PUBLICATION_UNCONFIRMED' : 'VERSION_CONTENT_IMMUTABLE' }));
+    expect(r.readVersion({ entityType: 'metric_definition', id: local.id, revision: 1 })).toEqual(local); expect(r.getStateRevision()).toBe(before);
+  });
+
+  it('rolls back verified publication metadata attachment with its enclosing transaction', () => {
+    const { repository: r } = setup(), local = { ...makeNumericFixture().metrics[0], publicationAnchorId: null }, anchor = makePublicationAnchor();
+    r.append('metric_definition', local, null); const before = r.getStateRevision();
+    expect(() => r.transaction(() => { r.appendPublicationAnchor(anchor, null); r.attachVerifiedPublicationAnchor('metric_definition', { ...local, publicationAnchorId: anchor.id }, { installationId: local.actor.installationId, personId: local.actor.profilePersonId }); throw Error('Synthetic later failure'); })).toThrow('Synthetic later failure');
+    expect(r.getHead({ entityType: 'metric_definition', id: local.id })).toEqual(local); expect(r.readPublicationAnchor({ entityType: 'publication_anchor', id: anchor.id })).toBeNull(); expect(r.getStateRevision()).toBe(before);
+  });
   it('keeps_versions_and_rejects_stale_heads', () => {
     const { repository: r, open } = setup(); const graph = makeEntityGraph(); seedGraph(r, graph);
     const metric = graph.input.metrics[0]; const ref = { entityType: 'metric_definition', id: metric.id };

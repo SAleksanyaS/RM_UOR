@@ -9,6 +9,7 @@ import {loadSite} from '../src/server/workspace/context';
 import {resolveWorkspace,safeArtifactPath} from '../src/server/workspace/paths';
 import {createBackup} from '../src/features/system/backup-service';
 import {recoverWorkspaceMaintenance} from '../src/features/workspace-maintenance/recovery';
+import {assertNoManagedWorkbenchLayout} from '../src/server/workspace/managed-workbench-guard';
 
 export interface LocalHistoryArchive {
  version:1;id:string;at:string;backupId:string;sha256:string;bytes:number;counts:Record<string,number>;recordsSha256:string;
@@ -18,6 +19,7 @@ interface HistoryBaseline {at:string;changeIds:string[]}
 
 /** Legacy import/cleanup cannot bypass workbench staging or erase its indefinite history. */
 export async function assertLegacyCliAllowed(projectRoot:string):Promise<void>{
+ await assertNoManagedWorkbenchLayout(projectRoot,'WORKBENCH_MIGRATION_REQUIRED',{rejectLease:true});
  const root=path.resolve(projectRoot);
  for(const relative of ['.runtime/workbench.sqlite','.runtime/workbench/workbench.sqlite','.runtime/app.db']){
   const candidate=path.join(root,...relative.split('/'));let exists=true,current=root;const parts=relative.split('/');

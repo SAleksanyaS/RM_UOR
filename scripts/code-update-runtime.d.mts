@@ -11,6 +11,7 @@ export function inspectCodeUpdate(root:string,config:CodeUpdateConfig,options?:{
 export function executeCodeUpdate(root:string,config:CodeUpdateConfig,ticket:{id?:string;expectedCommit:string;targetCommit:string},options?:UpdateLifecycle):Promise<CodeUpdateResult>;
 export function applyCodeUpdate(root:string,config:CodeUpdateConfig,ticket:{expectedCommit:string;targetCommit:string},options?:UpdateLifecycle):Promise<CodeUpdateResult>;
 export function recoverCodeUpdate(root:string,options?:Pick<UpdateLifecycle,'restoreWorkspace'>):Promise<CodeUpdateResult|null>;
-export function prepareCodeUpdateStartup(root:string):Promise<CodeUpdateResult|null>;
+export function prepareCodeUpdateStartup(root:string,options?:Pick<UpdateLifecycle,'restoreWorkspace'>):Promise<CodeUpdateResult|null>;
 export function atomicJson(file:string,value:unknown):Promise<void>;
 export function readJsonFile<T=unknown>(file:string,fallback?:T|null):Promise<T|null>;
+export function hasWorkbenchStorage(root:string):Promise<boolean>;

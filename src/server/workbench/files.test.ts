@@ -19,6 +19,12 @@ async function fixture(limits = { goalImportBytes: 10 * 1024 ** 2, evidenceBytes
 async function* chunks(value: Uint8Array) { for (let start = 0; start < value.length; start += 65536) yield value.subarray(start, start + 65536); }
 const csv = Buffer.from('product,value\nsynthetic,92.00\n');
 const upload = (bytes: Uint8Array = csv) => ({ installationId: owner, purpose: 'goal-import' as const, name: 'input.csv', mediaType: 'text/csv', stream: chunks(bytes) });
+it('rehydrates only an exact referenced personal upload and follows a changing active subject root',async()=>{
+ const f=await fixture();let directory=path.join(f.root,'subject-a','uploads');const files=fileModule.createFileStore({directory:()=>directory,limits:f.limits}),view=await files.stage({...upload(),profilePersonId:other}),stored=fileModule.readReferencedFileSync(directory,view.fileHandle,owner,other);
+ expect(()=>fileModule.readReferencedFileSync(directory,view.fileHandle,owner,null)).toThrow();expect(()=>fileModule.readReferencedFileSync(directory,'../escape',owner,other)).toThrow();
+ directory=path.join(f.root,'subject-b','uploads');await expect(files.read(view.fileHandle,owner,'goal-import',other)).rejects.toMatchObject({statusCode:404});fileModule.hydrateReferencedFileSync(directory,stored);expect(Buffer.from((await files.read(view.fileHandle,owner,'goal-import',other)).bytesValue)).toEqual(csv);
+ expect(()=>fileModule.hydrateReferencedFileSync(path.join(f.root,'bad-purpose'),{...stored,purpose:'workspace-restore'})).toThrow();expect(()=>fileModule.hydrateReferencedFileSync(path.join(f.root,'bad-hash'),{...stored,bytesValue:Buffer.from('bad')})).toThrow();
+});
 it('binds new personal uploads to the person as well as the installation after reopen', async () => {
   const f = await fixture(); const handle = await f.files.stage({ ...upload(), profilePersonId: other });
   const reopened = fileModule.createFileStore({ directory: path.join(f.root, 'private'), limits: f.limits });

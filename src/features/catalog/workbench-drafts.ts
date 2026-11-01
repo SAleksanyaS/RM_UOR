@@ -5,6 +5,7 @@ import type { EntityRef, Header, VersionRef } from '../../domain/workbench/primi
 import { newUuid } from '../../domain/workbench/primitives';
 import { entityReferences, schemaForEntity, validateReferences, methodBindingSchema } from '../../domain/workbench/schemas';
 import type { WorkbenchRepository } from '../../server/storage/workbench-repository';
+import { isOwnCoreVersion } from '../../server/storage/workbench-ownership';
 import type { CommandContext } from '../../server/workbench/command-registry';
 import { commitCommandEffect, createCommandStore } from '../../server/workbench/command-store';
 import { fieldProblems, WorkbenchHttpError, type FieldProblem, type RevisionToken } from '../../server/workbench/protocol';
@@ -92,7 +93,7 @@ export function createDraftService({ repository, store, clock, prepareEvaluation
     if (!intent) return fail('COMMAND_INTENT_MISSING', 409); return (JSON.parse(intent.request_json) as { baseRevision: string | null }).baseRevision;
   };
   const isPublished = (value: Header) => value.publicationAnchorId !== null && repository.readPublicationAnchor({ entityType: 'publication_anchor', id: value.publicationAnchorId })?.publicationState === 'confirmed';
-  const accessible = (context: DraftReadContext, value: Header) => isPublished(value) || value.actor.installationId === context.installationId && value.actor.profilePersonId === context.ownAccess.personId;
+  const accessible = (context: DraftReadContext, value: Header,entityType:string) => isPublished(value) || isOwnCoreVersion(repository,entityType,value,{installationId:context.installationId,personId:context.ownAccess.personId});
   const materialize = (entry: StoredDraft) => ({ ...entry.header, ...entry.definition }) as WorkbenchEntity;
   const resolve = <T extends Header>(context: DraftReadContext, ref: EntityRef | VersionRef, pkg?: StoredPackage): T => {
     const draft = pkg?.entries.find(entry => entry.entityRef.entityType === ref.entityType && entry.entityRef.id === ref.id) as StoredDraft | undefined;
@@ -102,7 +103,7 @@ export function createDraftService({ repository, store, clock, prepareEvaluation
     const historical = pkg && 'revision' in ref ? store.readDraftVersion(pkg.packageId, ref) : null;
     if (historical) return historical as T;
     const value = 'revision' in ref ? repository.readVersion<T>(ref) : repository.readPublishedHead<T>(ref);
-    if (!value || !accessible(context, value)) return fail('REFERENCE_NOT_FOUND', 404); return value;
+    if (!value || !accessible(context, value,ref.entityType)) return fail('REFERENCE_NOT_FOUND', 404); return value;
   };
   const assess = (entry: StoredDraft, definition: Record<string, unknown>) => {
     const parsed = schemaForEntity(entry.entityRef.entityType).safeParse({ ...entry.header, ...definition });
@@ -173,8 +174,8 @@ export function createDraftService({ repository, store, clock, prepareEvaluation
     };
     const filtered: WorkbenchRepository = { ...repository, readEvaluationCandidates(query) {
       const candidates = repository.readEvaluationCandidates(query);
-      const captures = candidates.captures.filter(c => accessible(context, c)); const ids = new Set(captures.map(c => c.id));
-      return { captures, facts: candidates.facts.filter(f => accessible(context, f) && ids.has(f.captureId)), applicability: candidates.applicability, corrections: candidates.corrections };
+      const captures = candidates.captures.filter(c => accessible(context, c,'capture')); const ids = new Set(captures.map(c => c.id));
+      return { captures, facts: candidates.facts.filter(f => accessible(context, f,'observed_fact') && ids.has(f.captureId)), applicability: candidates.applicability, corrections: candidates.corrections };
     } };
     return resolveEvaluationInput(request, filtered, clock, context.actor, pkg ? { read: findLocal, accepts: (value, ref) => checked.has(`${ref.entityType}/${value.id}/${value.revision}`) } : undefined);
   };
@@ -360,7 +361,7 @@ export function createDraftService({ repository, store, clock, prepareEvaluation
         const local = 'revision' in ref ? store.readDerived(ref) : null;
         if (local?.packageId === packageId) return local.value;
         const value = 'revision' in ref ? repository.readVersion(ref) : repository.readPublishedHead(ref);
-        if (!value || !isPublished(value) && (!['observed_fact','capture','evaluation_basis','calculation_result'].includes(ref.entityType) || !accessible(context, value))) return null; return value;
+        if (!value || !isPublished(value) && (!['observed_fact','capture','evaluation_basis','calculation_result'].includes(ref.entityType) || !accessible(context, value,ref.entityType))) return null; return value;
       };
       for (const entry of pkg.entries as StoredDraft[]) {
         const value = candidates.get(`${entry.entityRef.entityType}/${entry.entityRef.id}`); if (!value) continue;

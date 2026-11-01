@@ -5,6 +5,7 @@ import { businessTimeSchema, entityRefSchema, scopeRefSchema, sha256Schema, utcI
 import { canonicalSourceRowSchema, fileArtifactRefSchema, rawSourceRowSchema, safeCountSchema } from '../../domain/workbench/schemas';
 import { fieldProblemSchema, globalContextSchema, revisionTokenSchema, WorkbenchHttpError } from '../../server/workbench/protocol';
 import { stableJson } from '../../server/workbench/command-store';
+import type { enrichSourceRows } from '../catalog/workbench-directory';
 import type { BrowserRuntimePort, BrowserOwner } from './workbench-browser-runtime';
 import type { VersionRef, Sha256, UtcInstant } from '../../domain/workbench/primitives';
 
@@ -38,7 +39,10 @@ export const enrichedRowSchema = canonicalSourceRowSchema.extend({ scope: scopeR
 export type EnrichedRow = z.infer<typeof enrichedRowSchema>;
 export const enrichmentResultSchema = z.strictObject({ rows: z.array(enrichedRowSchema), issues: z.array(fieldProblemSchema), directoryLinkRefs: z.array(ref('directory_link')) });
 export type EnrichmentResult = z.infer<typeof enrichmentResultSchema>;
-export interface EnricherPort { enrich(input: { rows: CanonicalSourceRow[]; directoryRevision: string }): EnrichmentResult }
+export interface EnricherPort {
+ enrich(input: { rows: CanonicalSourceRow[]; directoryRevision: string }): EnrichmentResult;
+ enrichExact?(input:Parameters<typeof enrichSourceRows>[0]):EnrichmentResult;
+}
 export const captureInputSchema = z.strictObject({ goalId: uuidSchema });
 export const captureResultSchema = z.strictObject({ captureRef: ref('capture'), acceptedRows: safeCountSchema, rejectedRows: safeCountSchema, duplicate: z.boolean() });
 export type CaptureResult = z.infer<typeof captureResultSchema>;

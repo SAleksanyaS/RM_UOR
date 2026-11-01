@@ -19,8 +19,18 @@ import { createPackageArtifactStore } from '../publishing/workbench/package-arti
 import { canonicalBytes } from '../publishing/workbench/package-manifest';
 import { registerPublishingCommands } from '../publishing/workbench/register-commands';
 import { WorkbenchHttpError } from '../../server/workbench/protocol';
+import { createSourceArchiveOwners } from '../workspace-maintenance/workbench/source-archive-owners';
+import { createSubjectArchiveOwners } from '../workspace-maintenance/workbench/subject-archive-owners';
+import { createWorkbenchRepository } from '../../server/storage/workbench-repository';
+import { randomUUID } from 'node:crypto';
 
 afterEach(async () => { while (draftCleanups.length) await draftCleanups.pop()!(); });
+it('retains complete scenario receipt history and immutable historical proof owners after installation transfer',async()=>{
+ const f=await fixture();await f.save();f.proof();await f.test();f.bytes('');await f.test();
+ const environment={installationId:f.context.installationId,personId:()=>f.context.ownAccess.personId,localPreview:false,subjectRoot:()=>f.root},owner=createSourceArchiveOwners(f.repository,environment).find(o=>o.moduleId==='browser_scenarios')!,records=owner.exportRecords(f.repository),draftOwner=createSubjectArchiveOwners(f.repository,environment).find(o=>o.moduleId==='drafts')!,drafts=draftOwner.exportRecords(f.repository);expect(records).toHaveLength(2);
+ const root=path.join(f.root,'restored'),installationId=randomUUID(),repository=createWorkbenchRepository({filename:':memory:',artifactRoot:root});draftCleanups.push(()=>repository.close());createSubjectArchiveOwners(repository,{...environment,installationId,subjectRoot:()=>root});createSourceArchiveOwners(repository,{...environment,installationId,subjectRoot:()=>root});repository.restoreWorkspaceCore(f.repository.exportWorkspaceCore());const context={installationId,personId:f.context.ownAccess.personId,files:new Map<string,Uint8Array>(),stagedRoot:root,subjectPath:(ns:'evidence'|'uploads'|'publishing'|'legacy',id:string)=>path.join(root,ns,id)};
+ draftOwner.restoreRecords(repository,drafts,context);owner.restoreRecords(repository,records,context);expect(owner.exportRecords(repository)).toEqual(records);expect((records[0].value as any).receipt.evidence.owner.installationId).toBe(f.context.installationId);expect(repository.sqlForModule('browser_scenarios').all('SELECT sequence FROM wb_browser_scenarios_tests')).toHaveLength(2);expect(()=>owner.authorize(records,randomUUID(),installationId)).toThrow();
+});
 const ref = (entityType: string, value: { id: string; revision: number }) => ({ entityType, id: value.id, revision: value.revision });
 async function fixture(linkSource = true, product = false) {
   const f = draftFixture({ input: makeNumericFixture({ scope: { kind: product ? 'product' : 'dit', id: fixtureId(101) } }) });

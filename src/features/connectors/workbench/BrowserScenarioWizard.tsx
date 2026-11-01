@@ -32,7 +32,7 @@ function WorkflowForm({ workflow: w, personId, prepare, run, client, busy, job }
   const [product, setProduct] = useState(w.mapping?.productKeyColumn ?? ''), [date, setDate] = useState(w.mapping?.dateColumn ?? ''), [unit, setUnit] = useState(w.mapping?.unitColumn ?? ''), [fixedUnit, setFixedUnit] = useState(w.mapping?.fixedUnitCode ?? '');
   const [numbers, setNumbers] = useState<ColumnPair[]>(w.mapping ? pairs(w.mapping.numberColumns) : [{ name: 'value', column: '' }]), [dimensions, setDimensions] = useState<ColumnPair[]>(pairs(w.mapping?.dimensionColumns ?? {}));
   const [dictionary, setDictionary] = useState<Partial<OkoDictionaryMapping>>(w.dictionary.mapping ?? {}), [dictionaryParsing, setDictionaryParsing] = useState<SourceParsingProfile>(defaultParsingProfile), [file, setFile] = useState<File | null>(null);
-  const loginKey = `uor.oko.login.v1:${personId ?? 'unassigned'}:${w.workflowId}`;
+  const loginKey = `uor.oko.login.v1${client.storageScope ?? ''}:${personId ?? 'unassigned'}:${w.workflowId}`;
   const [login, updateLogin] = useState<string | null>(() => { try { return sessionStorage.getItem(loginKey); } catch { return null; } }), [localError, setLocalError] = useState(''), [notice, setNotice] = useState('');
   const setLogin = (id: string | null) => { updateLogin(id); try { if (id) sessionStorage.setItem(loginKey, id); else sessionStorage.removeItem(loginKey); } catch { /* Own close-browser recovery remains available without browser storage. */ } };
   const finished = useRef(new Set<string>()), [uploading, setUploading] = useState(false);

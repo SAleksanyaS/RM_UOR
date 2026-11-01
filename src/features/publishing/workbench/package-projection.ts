@@ -5,6 +5,7 @@ import { WorkbenchError } from '../../../domain/workbench/errors';
 import type { CommandContext } from '../../../server/workbench/command-registry';
 import { WorkbenchHttpError, type Problem } from '../../../server/workbench/protocol';
 import type { WorkbenchRepository } from '../../../server/storage/workbench-repository';
+import { isOwnCoreVersion } from '../../../server/storage/workbench-ownership';
 import type { DraftService } from '../../catalog/workbench-drafts';
 import { businessDefinition } from '../../catalog/workbench-drafts';
 import { inspectMerge } from '../merge-object';
@@ -122,10 +123,10 @@ export function buildPackageProjection(context:CommandContext,packageId:string,d
     if(pass===roots.size) return fail('REFERENCE_CYCLE');
   }
   const ownCore=(ref:EntityRef|VersionRef):WorkbenchEntity|null=>{
-    const value='revision' in ref?context.repository.readVersion<WorkbenchEntity>(ref):context.repository.readPublishedHead<WorkbenchEntity>(ref);
+    const value='revision' in ref?context.repository.readVersion<WorkbenchEntity>(ref):context.repository.readPublishedHead<WorkbenchEntity>(ref)??context.repository.getHead<WorkbenchEntity>(ref);
     if(!value) return null;
     const published=value.publicationAnchorId && context.repository.readPublicationAnchor({entityType:'publication_anchor',id:value.publicationAnchorId})?.publicationState==='confirmed';
-    return published || value.actor.installationId===context.installationId && value.actor.profilePersonId===context.ownAccess.personId ? value:null;
+    return published || isOwnCoreVersion(context.repository,ref.entityType,value,{installationId:context.installationId,personId:context.ownAccess.personId}) ? value:null;
   };
   const read=(ref:EntityRef|VersionRef):WorkbenchEntity|null=>{
     const current=roots.get(objectKey(ref)); if(current && (!('revision' in ref)||current.value.revision===ref.revision)) return current.value;

@@ -8,7 +8,9 @@ import { compare } from '../../domain/workbench/exact-number';
 import { fixtureId, makeEntityGraph, makeHeader, makeNumericFixture, versionRef } from '../../../tests/fixtures/workbench/factories';
 import { seedGraph } from '../../../tests/fixtures/workbench/repository';
 import { createWorkbenchRepository } from '../../server/storage/workbench-repository';
-import { createFileStore, defaultFileLimits } from '../../server/workbench/files';
+import { createFileStore, defaultFileLimits,readReferencedFileSync,hydrateReferencedFileSync } from '../../server/workbench/files';
+import { createSourceArchiveOwners } from '../workspace-maintenance/workbench/source-archive-owners';
+import { randomUUID } from 'node:crypto';
 import { createCommandStore, withCommandExecution } from '../../server/workbench/command-store';
 import { createCommandRegistry, type CommandContext } from '../../server/workbench/command-registry';
 import { canUseCapability } from '../identity/workbench-access-policy';
@@ -74,6 +76,19 @@ function fixture() {
   const csvRow = (key: string, value: string) => `${key};${value};2026-10-01;2026-11-01`;
   return { repository, root, files, jobs, store, sources, service, source, mapping, saved, f, context, graph, clock, execute, preview, upload, servicePreview, apply, facts, csvRow, setGuard: (next: typeof guard) => { guard = next; } };
 }
+
+it('preserves every import preview result selection and group membership with exact owned upload hydration',async()=>{
+ const f=fixture(),first=await f.preview(['A;65','B;70','C;80','D;bad'].map(s=>s+';2026-10-01;2026-11-01').join('\n'));await f.apply(first);
+ const second=await f.preview(['A;65','B;75','C;80','D;90'].map(s=>s+';2026-10-01;2026-11-01').join('\n'));
+ for(const preview of [first,second]){const stored=f.store.read(preview.previewToken,f.context.installationId,f.context.ownAccess.personId!)!;hydrateReferencedFileSync(path.join(f.root,'uploads'),readReferencedFileSync(path.join(f.root,'files'),stored.file.fileHandle,f.context.installationId,f.context.ownAccess.personId));}
+ const environment={installationId:f.context.installationId,personId:()=>f.context.ownAccess.personId,localPreview:false,subjectRoot:()=>f.root},owner=createSourceArchiveOwners(f.repository,environment).find(o=>o.moduleId==='imports')!,records=owner.exportRecords(f.repository),files=await owner.files(f.repository,records);
+ expect(records.filter(r=>r.schemaId==='preview')).toHaveLength(2);expect(records.filter(r=>r.schemaId==='group').length).toBeGreaterThan(0);expect(records.filter(r=>r.schemaId==='upload')).toHaveLength(2);expect(JSON.stringify(records)).not.toContain('profileRef');expect(JSON.stringify(records)).not.toContain('adapterKey');
+ const root=path.join(f.root,'restored'),installationId=randomUUID(),repository=createWorkbenchRepository({filename:':memory:',artifactRoot:root});cleanups.push(()=>repository.close());const target=createSourceArchiveOwners(repository,{...environment,installationId,subjectRoot:()=>root}).find(o=>o.moduleId==='imports')!;
+ repository.restoreWorkspaceCore(f.repository.exportWorkspaceCore());target.restoreRecords(repository,records,{installationId,personId:f.context.ownAccess.personId,files:new Map(files.map(file=>[file.path,file.bytesValue])),stagedRoot:root,subjectPath:(ns,id)=>path.join(root,ns,id)});
+ expect(owner.exportRecords(repository)).toEqual(records);const store=createImportStore({repository});expect(store.readApplied(first.previewToken,installationId,f.context.ownAccess.personId!)).toEqual(f.store.readApplied(first.previewToken,f.context.installationId,f.context.ownAccess.personId!));
+ for(const preview of [first,second]){const historical=store.read(preview.previewToken,installationId,f.context.ownAccess.personId!)!;expect(historical.capture.actor.installationId).toBe(f.context.installationId);const bytes=await createFileStore({directory:path.join(root,'uploads'),limits:defaultFileLimits}).read(historical.file.fileHandle,installationId,'goal-import',f.context.ownAccess.personId);expect(bytes.sha256).toBe(historical.file.sha256);}
+ expect(await target.files(repository,records)).toEqual(files);expect(()=>owner.authorize(records,randomUUID(),installationId)).toThrow();
+});
 
 it('accepts_three_rows_and_keeps_one_rejection_without_preview_fact_writes_or_duplicate_apply', async () => {
   const f = fixture(), p = await f.preview(['A;65','B;70','C;80','D;bad'].map(s => s + ';2026-10-01;2026-11-01').join('\n'));

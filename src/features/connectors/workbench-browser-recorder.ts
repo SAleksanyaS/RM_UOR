@@ -160,7 +160,9 @@ export async function startWorkbenchRecording(runtime: string, owner: string, pr
           if (name && role) return { kind: 'role', role, name, exact: true };
           const labels = (el as HTMLInputElement).labels; if (labels?.length === 1 && labels[0].textContent?.trim()) return { kind: 'label', text: labels[0].textContent.trim(), exact: true };
           const selector = el.getAttribute('data-testid') ? `[data-testid="${CSS.escape(el.getAttribute('data-testid')!)}"]` : el.id ? `#${CSS.escape(el.id)}` : el.getAttribute('name') ? `${el.tagName.toLowerCase()}[name="${CSS.escape(el.getAttribute('name')!)}"]` : null;
-          return selector ? { kind: 'css', selector } : null;
+          if (selector) return { kind: 'css', selector };
+          const text = (el as HTMLElement).innerText?.trim().replace(/\s+/g, ' ');
+          return role && text ? { kind: 'role', role, name: text, exact: true } : null;
         } };
         (window as unknown as { __uorRecorderDrain: () => Promise<void> }).__uorRecorderDrain = async () => { await Promise.all([...pending]); };
         document.addEventListener('click', event => { const el = (event.target as Element)?.closest('button,a,[role="button"],input[type="checkbox"]'); if (!el || !recorder.safe(el)) return;

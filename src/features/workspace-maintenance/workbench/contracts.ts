@@ -34,9 +34,17 @@ export type WorkspaceArchiveManifest = z.infer<typeof archiveManifestSchema>;
 export type ValidatedWorkspaceArchive = { manifest: WorkspaceArchiveManifest; records: WorkspaceArchiveRecord[]; files: ReadonlyMap<string, Uint8Array> };
 export const restoreTokenRecordSchema = z.strictObject({ token: z.string().regex(/^[a-f0-9]{64}$/), archiveSha256: rawSha256Schema, stateRevision: revisionTokenSchema, repositoryId: z.string().min(1), installationId: uuidSchema, sessionId: z.string().min(1), expiresAt: utcInstantSchema, consumedBy: uuidSchema.nullable() });
 export type RestoreTokenRecord = z.infer<typeof restoreTokenRecordSchema>;
-export type WorkspaceArchiveCodec = { moduleId: string; exportRecords(repository: WorkbenchRepository): WorkspaceArchiveRecord[]; validate(record: WorkspaceArchiveRecord): void; restoreRecords(repository: WorkbenchRepository, records: WorkspaceArchiveRecord[]): void; isUserData(record: WorkspaceArchiveRecord): boolean };
+export type WorkspaceArchiveRestoreContext = { readonly installationId: string; readonly personId: string | null; readonly files: ReadonlyMap<string, Uint8Array>; readonly stagedRoot: string; readonly originalsOmitted?: boolean; subjectPath(namespace: 'evidence' | 'uploads' | 'publishing' | 'legacy', relative: string): string };
+export type WorkspaceArchiveCodec = { moduleId: string; exportRecords(repository: WorkbenchRepository): WorkspaceArchiveRecord[]; validate(record: WorkspaceArchiveRecord): void; restoreRecords(repository: WorkbenchRepository, records: WorkspaceArchiveRecord[], context?: WorkspaceArchiveRestoreContext): void; isUserData(record: WorkspaceArchiveRecord): boolean };
 export type WorkspaceLifecycle = { quiesce(operationId: UUIDv4): Promise<void>; resume(): Promise<void>; activate(stagedRoot: string): Promise<void>; recover(): Promise<void> };
 export type WorkspaceArchiveFileSource = { path: string; kind: 'evidence' | 'original' | 'module'; bytesValue: Uint8Array };
+/** Trusted codecs and file ports bound to one staged repository/root, never its live sibling. */
+export type WorkspaceArchiveStageBindings = {
+  modules: ReadonlyMap<string, WorkspaceArchiveCodec>;
+  files(records: readonly WorkspaceArchiveRecord[]): Promise<WorkspaceArchiveFileSource[]>;
+  omittedOriginals(): boolean;
+  validateArchive(archive: ValidatedWorkspaceArchive): void;
+};
 /** Server-only completeness/ownership contract. Never derive this inventory from the incoming archive.
  * All files must be owner-whitelisted, inert subject files; never scan a runtime/browser/profile root.
  * managedRoot contains only owned active/staged workspace directories. artifactRoot is independent.
@@ -46,6 +54,8 @@ export type WorkspaceArchiveWorkspacePort = {
   repositoryId(): string; applicationVersion: string; storageSchemaVersion: number; requiredModuleIds: readonly string[]; managedRoot: string;
   activeRoot(): Promise<string>;
   files(records: readonly WorkspaceArchiveRecord[]): Promise<WorkspaceArchiveFileSource[]>;
+  omittedOriginals?(): boolean;
+  prepareLegacyRecords?(context: MaintenanceContext, input: {records: WorkspaceArchiveRecord[]; files: WorkspaceArchiveFileSource[]}): WorkspaceArchiveRecord[];
   validateArchive(archive: ValidatedWorkspaceArchive): void;
   /** Mandatory trusted owner policy for the COMPLETE inventory (including private file owners).
    * Throw ACCESS_DENIED for any private owner other than context.ownAccess.personId, including
@@ -55,7 +65,9 @@ export type WorkspaceArchiveWorkspacePort = {
    * This synchronous check must not mutate records. T39 supplies the actual module owner adapter.
    */
   authorizeCompleteWorkspace(context: MaintenanceContext, request: { operation: 'export' | 'replace'; records: readonly WorkspaceArchiveRecord[]; incomingRecords?: readonly WorkspaceArchiveRecord[] }): void;
+  restoreContext?(stagedRoot: string, archive: ValidatedWorkspaceArchive, context: MaintenanceContext): WorkspaceArchiveRestoreContext;
   openStagedRepository(stagedRoot: string): Promise<WorkbenchRepository>;
+  stageBindings?(stagedRoot: string, repository: WorkbenchRepository): WorkspaceArchiveStageBindings;
   healthcheck(): Promise<void>;
   /** Verify the previous owned root still has this complete subject fingerprint before switching. */
   rollback(previousRoot: string, expectedStateRevision: string): Promise<void>;

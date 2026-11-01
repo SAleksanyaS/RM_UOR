@@ -28,7 +28,7 @@ export type WorkbenchApplicationDeps = {
   commands: CommandRegistry; queries: QueryRegistry; jobs: JobStore; modules: PlatformModule[];
   sessions: LocalSessionStore; allowedOrigins: string[]; installationId: UUIDv4; files: FileStore;
   // T21/T22 bind these narrow reads when catalog/publication read models exist.
-  readState?: { defaultContext(context: QueryContext): Promise<GlobalContext | null>; publishedCommit(): string | null };
+  readState?: { defaultContext?(context: QueryContext): Promise<GlobalContext | null>; publishedCommit(): string | null };
   queryPorts?:WorkbenchReadPorts;
   browserResults?: { read(context: QueryContext, resultId: UUIDv4, kind: 'original' | 'enriched'): Promise<BrowserResultArtifact> };
   browserRecordings?: { screenshot(context: QueryContext, recordingId: string, handleId: string): Promise<{ bytes: Uint8Array; mediaType: 'image/png' }> };
@@ -64,9 +64,9 @@ export function createWorkbenchApplication(deps: WorkbenchApplicationDeps): Work
   const envelope = async <T>(data: T, request: LocalRequest): Promise<ApiSuccess<T>> => ({ apiVersion: '1', requestId: request.requestId, data, meta: await meta(request) });
   const session = async (request: LocalRequest) => {
     const local = assertSession(request); const ctx = await context(request); const own = ctx.ownAccess;
-    let defaultContext = deps.readState ? await deps.readState.defaultContext(ctx) : null;
-    if(!deps.readState && deps.queryPorts) {
-      const saved=deps.queryPorts.preferences?.get(ctx.installationId).context;
+    let defaultContext = deps.readState?.defaultContext ? await deps.readState.defaultContext(ctx) : null;
+    if(!deps.readState?.defaultContext && deps.queryPorts) {
+      const saved=deps.queryPorts.preferences?.get(ctx.installationId,ctx.ownAccess.personId).context;
       if(saved) {try {assertContextGraph(saved,deps.queryPorts.index);defaultContext=saved;}catch { /* An old preference cannot invent a valid current path. */ }}
       if(!defaultContext) {
         const dit=deps.queryPorts.index.list('directory_entity').find(entity=>entity.kind==='dit');
@@ -106,7 +106,7 @@ export function createWorkbenchApplication(deps: WorkbenchApplicationDeps): Work
       const ctx = await context(local);
       const hostname = deps.hostname(); if (!hostname.trim()) throw new WorkbenchHttpError(503, 'HOSTNAME_UNAVAILABLE', 'Server hostname is unavailable');
       const actor = { hostname, installationId: deps.installationId, profilePersonId: ctx.ownAccess.personId };
-      return envelope(await deps.commands.execute(request, { ...ctx, commandId: request.commandId, actor }), local);
+      return envelope(await deps.commands.execute(request, { ...ctx, sessionId: local.sessionId, commandId: request.commandId, actor }), local);
     },
     async reconcileCommand(id, request) {
       const ctx = await context(request);

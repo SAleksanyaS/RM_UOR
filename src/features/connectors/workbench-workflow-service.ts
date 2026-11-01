@@ -280,7 +280,8 @@ export function createOkoWorkflowService(deps: OkoWorkflowDependencies) {
                 return commitCommandEffect(context, () => { cancelled(context, signal); store.putResult(owner(context), resultId, { original, enriched }); draft.view.result = result; persist(context, draft); return { result: { ...structuredClone(draft.view), profile: safeProfile }, changedRefs: [], editToken: null }; }).result;
             });
         },
-        async readResult(context: QueryContext, resultId: string, kind: 'original' | 'enriched') { uuidSchema.parse(resultId); const stored = store.getResult<StoredResult>(owner(context), resultId); if (!stored || !['original', 'enriched'].includes(kind))
+        hasResult(context: QueryContext, resultId: string):boolean { return uuidSchema.safeParse(resultId).success && store.hasResult(owner(context),resultId); },
+        async readResult(context: QueryContext, resultId: string, kind: 'original' | 'enriched') { uuidSchema.parse(resultId); const stored = store.getResult<StoredResult>(owner(context), resultId); if (!stored || !['original', 'enriched'].includes(kind) || kind==='original'&&store.originalOmitted(owner(context),resultId))
             fail('RESULT_NOT_FOUND', 'Own result not found', 404); const value = stored![kind], bytes = Buffer.from(value.base64, 'base64'); if (createHash('sha256').update(bytes).digest('hex') !== value.hash)
             fail('INTEGRITY_MISMATCH', 'Stored result failed integrity verification'); return { bytes, name: value.name, mimeType: value.mimeType, hash: value.hash, sha256: value.hash }; },
     };

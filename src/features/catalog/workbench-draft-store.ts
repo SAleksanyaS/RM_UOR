@@ -10,7 +10,7 @@ import { stableJson } from '../../server/workbench/command-store';
 
 export type StoredDraft = DraftEntry & { packageId: string; header: Header; localRevision: number };
 export type StoredPackage = Omit<DraftPackageView,'entries'> & { installationId: string; entries: StoredDraft[] };
-export function createDraftStore({ repository, artifactDirectory }: { repository: WorkbenchRepository; artifactDirectory: string }) {
+export function createDraftStore({ repository, artifactDirectory }: { repository: WorkbenchRepository; artifactDirectory: string | (()=>string) }) {
   const sql = repository.sqlForModule('drafts');
   sql.execMigration('v1', `CREATE TABLE wb_drafts_packages(package_id TEXT PRIMARY KEY,installation_id TEXT NOT NULL,owner_person_id TEXT NOT NULL,revision INTEGER NOT NULL,base_commit TEXT);
     CREATE TABLE wb_drafts_entries(draft_id TEXT PRIMARY KEY,package_id TEXT NOT NULL,entity_type TEXT NOT NULL,object_id TEXT NOT NULL,base_ref TEXT,definition_json TEXT NOT NULL,complete INTEGER NOT NULL,problems_json TEXT NOT NULL,header_json TEXT NOT NULL,local_revision INTEGER NOT NULL,UNIQUE(package_id,entity_type,object_id));
@@ -38,7 +38,7 @@ export function createDraftStore({ repository, artifactDirectory }: { repository
     listOwnPackages(installationId:string,personId:string):StoredPackage[] {
       return sql.all<{package_id:string}>('SELECT package_id FROM wb_drafts_packages WHERE installation_id=? AND owner_person_id=? ORDER BY package_id',[installationId,personId]).map(row=>getPackage(row.package_id)!);
     },
-    artifactDirectory: path.resolve(artifactDirectory), getEntry, getPackage, token,
+    get artifactDirectory(){return path.resolve(typeof artifactDirectory==='function'?artifactDirectory():artifactDirectory);}, getEntry, getPackage, token,
     setProof(draftId: string, kind: string, value: object) { const updated = sql.run('UPDATE wb_drafts_proofs SET payload_json=? WHERE draft_id=? AND kind=?', [JSON.stringify(value), draftId, kind]); if (!updated.changes) sql.run('INSERT INTO wb_drafts_proofs VALUES(?,?,?)', [draftId, kind, JSON.stringify(value)]); },
     readProof<T>(draftId: string, kind: string): T | null { const row = sql.get<{ payload_json: string }>('SELECT payload_json FROM wb_drafts_proofs WHERE draft_id=? AND kind=?', [draftId, kind]); return row ? JSON.parse(row.payload_json) as T : null; },
     readDraftVersion,

@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { constants } from 'node:fs';
+import { constants, lstatSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { lstat, mkdir, open, realpath, rename, rmdir, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
@@ -20,6 +20,34 @@ export const defaultFileLimits: Readonly<FileLimits> = { goalImportBytes: 10 * 1
 export const filePurposeSchema = z.enum(['goal-import', 'evidence', 'workspace-restore']);
 const metadataSchema = fileHandleViewSchema.extend({ purpose: filePurposeSchema, installationId: uuidSchema, profilePersonId: uuidSchema.nullable().optional() });
 export const fileValidationError = () => new WorkbenchHttpError(422, 'INVALID_FILE', 'The file is invalid or unsupported');
+/** Server-only referenced upload port. It accepts UUID metadata, never an archive path. */
+function physicalSync(target:string,directory:boolean):void {
+ const absolute=path.resolve(target), parsed=path.parse(absolute);let current=parsed.root;
+ const parts=absolute.slice(parsed.root.length).split(path.sep).filter(Boolean);
+ for(let i=0;i<parts.length;i++){current=path.join(current,parts[i]);const info=lstatSync(current);if(info.isSymbolicLink() || (i<parts.length-1 || directory ? !info.isDirectory() : !info.isFile() || info.nlink!==1))throw fileValidationError();}
+}
+export function readReferencedFileSync(directory:string,handle:string,installationId:string,personId:string|null):StagedFile {
+ uuidSchema.parse(handle);uuidSchema.parse(installationId);uuidSchema.nullable().parse(personId);
+ const stored=path.join(path.resolve(directory),handle);physicalSync(stored,true);
+ const metadataFile=path.join(stored,'metadata.json');physicalSync(metadataFile,false);
+ if(lstatSync(metadataFile).size>32768)throw fileValidationError();
+ const metadata=metadataSchema.parse(JSON.parse(readFileSync(metadataFile,'utf8')));
+ if(metadata.fileHandle!==handle || metadata.installationId!==installationId || metadata.profilePersonId!==personId || metadata.purpose!=='goal-import' || metadata.bytes>defaultFileLimits.goalImportBytes)throw fileValidationError();
+ assertFileName(metadata.name);const filename=path.join(stored,'bytes');physicalSync(filename,false);
+ if(lstatSync(filename).size!==metadata.bytes)throw fileValidationError();const bytesValue=readFileSync(filename);
+ if(createHash('sha256').update(bytesValue).digest('hex')!==metadata.sha256)throw fileValidationError();
+ return {...metadata,bytesValue:Uint8Array.from(bytesValue)};
+}
+export function hydrateReferencedFileSync(directory:string,file:StagedFile):void {
+ const {bytesValue,...unparsed}=file, metadata=metadataSchema.parse(unparsed);uuidSchema.parse(metadata.fileHandle);
+ if(metadata.purpose!=='goal-import' || metadata.profilePersonId===undefined || metadata.bytes>defaultFileLimits.goalImportBytes || bytesValue.byteLength!==metadata.bytes || createHash('sha256').update(bytesValue).digest('hex')!==metadata.sha256)throw fileValidationError();
+ assertFileName(metadata.name);let ancestor=path.resolve(directory);
+ while(true){try{physicalSync(ancestor,true);break;}catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;const parent=path.dirname(ancestor);if(parent===ancestor)throw fileValidationError();ancestor=parent;}}
+ mkdirSync(directory,{recursive:true,mode:0o700});physicalSync(directory,true);const stored=path.join(path.resolve(directory),metadata.fileHandle);
+ mkdirSync(stored,{mode:0o700});physicalSync(stored,true);
+ writeFileSync(path.join(stored,'bytes'),bytesValue,{flag:'wx',mode:0o600});writeFileSync(path.join(stored,'metadata.json'),JSON.stringify(metadata),{flag:'wx',mode:0o600});
+ readReferencedFileSync(directory,metadata.fileHandle,metadata.installationId,metadata.profilePersonId);
+}
 const missing = () => new WorkbenchHttpError(404, 'FILE_NOT_FOUND', 'File not found');
 export function assertFileName(name: string): void {
   if (typeof name !== 'string' || !name.trim() || name.length > 255 || /[\x00-\x1f\x7f/\\:]/.test(name) || name === '.' || name === '..' || /[. ]$/.test(name) || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(name)) throw fileValidationError();
@@ -33,11 +61,12 @@ export async function assertPhysicalPath(target: string, directory: boolean): Pr
     if (info.isSymbolicLink() || (index < parts.length - 1 || directory ? !info.isDirectory() : !info.isFile() || info.nlink !== 1)) throw fileValidationError();
   }
 }
-export function createFileStore(options: { directory: string; limits: FileLimits }): FileStore {
-  const directory = path.resolve(options.directory); const limits = { ...options.limits };
+export function createFileStore(options: { directory: string | (()=>string); limits: FileLimits }): FileStore {
+  const selectedDirectory=()=>path.resolve(typeof options.directory==='function'?options.directory():options.directory); const limits = { ...options.limits };
   for (const key of Object.keys(defaultFileLimits) as Array<keyof FileLimits>) if (!Number.isSafeInteger(limits[key]) || limits[key] < 1 || limits[key] > defaultFileLimits[key]) throw Error('Invalid server file limits');
   const cap = (purpose: FilePurpose) => purpose === 'goal-import' ? limits.goalImportBytes : purpose === 'evidence' ? limits.evidenceBytes : limits.restoreBytes;
   const root = async () => {
+    const directory=selectedDirectory();
     // Before recursive mkdir, reject existing aliases; only absent suffixes may be created.
     let ancestor = directory; while (true) { try { await assertPhysicalPath(ancestor, true); break; } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; const parent = path.dirname(ancestor); if (parent === ancestor) throw fileValidationError(); ancestor = parent; } }
     await mkdir(directory, { recursive: true, mode: 0o700 }); await assertPhysicalPath(directory, true);
@@ -64,7 +93,7 @@ export function createFileStore(options: { directory: string; limits: FileLimits
         const view: FileHandleView = { fileHandle: id, name: input.name, mediaType: input.mediaType, bytes, sha256 };
         const meta = await open(path.join(temporary, 'metadata.json'), 'wx', 0o600);
         try { await meta.writeFile(JSON.stringify({ ...view, installationId: input.installationId, purpose: input.purpose, ...(input.profilePersonId !== undefined ? { profilePersonId: input.profilePersonId } : {}) })); await meta.sync(); } finally { await meta.close(); }
-        await assertPhysicalPath(directory, true); await assertPhysicalPath(temporary, true); await rename(temporary, final); finalized = true;
+        await assertPhysicalPath(base, true); await assertPhysicalPath(temporary, true); await rename(temporary, final); finalized = true;
         return view;
       } finally {
         if (!finalized) {

@@ -18,6 +18,7 @@ import type { BrowserWorkflowRuntimePort } from './workbench-browser-runtime';
 import { createOkoWorkflowService } from './workbench-workflow-service';
 import { createOkoWorkflowModule } from './workbench-workflow-module';
 import type { OkoWorkflowView, OkoDictionaryMapping } from './workbench-workflow-contracts';
+import { createSourceArchiveOwners } from '../workspace-maintenance/workbench/source-archive-owners';
 const closes:Array<()=>Promise<void>>=[];
 afterEach(async()=>{for(const close of closes.splice(0).reverse())await close();});
 async function fixture(){
@@ -49,6 +50,23 @@ it('full v1 own recording → mapping → real SQLite result + verified private 
  const download=await f.app.inject({method:'GET',url:v.result!.originalDownload,headers:f.headers});expect(download.statusCode,download.body).toBe(200);expect(download.headers['x-content-type-options']).toBe('nosniff');expect(download.body).toContain('12,5');
  const previous=structuredClone(v.result);f.setReplayFailure(true);const failed=await f.command('source.browser.record.test',{workflowId:v.workflowId,expectedRevision:v.revision});expect(failed.status).toBe('failed');expect((await f.service.workspace(f.context(),v.workflowId)).current!.result).toEqual(previous);
  f.setOwn({personId:randomUUID()});await expect(f.service.readResult(f.context(),previous!.resultId,'original')).rejects.toThrow(/not found/);expect((await f.service.workspace(f.context())).workflows).toEqual([]);
+});
+it('archives full personal recipes and every result while excluding embedded profile configuration',async()=>{
+ const f=await fixture();let view=await f.prepare();view=await f.result('source.browser.record.test',{workflowId:view.workflowId,expectedRevision:view.revision});const first=view.result!.resultId;
+ view=await f.result('source.browser.record.test',{workflowId:view.workflowId,expectedRevision:view.revision});const second=view.result!.resultId;
+ expect(f.service.hasResult(f.context(),first)).toBe(true);expect(f.service.hasResult({...f.context(),ownAccess:{...f.context().ownAccess,personId:randomUUID()}},first)).toBe(false);
+ const s=f.repository.sqlForModule('oko_workflow'),stored=s.get<{payload_json:string}>('SELECT payload_json FROM wb_oko_workflow_drafts WHERE id=?',[view.workflowId])!,value=JSON.parse(stored.payload_json);value.view.profile=await f.profiles.getOwn(f.context(),view.sourceId);s.run('UPDATE wb_oko_workflow_drafts SET payload_json=? WHERE id=?',[JSON.stringify(value),view.workflowId]);
+ const environment={installationId:f.installationId,personId:()=>f.context().ownAccess.personId,localPreview:false,subjectRoot:()=>f.root};const codec=createSourceArchiveOwners(f.repository,environment).find(o=>o.moduleId==='oko_workflow')!,records=codec.exportRecords(f.repository),files=await codec.files(f.repository,records);
+ expect(records.filter(r=>r.schemaId==='result')).toHaveLength(2);expect(records.filter(r=>r.schemaId==='draft')).toHaveLength(1);expect(JSON.stringify(records)).not.toContain('allowedOrigins');expect(JSON.stringify(records)).not.toContain('profileId');expect(JSON.stringify(records)).not.toContain('base64');
+ const root=path.join(f.root,'restored'),installationId=randomUUID(),personId=f.context().ownAccess.personId!;const repository=createWorkbenchRepository({filename:':memory:',artifactRoot:root});closes.push(async()=>repository.close());createSourceArchiveOwners(repository,{...environment,installationId,subjectRoot:()=>root});
+ codec.restoreRecords(repository,records,{installationId,personId,files:new Map(files.map(file=>[file.path,file.bytesValue])),stagedRoot:root,subjectPath:(ns,id)=>path.join(root,ns,id)});expect(codec.exportRecords(repository)).toEqual(records);
+ const service=createOkoWorkflowService({repository,runtime:f.runtime,profiles:createBrowserProfileService({runtimeRoot:root,repository,clock:f.context().clock}),files:createFileStore({directory:path.join(root,'uploads'),limits:defaultFileLimits}),jobs:createJobStore({repository,clock:f.context().clock}),clock:f.context().clock});
+ const context={...f.context(),repository,installationId};expect((await service.workspace(context,view.workflowId)).current!.profile.configured).toBe(false);
+ for(const id of [first,second])for(const kind of ['original','enriched'] as const)expect((await service.readResult(context,id,kind)).bytes).toEqual((await f.service.readResult(f.context(),id,kind)).bytes);
+ const malformed=structuredClone(records.find(r=>r.schemaId==='draft')!);(malformed.value as any).value.view.profile={token:'secret'};expect(()=>codec.validate(malformed)).toThrow();
+});
+it('classifies personal result metadata without loading stored original or enriched artifacts',async()=>{
+ const f=await fixture(),id=randomUUID(),owner=`${f.installationId}/${f.context().ownAccess.personId}`;f.repository.sqlForModule('oko_workflow').run('INSERT INTO wb_oko_workflow_results VALUES(?,?,?)',[owner,id,'malformed result artifacts must remain unread by classification']);expect(f.service.hasResult(f.context(),id)).toBe(true);expect(f.service.hasResult({...f.context(),installationId:randomUUID()},id)).toBe(false);expect(f.service.hasResult(f.context(),'../invalid')).toBe(false);
 });
 it('explicit directory UUIDs enrich only unambiguous graph; no guessed leaders or identifiers',async()=>{
  const f=await fixture();let v=await f.prepare();const names=['key','productId','productName','clusterId','clusterName','ditId','ditName','clusterLeaderId','clusterLeaderName','productLeaderId','productLeaderName'];const mapping=Object.fromEntries(names.map(n=>[n,n])) as OkoDictionaryMapping;mapping.teamId=null;mapping.teamName=null;

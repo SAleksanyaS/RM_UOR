@@ -37,8 +37,13 @@ import { createExecutionService, registerExecutionCommands } from '../../../feat
 import { createExecutionStore } from '../../../features/execution/workbench-execution-store';
 
 export type WorkbenchTestScenario = 'empty' | GoalScenario | 'partial-file' | 'publication-ready' | 'offline-draft' | 'organization-only';
+const supportedScenarios: Record<WorkbenchTestScenario, true> = {
+  empty: true, 'scope-split': true, 'population-gap': true, 'stale-fallback': true,
+  'manual-goal': true, 'agreed-history': true, 'partial-file': true,
+  'publication-ready': true, 'offline-draft': true, 'organization-only': true,
+};
 export async function createWorkbenchTestApplication(options: { role: 'viewer' | 'curator' | 'chief'; scenario: WorkbenchTestScenario; clock?: string; clientOrigin?: string; browserFixture?: BrowserFixtureOptions }): Promise<{ app: FastifyInstance; repository: WorkbenchRepository; refs: Record<string, VersionRef>; publishingTesting?: PublishingTesting; browserTesting?: BrowserTesting; close(): Promise<void> }> {
-
+  if (!Object.hasOwn(supportedScenarios, options.scenario)) throw new Error(`Workbench test scenario is not implemented: ${options.scenario}`);
   const root = mkdtempSync(path.join(tmpdir(), 'uor-workbench-test-'));
   const repository = createWorkbenchRepository({ filename: ':memory:', artifactRoot: root });
   const refs: Record<string, VersionRef> = {};

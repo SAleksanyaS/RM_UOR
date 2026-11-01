@@ -10,6 +10,7 @@ import type { PreparedProposal } from './git-port';
 import { canonicalBytes,hashBytes } from './package-manifest';
 import type { JobStore } from '../../../server/workbench/jobs';
 import { packageDeliverySchema, type PackageDelivery } from './contracts';
+import { retainedPackageDeliverySchema,type RetainedPackageDelivery } from './contracts';
 
 type Identity = Pick<QueryContext,'repository'|'installationId'|'ownAccess'>;
 export type PreviewBinding = {repositoryId:string;mainCommit:string;draftRevision:number;fingerprint:string};
@@ -20,6 +21,7 @@ export interface PublicationReadPort {
   readOwnPackage(context:Identity,packageId:string):PublicationPackageRecord|null;
   listOwnPackages(context:Identity):PublicationPackageRecord[];
   readOwnDelivery?(context:Identity,packageId:string):PackageDelivery|null;
+  readOwnRetainedDelivery?(context:Identity,packageId:string):RetainedPackageDelivery|null;
 }
 export function createPackageStore(repository:WorkbenchRepository,drafts:DraftService,jobs?:JobStore) {
   const sql=repository.sqlForModule('publishing');
@@ -33,6 +35,7 @@ export function createPackageStore(repository:WorkbenchRepository,drafts:DraftSe
   `);
   technical.execMigration('submission-001','CREATE TABLE wb_publishing_prepared(package_id TEXT NOT NULL,revision INTEGER NOT NULL,installation_id TEXT NOT NULL,person_id TEXT NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(package_id,revision));');
   technical.execMigration('submission-delivery-001','CREATE TABLE wb_publishing_delivery_jobs(job_id TEXT PRIMARY KEY,package_id TEXT NOT NULL,revision INTEGER NOT NULL,installation_id TEXT NOT NULL,person_id TEXT NOT NULL);');
+  technical.execMigration('portable-history-001','CREATE TABLE wb_publishing_portable_prepared(package_id TEXT NOT NULL,revision INTEGER NOT NULL,person_id TEXT NOT NULL,payload TEXT NOT NULL,reconciliation_needed INTEGER NOT NULL CHECK(reconciliation_needed=1),PRIMARY KEY(package_id,revision));');
   const own=(context:Identity,packageId:string)=>drafts.readOwnPackage(context,packageId);
   const latest=(context:Identity,packageId:string):PublicationPackageRecord|null=>{
     own(context,packageId);
@@ -73,6 +76,14 @@ export function createPackageStore(repository:WorkbenchRepository,drafts:DraftSe
     },
     readPort:{
       readOwnPackage:latest,
+      readOwnRetainedDelivery(context:Identity,packageId:string):RetainedPackageDelivery|null {
+        own(context,packageId);
+        const row=technical.get<{payload:string;revision:number}>('SELECT payload,revision FROM wb_publishing_portable_prepared WHERE package_id=? AND person_id=? ORDER BY revision DESC LIMIT 1',[packageId,context.ownAccess.personId]);
+        if(!row)return null;
+        const value=JSON.parse(row.payload) as Omit<PreparedProposal,'checkout'>;
+        const jobs=technical.all<{job_id:string}>('SELECT job_id FROM wb_publishing_delivery_jobs WHERE package_id=? AND revision=? AND installation_id=? AND person_id=? ORDER BY job_id',[packageId,row.revision,context.installationId,context.ownAccess.personId]);
+        return retainedPackageDeliverySchema.parse({packageRevision:value.packageRevision,preparedCommit:value.commit,historicalJobIds:jobs.map(v=>v.job_id),reconciliationNeeded:true});
+      },
       readOwnDelivery(context:Identity,packageId:string):PackageDelivery|null {
         own(context,packageId);if(!jobs)return null;
         const row=technical.get<{payload:string;job_id:string;revision:number}>(`SELECT p.payload,d.job_id,d.revision FROM wb_publishing_delivery_jobs d JOIN wb_publishing_prepared p ON p.package_id=d.package_id AND p.revision=d.revision AND p.installation_id=d.installation_id AND p.person_id=d.person_id WHERE d.package_id=? AND d.installation_id=? AND d.person_id=? ORDER BY d.rowid DESC LIMIT 1`,[packageId,context.installationId,context.ownAccess.personId]);

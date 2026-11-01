@@ -7,7 +7,7 @@ import { createNotificationService, registerNotificationCommands, startNotificat
 
 export function createNotificationRuntime(options: {
   repository: WorkbenchRepository; clock: Clock; installationId: UUIDv4; accessPolicy: AccessPolicyService; commands: CommandRegistry;
-  provider: NotificationProvider; preferences: (installationId: UUIDv4) => { notificationPersonId: UUIDv4 | null }; drafts?: DraftService;
+  provider: NotificationProvider; preferences: (installationId: UUIDv4,personId?:UUIDv4|null) => { notificationPersonId: UUIDv4 | null }; drafts?: DraftService;
   pollIntervalMs?: number; maxBackoffMs?: number; onError?: (error: unknown) => void;
 }) {
   const service = createNotificationService({ repository: options.repository, provider: options.provider, preferences: options.preferences, resolveOwnAccess: () => options.accessPolicy.resolveOwnAccess() });
@@ -20,7 +20,8 @@ export function createNotificationRuntime(options: {
       if (polling || stopped) return;
       polling = startNotificationPolling({ service, context: async () => ({ installationId: options.installationId, clock: options.clock, ownAccess: await options.accessPolicy.resolveOwnAccess() }), pollIntervalMs: options.pollIntervalMs, maxBackoffMs: options.maxBackoffMs, onError: options.onError });
     },
-    async stop() { stopped = true; polling?.stop(); await polling?.finished; },
+    async pause() { const current = polling; polling = null; current?.stop(); await current?.finished; },
+    async stop() { stopped = true; const current = polling; polling = null; current?.stop(); await current?.finished; },
   };
 }
 export type NotificationRuntime = ReturnType<typeof createNotificationRuntime>;

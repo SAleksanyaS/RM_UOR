@@ -31,7 +31,7 @@ export const legacyImportSchema = z.strictObject({ schemaVersion: z.literal(1), 
 const unavailable = () => new WorkbenchHttpError(422, 'LEGACY_ARCHIVE_INVALID', 'Invalid inert legacy archive record');
 export function assertLegacyPayloadSafety(value: unknown): void {
   assertJsonSafety(value);
-  const visit = (item: unknown) => { if (Array.isArray(item)) { item.forEach(visit); return; } if (item && typeof item === 'object') for (const [key, child] of Object.entries(item)) { if (/^(?:password|accessToken|refreshToken|privateKey|certificatePem|cookies?|authorization|curatorCode|sessions?|sessionId|ownerSessionId|csrfToken|registry|serviceSettings|browserProfile|credentials)$/i.test(key)) throw unavailable(); visit(child); } };
+  const visit = (item: unknown) => { if (Array.isArray(item)) { item.forEach(visit); return; } if (item && typeof item === 'object') for (const [key, child] of Object.entries(item)) { if (/^(?:password|accessToken|refreshToken|privateKey|certificatePem|cookies?|authorization|curatorCode|sessions?|sessionId|ownerSessionId|csrfToken|registry|serviceSettings|browserProfile|profileRef|profile|credentials)$/i.test(key)) throw unavailable(); visit(child); } };
   visit(value);
 }
 /** SQL and archived records belong only to this module; there is no core goal/method fallback. */

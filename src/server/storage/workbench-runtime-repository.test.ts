@@ -68,8 +68,14 @@ it('keeps an escaped transaction lease closed even after the active repository c
   let release!: () => void;
   const gate = new Promise<void>(resolve => { release = resolve; });
   let escaped!: Promise<unknown>;
-  stable.repository.transaction(() => { escaped = gate.then(() => sql.run('INSERT INTO wb_subject_values VALUES(?,?)', [fixtureId(38002), 'late'])); });
+  let escapedAttachment!: Promise<unknown>;
+  const attach = stable.repository.attachVerifiedPublicationAnchor, late = makeHeader(38003);
+  stable.repository.transaction(() => {
+    escaped = gate.then(() => sql.run('INSERT INTO wb_subject_values VALUES(?,?)', [fixtureId(38002), 'late']));
+    escapedAttachment = gate.then(() => attach('metric_definition', late, { installationId: late.actor.installationId, personId: late.actor.profilePersonId }));
+  });
   stable.rebind(next); initial.close(); release();
   await expect(escaped).rejects.toThrow('TRANSACTION_CONTEXT_CLOSED');
+  await expect(escapedAttachment).rejects.toThrow('TRANSACTION_CONTEXT_CLOSED');
   expect(sql.all('SELECT * FROM wb_subject_values')).toEqual([]);
 });

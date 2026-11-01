@@ -1,6 +1,6 @@
 {
   "name": "uor-dit-operations",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -15,7 +15,9 @@
     "dev:server": "tsx watch src/server/main.ts",
     "dev:client": "vite --host 127.0.0.1",
     "test": "vitest run",
+    "test:workbench:e2e": "vitest run tests/workbench --fileParallelism --maxWorkers=2",
     "test:watch": "vitest",
+    "smoke:workbench": "tsx scripts/workbench/runtime-smoke.ts",
     "build": "tsc --noEmit && vite build",
     "setup:curators": "node scripts/setup-curators.mjs",
     "import:map": "tsx scripts/import-local.ts",

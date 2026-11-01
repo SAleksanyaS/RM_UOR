@@ -8,6 +8,6 @@ export type PreferencesRead = z.infer<typeof preferencesReadSchema>;
 /** This personal read has no business context and no caller-selected installation. */
 export function registerPreferencesQueries(registry: QueryRegistry, preferences: PreferencesService): void {
   registry.register({ name: 'preferences.get', inputSchema: ownQueryRequestSchema.extend({ filter: z.strictObject({}), sort: z.array(z.never()).max(0) }), outputSchema: preferencesReadSchema,
-    async handler(context) { return { values: preferences.get(context.installationId), editToken: preferences.editToken(context.installationId) }; },
+    async handler(context) { return { values: preferences.get(context.installationId,context.ownAccess.personId), editToken: preferences.editToken(context.installationId,context.ownAccess.personId) }; },
   });
 }

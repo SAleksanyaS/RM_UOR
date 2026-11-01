@@ -20,13 +20,14 @@ import { createPreferencesService } from '../../system/workbench-preferences';
 import { createEvidenceService } from '../../evidence/workbench-evidence';
 import { createFileStore, defaultFileLimits } from '../../../server/workbench/files';
 import { applyVerifiedPublication, readAppliedPublication, type PublicationApplyDependencies } from './publication-apply';
+import { createWorkspaceOwnership } from '../../../server/storage/workbench-ownership';
 import type { VerifiedMain } from './contracts';
 
 type Entry = { entityType: WorkbenchEntityType; value: WorkbenchEntity };
 const cleanups: (() => void)[] = [];
 afterEach(() => { for (const cleanup of cleanups.splice(0)) cleanup(); });
 const packageId = fixtureId(261001), commit = 'b'.repeat(40);
-const resultSchema = z.strictObject({ appliedCommit: z.string(), stateRevision: z.string(), anchors: z.array(publicationAnchorSchema), warnings: z.array(z.unknown()) });
+const resultSchema = z.strictObject({ appliedCommit: z.string(), appliedAt: z.string().nullable(), stateRevision: z.string(), anchors: z.array(publicationAnchorSchema), warnings: z.array(z.unknown()) });
 function capsule(entries: Entry[], id = packageId, revision = 1, extraFiles: ReadonlyMap<string, Uint8Array> = new Map()) {
   const files = new Map<string, Uint8Array>([...entries.map(({ entityType, value }) => [`records/${entityType}/${value.id}/${value.revision}.json`, canonicalBytes(value)] as const), ...extraFiles]);
   const manifest = buildPackageManifest({ package: { schemaVersion: 1, packageId: id, cycleId: fixtureId(261002), curatorPersonId: fixtureId(17), revision, baseCommit: 'a'.repeat(40), targetBranch: 'main', createdAt: '2026-10-29T08:00:00Z' }, files });
@@ -67,9 +68,23 @@ it('applies real capsules for a reader without REST and commits anchor, records,
   expect(result).toMatchObject({ appliedCommit: commit, stateRevision: (BigInt(before) + 1n).toString(), anchors: [{ id: packageId, packageId, revision: 1, publicationState: 'confirmed', timeVerification: 'unknown', mergedAt: null, mainCommit: commit }] });
   expect(result.stateRevision).toBe(f.repository.getStateRevision());
   expect(f.repository.readPublishedHead({ entityType: 'goal_assignment', id: f.input.assignment.id })).toEqual({ ...f.input.assignment, publicationAnchorId: packageId });
-  expect(readAppliedPublication(f.repository)).toEqual({ repositoryId: 'synthetic-main', commit });
+  expect(readAppliedPublication(f.repository)).toEqual({ repositoryId: 'synthetic-main', commit, appliedAt: f.context.clock.now() });
   expect(JSON.parse(f.commands.get(ctx.installationId, ctx.commandId)!.receipt_json!).result).toEqual(result);
   expect(() => f.repository.readPublishedAt({ entityType: 'goal_assignment', id: f.input.assignment.id }, '2026-10-30T09:00:00Z')).toThrowError(expect.objectContaining({ code: 'EFFECTIVE_TIME_UNVERIFIED' }));
+});
+
+it.each(['body_changed','foreign_binding','owner_changed_after_preflight'] as const)('does not attach a colliding or foreign local version while applying main: %s', async fault => {
+  const f = fixture(), published = f.graph.entries.find(entry => entry.entityType === 'metric_definition')!.value;
+  const local = { ...published, publicationAnchorId: null, ...(fault === 'body_changed' ? { name: 'Different local body' } : {}) };
+  f.repository.append('metric_definition', local, null);
+  const ownership = createWorkspaceOwnership(f.repository);
+  const deny = () => ownership.bind({ moduleId: 'core', key: `metric_definition/${local.id}/1`, installationId: f.context.installationId, personId: fixtureId(269999), provenance: 'created' });
+  if (fault === 'foreign_binding') deny();
+  if (fault === 'owner_changed_after_preflight') { let changed = false; f.deps.publication!.classifyRecord = () => { if (!changed) { changed = true; deny(); } return true; }; }
+  const ctx = f.begin(); await expect(f.run(ctx)).rejects.toMatchObject({ code: 'REFERENCE_VERSION_COLLISION' });
+  expect(f.repository.readVersion({ entityType: 'metric_definition', id: local.id, revision: 1 })).toEqual(local);
+  expect(f.repository.readPublicationAnchor({ entityType: 'publication_anchor', id: packageId })).toBeNull();
+  expect(readAppliedPublication(f.repository)).toBeNull(); expect(f.commands.get(ctx.installationId, ctx.commandId)?.receipt_json).toBeNull();
 });
 
 it.each(['bad_manifest', 'naked_record', 'foreign_anchor', 'missing_reference', 'unsupported_schema', 'missing_classification', 'rejected_classification', 'method_mode'])('rejects %s without partial data or an applied pointer', async fault => {
@@ -157,6 +172,36 @@ it('preserves a higher successful local fact, correction and private namespaces 
   expect(drafts.history(draftId)).toEqual(savedHistory);
   expect(preferences.backup.exportSnapshot()).toEqual(savedPreferences);
   expect(preferences.editToken(f.context.installationId)).toBe(preferencesToken);
+});
+
+it('persists local first apply time and retains it on same-commit commands without dating publication', async () => {
+  const f = fixture();
+  const first = await f.run();
+  expect(first.appliedAt).toBe('2026-10-31T08:00:00Z');
+  f.deps.clock.now = () => '2026-11-01T08:00:00Z';
+  const again = await f.run();
+  expect(again.appliedAt).toBe(first.appliedAt);
+  expect(again.anchors).toEqual(first.anchors);
+  expect(again.anchors[0]).toMatchObject({ timeVerification: 'unknown', mergedAt: null });
+  expect(again.anchors[0]).not.toHaveProperty('appliedAt');
+  f.setMain({ ...f.main(), commit: 'c'.repeat(40) });
+  const next = await f.run();
+  expect(next.appliedAt).toBe('2026-11-01T08:00:00Z');
+  expect(readAppliedPublication(f.repository)).toMatchObject({ commit: 'c'.repeat(40), appliedAt: next.appliedAt });
+  const prior = readAppliedPublication(f.repository);
+  f.setMain({ ...f.main(), commit: 'd'.repeat(40) });
+  await expect(f.run(f.begin(), f.main().commit, z.never())).rejects.toThrow();
+  expect(readAppliedPublication(f.repository)).toEqual(prior);
+});
+
+it('migrates an old applied pointer without inventing its local application date', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'uor-t26-apply-'));
+  const repository = createWorkbenchRepository({ filename: path.join(root, 'old.sqlite'), artifactRoot: path.join(root, 'evidence') });
+  cleanups.push(() => { repository.close(); if (!path.basename(root).startsWith('uor-t26-apply-')) throw Error('Unsafe cleanup'); rmSync(root, { recursive: true, force: true }); });
+  const sql = repository.sqlForModule('publishing', { trackStateRevision: false });
+  sql.execMigration('v1-applied-publication', 'CREATE TABLE wb_publishing_applied(singleton INTEGER PRIMARY KEY CHECK(singleton=1),repository_id TEXT NOT NULL,commit_oid TEXT NOT NULL)');
+  sql.run('INSERT INTO wb_publishing_applied VALUES(1,?,?)', ['synthetic-main', commit]);
+  expect(readAppliedPublication(repository)).toEqual({ repositoryId: 'synthetic-main', commit, appliedAt: null });
 });
 
 it('returns the durable result for a retried command without reapplying or reading Git', async () => {

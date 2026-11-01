@@ -4,12 +4,13 @@ import type { EntityRef, Header, VersionRef } from '../../domain/workbench/primi
 import { entityRefSchema, versionRefSchema, utcInstantSchema, uuidSchema, businessTimeSchema, exactNumberSchema } from '../../domain/workbench/primitives';
 import * as schemas from '../../domain/workbench/schemas';
 import type { WorkbenchRepository } from '../../server/storage/workbench-repository';
+import { isOwnCoreVersion } from '../../server/storage/workbench-ownership';
 import type { QueryContext } from '../../server/workbench/query-registry';
 import { pageResultSchema, nextActionSchema, jobSnapshotSchema, WorkbenchHttpError, type GlobalContext, type QueryRequest } from '../../server/workbench/protocol';
 import type { DraftService } from './workbench-drafts';
 import type { PublicationReadPort } from '../publishing/workbench/package-store';
 import { packageZones } from '../publishing/workbench/package-zones';
-import { publicationPackageRecordSchema,packageDeliverySchema } from '../publishing/workbench/contracts';
+import { publicationPackageRecordSchema,packageDeliverySchema,retainedPackageDeliverySchema } from '../publishing/workbench/contracts';
 import type { SourceStore, SourceCaptureView } from '../connectors/workbench-source-store';
 import { sourceIssueSchema } from '../connectors/workbench-source-contracts';
 import type { NotificationService } from '../execution/workbench-notifications';
@@ -65,7 +66,7 @@ export const dashboardBlockReadSchema=z.discriminatedUnion('type',[
 export type DashboardBlockRead=z.infer<typeof dashboardBlockReadSchema>;
 const rawItem=z.strictObject({layer:z.literal('raw'),row:schemas.rawSourceRowSchema,issues:z.array(sourceIssueSchema)});
 const enrichedItem=z.strictObject({layer:z.literal('enriched'),row:schemas.canonicalSourceRowSchema,factRefs:z.array(versionRefSchema),issues:z.array(sourceIssueSchema)});
-const packageSummarySchema=z.strictObject({packageRef:entityRefSchema,revision:z.number().int(),editToken:z.string(),incomplete:z.number().int(),publication:publicationPackageRecordSchema.nullable(),activeJob:jobSnapshotSchema.nullable(),previewCurrent:z.null(),delivery:packageDeliverySchema.nullable().optional(),zones:z.array(z.strictObject({id:uuidSchema,name:z.string().nullable()})).optional()});
+const packageSummarySchema=z.strictObject({packageRef:entityRefSchema,revision:z.number().int(),editToken:z.string(),incomplete:z.number().int(),publication:publicationPackageRecordSchema.nullable(),activeJob:jobSnapshotSchema.nullable(),previewCurrent:z.null(),delivery:packageDeliverySchema.nullable().optional(),retainedDelivery:retainedPackageDeliverySchema.nullable().optional(),zones:z.array(z.strictObject({id:uuidSchema,name:z.string().nullable()})).optional()});
 const formSchema=z.strictObject({formKind:z.string(),ref:entityRefSchema.nullable(),schema:z.record(z.string(),z.unknown()),registeredSchemas:z.array(z.strictObject({schemaId:z.string(),schemaVersion:z.number(),schema:z.record(z.string(),z.unknown())})),values:z.record(z.string(),z.unknown()).nullable(),problems:z.array(z.strictObject({path:z.string(),code:z.string(),message:z.string(),ref:entityRefSchema.nullable()})),help:z.string(),actions:z.array(nextActionSchema),editToken:z.string().nullable()});
 export const workbenchOutputSchemas={
   'context.options':z.strictObject({entities:z.array(schemas.directoryEntitySchema),links:z.array(schemas.directoryLinkSchema),goals:z.array(schemas.coreGoalDefinitionSchema)}),
@@ -91,12 +92,12 @@ export type WorkbenchReadModel=WorkbenchReadModels[WorkbenchQueryName];
 const fail=(code:string,status=422):never=>{throw new WorkbenchHttpError(status,code,code);};
 const ref=(entityType:string,value:Header):VersionRef=>({entityType,id:value.id,revision:value.revision});
 const same=(a:unknown,b:unknown)=>JSON.stringify(a)===JSON.stringify(b);
-function visible(value:Header,context:QueryContext):boolean {
+function visible(value:Header,context:QueryContext,entityType:string):boolean {
   const anchor=value.publicationAnchorId?context.repository.readPublicationAnchor({entityType:'publication_anchor',id:value.publicationAnchorId}):null;
-  return anchor?.publicationState==='confirmed' || value.actor.installationId===context.installationId && value.actor.profilePersonId===context.ownAccess.personId;
+  return anchor?.publicationState==='confirmed' || isOwnCoreVersion(context.repository,entityType,value,{installationId:context.installationId,personId:context.ownAccess.personId});
 }
 function exact<T extends Header>(reference:VersionRef,context:QueryContext):T {
-  const value=context.repository.readVersion<T>(reference); if(!value || !visible(value,context)) return fail('REFERENCE_NOT_FOUND',404); return value;
+  const value=context.repository.readVersion<T>(reference); if(!value || !visible(value,context,reference.entityType)) return fail('REFERENCE_NOT_FOUND',404); return value;
 }
 function inScope(assignment:GoalAssignment,context:GlobalContext,index:WorkbenchReadIndex):boolean {
   const target=contextForScope(assignment.scope,index,context); if(!target) return false;
@@ -167,13 +168,13 @@ function goalRows(request:QueryRequest,context:QueryContext,ports:WorkbenchReadP
         // Current quality is a pure projection. Candidate rows are filtered to
         // this installation/person or confirmed shared data before selection.
         const confirmations=new Map<string,boolean>();
-        const accessible=(value:Header)=>{
-          if(value.actor.installationId===context.installationId && value.actor.profilePersonId===context.ownAccess.personId) return true;
+        const accessible=(value:Header,entityType:string)=>{
+          if(isOwnCoreVersion(context.repository,entityType,value,{installationId:context.installationId,personId:context.ownAccess.personId})) return true;
           const id=value.publicationAnchorId;if(!id) return false;
           if(!confirmations.has(id)) confirmations.set(id,context.repository.readPublicationAnchor({entityType:'publication_anchor',id})?.publicationState==='confirmed');
           return confirmations.get(id)===true;
         };
-        const repository:WorkbenchRepository={...context.repository,readEvaluationCandidates(query){const all=context.repository.readEvaluationCandidates(query);return {facts:all.facts.filter(accessible),captures:all.captures.filter(accessible),applicability:all.applicability.filter(accessible),corrections:all.corrections.filter(accessible)};}};
+        const repository:WorkbenchRepository={...context.repository,readEvaluationCandidates(query){const all=context.repository.readEvaluationCandidates(query);return {facts:all.facts.filter(v=>accessible(v,'observed_fact')),captures:all.captures.filter(v=>accessible(v,'capture')),applicability:all.applicability.filter(v=>accessible(v,'applicability')),corrections:all.corrections.filter(v=>accessible(v,'manual_correction'))};}};
         const input=resolveEvaluationInput({assignmentRef:ref('goal_assignment',assignment),businessTime:request.context.time},repository,context.clock,{hostname:'read-model',installationId:context.installationId,profilePersonId:context.ownAccess.personId});
         const digest=digestBasis(canonicalBasis(input)); const saved=context.repository.findEvaluationByDigest(digest);
         if(saved?.resultRef) {
@@ -304,7 +305,7 @@ export async function queryWorkbench(name:WorkbenchQueryName,request:QueryReques
       const activeJob=running.find(job=>job.resourceKey==='package:'+pkg.packageId)?.snapshot??null;
       // Metadata state alone never enables submission. A new preview command
       // followed by assertPreview remains the authoritative drift/TTL gate.
-      return {packageRef:{entityType:'publication_package',id:pkg.packageId},revision:pkg.revision,editToken:`draft:${pkg.packageId}:${pkg.revision}`,incomplete:pkg.entries.filter(e=>!e.complete).length,publication,activeJob,previewCurrent:null,delivery:ports.publishing.readOwnDelivery?.(context,pkg.packageId)??null,zones:packageZones(pkg.entries,ports.index)};
+      return {packageRef:{entityType:'publication_package',id:pkg.packageId},revision:pkg.revision,editToken:`draft:${pkg.packageId}:${pkg.revision}`,incomplete:pkg.entries.filter(e=>!e.complete).length,publication,activeJob,previewCurrent:null,delivery:ports.publishing.readOwnDelivery?.(context,pkg.packageId)??null,retainedDelivery:ports.publishing.readOwnRetainedDelivery?.(context,pkg.packageId)??null,zones:packageZones(pkg.entries,ports.index)};
     });
     if(name==='uor.queue') return paged(summaries);
     return {summary:summaries[0],entries:packages[0].entries.map(({draftId,entityRef,versionRef,baseRef,definition,complete,problems})=>({draftId,entityRef,versionRef,baseRef,definition,complete,problems}))};

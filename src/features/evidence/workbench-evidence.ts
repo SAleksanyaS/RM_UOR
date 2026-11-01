@@ -17,6 +17,11 @@ export type ArtifactReadResult = { stream: Readable; name: string; mimeType: str
 type Artifact = { artifact_id: string; evidence_id: string; installation_id: string; owner_person_id: string; name: string; mime_type: string; bytes: number; sha256: string };
 const missing = (): never => { throw new WorkbenchHttpError(404, 'ARTIFACT_NOT_FOUND', 'Evidence artifact not found'); };
 const integrity = (): never => { throw new WorkbenchHttpError(422, 'INTEGRITY_MISMATCH', 'Evidence bytes failed integrity verification'); };
+export function initializeEvidenceStore(repository:WorkbenchRepository):void {
+ const sql=repository.sqlForModule('evidence');
+ sql.execMigration('v1', 'CREATE TABLE wb_evidence_artifacts(artifact_id TEXT PRIMARY KEY,evidence_id TEXT NOT NULL,installation_id TEXT NOT NULL,owner_person_id TEXT NOT NULL,name TEXT NOT NULL,mime_type TEXT NOT NULL,bytes INTEGER NOT NULL,sha256 TEXT NOT NULL); CREATE INDEX wb_evidence_by_entity ON wb_evidence_artifacts(evidence_id);');
+ sql.execMigration('v2-published', 'CREATE TABLE wb_evidence_published_artifacts(artifact_id TEXT PRIMARY KEY,evidence_id TEXT NOT NULL,installation_id TEXT NOT NULL,owner_person_id TEXT NOT NULL,name TEXT NOT NULL,mime_type TEXT NOT NULL,bytes INTEGER NOT NULL,sha256 TEXT NOT NULL)');
+}
 export function createEvidenceService({ repository, store, files, clock }: { repository: WorkbenchRepository; store: DraftStore; files: FileStore; clock: Clock }) {
   const sql = repository.sqlForModule('evidence');
   sql.execMigration('v1', 'CREATE TABLE wb_evidence_artifacts(artifact_id TEXT PRIMARY KEY,evidence_id TEXT NOT NULL,installation_id TEXT NOT NULL,owner_person_id TEXT NOT NULL,name TEXT NOT NULL,mime_type TEXT NOT NULL,bytes INTEGER NOT NULL,sha256 TEXT NOT NULL); CREATE INDEX wb_evidence_by_entity ON wb_evidence_artifacts(evidence_id);');

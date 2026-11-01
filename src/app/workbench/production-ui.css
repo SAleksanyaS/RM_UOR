@@ -1,0 +1,16 @@
+.wb-local-access { display:flex; flex-wrap:wrap; align-items:center; gap:.5rem; }
+.wb-local-access label { display:flex; align-items:center; gap:.5rem; }
+.wb-local-access select { width:auto; }
+.wb-shell [role=tablist] { display:flex; flex-wrap:wrap; gap:.5rem; margin-bottom:1rem; }
+.wb-shell [role=tab][aria-selected=true] { border-color:#006d54; background:#d1f2df; color:#123d2f; }
+.oko-embedded { min-height:0; border:1px solid #dfe6df; border-radius:8px; overflow:hidden; color:#203734; background:#f4f6f3; }
+.oko-embedded .oko-layout { min-height:0; grid-template-columns:210px minmax(0,1fr); }
+.oko-embedded .oko-main { padding:1rem; }
+.oko-embedded .oko-main h1 { font-size:1.4rem; }
+@media(max-width:700px) { .oko-embedded .oko-layout { grid-template-columns:minmax(0,1fr); } .oko-embedded .oko-sidebar { border-right:0; border-bottom:1px solid #dfe6df; padding:1rem; } }
+.wb-context-controls { padding: 1rem; border-bottom: 1px solid #b8cdc4; background: #fff; color: #16332b; }
+.wb-context-scopes, .wb-context-time { display: flex; flex-wrap: wrap; gap: .75rem; align-items: end; }
+.wb-context-time { margin-top: .75rem; }
+.wb-context-scopes > div, .wb-context-time > div { flex: 1 1 12rem; min-width: 0; }
+.wb-context-controls label { display: block; margin-bottom: .25rem; }
+.wb-context-controls input, .wb-context-controls select { width: 100%; min-width: 0; max-width: 100%; box-sizing: border-box; }

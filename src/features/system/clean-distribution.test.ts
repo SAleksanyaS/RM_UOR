@@ -37,6 +37,27 @@ async function repository() {
 }
 
 describe('clean distribution from the accepted code revision', () => {
+  it('ships the exact public workbench README targets without admitting neighboring evidence documents', async () => {
+    const root = await repository();
+    const publicDocs = ['docs/OKO_WORKFLOW.md', 'docs/validation/workbench-acceptance.md', 'docs/releases/workbench-candidate.md'];
+    await put(root, 'README.md', '# Synthetic release kit\n' + publicDocs.map((name, index) => `[Public guide ${index + 1}](${name})`).join('\n'));
+    for (const name of publicDocs) await put(root, name, `# Synthetic public document: ${name}`);
+    for (const name of ['docs/validation/internal-evidence.md', 'docs/releases/internal-evidence.md', 'docs/validation/credentials.md', 'docs/releases/notes.local.md']) await put(root, name, 'synthetic-private-evidence');
+    await git(root, 'add', '.'); await git(root, 'commit', '-m', 'Synthetic workbench release links');
+    const result = await exportCleanDistribution({ projectRoot: root }), zip = await JSZip.loadAsync(await readFile(result.path));
+    const exportedReadme = await zip.file('README.md')!.async('text');
+    const links = [...exportedReadme.matchAll(/\]\((docs\/[^)]+)\)/g)].map(match => match[1]);
+    expect(links).toEqual(publicDocs);
+    const manifest = JSON.parse(await zip.file('DISTRIBUTION_MANIFEST.json')!.async('text'));
+    for (const name of links) {
+      expect(zip.file(name), `Broken exported README link: ${name}`).not.toBeNull();
+      const bytes = await zip.file(name)!.async('nodebuffer');
+      expect(bytes.toString('utf8')).toBe(`# Synthetic public document: ${name}`);
+      expect(manifest.files).toContainEqual({ path: name, bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') });
+    }
+    expect(Object.keys(zip.files).some(name => /internal-evidence|credentials|notes\.local/.test(name))).toBe(false);
+  });
+
   it('exports only allowed committed code and current docs with independently verifiable hashes', async () => {
     // A switch to the working tree, or a broad archive copy, would leak these files.
     const root = await repository();

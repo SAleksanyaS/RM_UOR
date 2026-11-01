@@ -1,0 +1,74 @@
+import { afterEach, expect, it } from 'vitest';
+import { createLocalBrowserRun } from './helpers/browser';
+import { fixtureId, makeEntityGraph, makeHeader, makeNumericFixture } from '../fixtures/workbench/factories';
+import { seedGraph } from '../fixtures/workbench/repository';
+import type { DirectoryEntity, SourceFieldMapping } from '../../src/domain/workbench/entities';
+import type { CaptureRequest, SourceAdapter } from '../../src/features/connectors/workbench-source-contracts';
+import { sourcePayloadHash } from '../../src/features/connectors/workbench-source-contracts';
+
+const closes: Array<() => Promise<void>> = [];
+afterEach(async () => { for (const close of closes.splice(0).reverse()) await close(); });
+it('fresh_user_selects_published_scope_time_and_source_context_in_main_chrome', async () => {
+  const observed: CaptureRequest[] = [];
+  const adapter: SourceAdapter = { async check(request) { observed.push(structuredClone(request)); return { status: 'ready', issues: [] }; }, async collect(request) {
+    const date = request.businessTime.kind === 'as_of' ? request.businessTime.date : '2026-10-20';
+    const rawRows = [{ rowKey: '["native-row"]', cells: Object.fromEntries(Object.entries({ demo_row_key: 'native-row', demo_value: '92', demo_date: date, demo_scope_id: fixtureId(73012), demo_metric_id: fixtureId(201) }).map(([key, original]) => [key, { kind: 'text' as const, original }])) }];
+    return { operationId: request.operationId, sourceRef: request.sourceRef, mappingRef: request.mappingRef, capturedAt: '2026-11-01T08:00:00Z', sourceUpdatedAt: '2026-11-01T08:00:00Z', rawRows, artifact: null, payloadHash: sourcePayloadHash(rawRows), coverage: { complete: true, expectedRows: 1, receivedRows: 1, evidence: ['Synthetic one-row complete source'] }, issues: [] };
+  } };
+  const f = await createLocalBrowserRun({ clock: { now: () => '2026-11-01T08:00:00Z' }, sourceAdapters: new Map([['qlik', adapter]]) }); closes.push(f.close);
+  const input = makeNumericFixture({ scope: { kind: 'product', id: fixtureId(73012) } }), graph = makeEntityGraph(input), anchor = input.goal.publicationAnchorId;
+  input.goal.title = 'Цель выбора области';
+  (graph.entries.find(row => row.entityType === 'source_field_mapping')!.value as SourceFieldMapping).fixedScope = input.assignment.scope;
+  (graph.entries.find(row => row.entityType === 'source_field_mapping')!.value as SourceFieldMapping).productKeyField = null;
+  (graph.entries.find(row => row.entityType === 'directory_entity' && row.value.id === fixtureId(73012))!.value as DirectoryEntity).name = 'Продукт Б';
+  const header = (seed: number) => makeHeader(seed, { publicationAnchorId: anchor });
+  for (const [id, kind, name] of [[73000, 'dit', 'ДИТ А'], [73001, 'cluster', 'Кластер А'], [73002, 'product', 'Продукт А'], [73010, 'dit', 'ДИТ Б'], [73011, 'cluster', 'Кластер Б'], [73013, 'team', 'Команда Б']] as const) graph.entries.push({ entityType: 'directory_entity', value: { ...header(id), kind, name, externalKeys: [] } });
+  for (const [seed, kind, from, to] of [[73100, 'dit_cluster', 73000, 73001], [73101, 'cluster_product', 73001, 73002], [73102, 'dit_cluster', 73010, 73011], [73103, 'cluster_product', 73011, 73012], [73104, 'product_team', 73012, 73013], [73105, 'cluster_team', 73011, 73013]] as const) graph.entries.push({ entityType: 'directory_link', value: { ...header(seed), kind, from: { entityType: 'directory_entity', id: fixtureId(from) }, to: { entityType: 'directory_entity', id: fixtureId(to) } } });
+  for (const [seed, kind, id] of [[73106, 'cluster', 73011], [73107, 'product', 73012]] as const) graph.entries.push({ entityType: 'directory_link', value: { ...header(seed), kind: 'leader', scope: { kind, id: fixtureId(id) }, personId: input.goal.primaryCuratorPersonId } });
+  seedGraph(f.runtime.deps.repository, graph);
+  await f.request.session(); expect((await f.request.query<any>('preferences.get')).values.context).toBeNull();
+  const page = f.page;
+  const queries: Array<{ name: string; context: any }> = [];
+  page.on('request', request => { if (request.method() === 'POST' && request.url().includes('/queries/')) queries.push({ name: request.url().split('/queries/')[1], context: request.postDataJSON().context }); });
+  try {
+    await page.goto(f.origin + '/overview');
+    await page.getByLabel('Режим работы', { exact: true }).selectOption('viewer');
+    await expect.poll(async () => (await f.request.session()).role).toBe('viewer');
+    await page.getByLabel('ДИТ', { exact: true }).selectOption(fixtureId(73000));
+    await page.getByLabel('Кластер', { exact: true }).selectOption(fixtureId(73001));
+    await page.getByLabel('Продукт', { exact: true }).selectOption(fixtureId(73002));
+    await page.getByLabel('ДИТ', { exact: true }).selectOption(fixtureId(73010));
+    expect(await page.getByLabel('Кластер', { exact: true }).inputValue()).toBe('');
+    expect(await page.getByLabel('Продукт', { exact: true }).inputValue()).toBe('');
+    await page.getByLabel('Кластер', { exact: true }).selectOption(fixtureId(73011));
+    await page.getByLabel('Продукт', { exact: true }).selectOption(fixtureId(73012));
+    await page.getByLabel('Команда', { exact: true }).selectOption(fixtureId(73013));
+    await page.getByLabel('Режим времени', { exact: true }).selectOption('period');
+    await page.getByLabel('Начало периода — включительно', { exact: true }).fill('2026-11-01');
+    await page.getByLabel('Конец периода — не включается', { exact: true }).fill('2026-10-01');
+    await page.getByRole('button', { name: 'Применить время', exact: true }).click();
+    await page.getByRole('region', { name: 'Область и время', exact: true }).getByRole('alert').filter({ hasText: 'конец позже начала' }).waitFor();
+    expect(new URL(page.url()).searchParams.has('from')).toBe(false);
+    await page.getByLabel('Начало периода — включительно', { exact: true }).fill('2026-10-01');
+    await page.getByLabel('Конец периода — не включается', { exact: true }).fill('2026-11-01');
+    await page.getByRole('button', { name: 'Применить время', exact: true }).click();
+    await expect.poll(() => new URL(page.url()).searchParams.get('to')).toBe('2026-11-01');
+    await page.getByLabel('Режим времени', { exact: true }).selectOption('as_of');
+    await page.getByLabel('Дата результата', { exact: true }).fill('2026-10-20');
+    await page.getByRole('button', { name: 'Применить время', exact: true }).click();
+    await page.getByLabel('Команда', { exact: true }).selectOption('');
+    await page.getByRole('button', { name: 'Данные', exact: true }).click();
+    await page.getByRole('button', { name: 'Цель выбора области', exact: true }).click();
+    await page.getByRole('button', { name: 'Получить данные ОКО', exact: true }).click();
+    await expect.poll(() => observed.length).toBeGreaterThan(0);
+    expect(observed.at(-1)!.context).toMatchObject({ scopePath: { ditId: fixtureId(73010), clusterId: fixtureId(73011), productId: fixtureId(73012), teamId: null }, time: { kind: 'as_of', date: '2026-10-20' }, goalId: input.goal.id });
+    const access = await f.runtime.deps.accessPolicy.resolveOwnAccess(), owner = { installationId: f.runtime.deps.installationId, profilePersonId: access.personId };
+    await expect.poll(() => f.runtime.services.sources.listOwnCaptures(owner).length).toBe(1);
+    expect(f.runtime.services.sources.listOwnCaptures(owner)[0].capture.acceptedRows).toBe(1);
+    await expect.poll(async () => (await f.request.query<any>('preferences.get')).values.context?.time.date).toBe('2026-10-20');
+    expect(queries.some(query => query.name === 'goals.list' && query.context?.scopePath.productId === fixtureId(73012) && query.context.time.date === '2026-10-20')).toBe(true);
+    await page.getByRole('button', { name: 'Цели', exact: true }).click(); await page.goBack();
+    expect(await page.getByLabel('Продукт', { exact: true }).inputValue()).toBe(fixtureId(73012));
+    for (const width of [320, 360, 1024]) { await page.setViewportSize({ width, height: 900 }); expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true); await page.screenshot({ path: f.artifact('global-context-' + width + '.png'), fullPage: true }); }
+  } catch (error) { await page.screenshot({ path: f.artifact('global-context-failure.png'), fullPage: true }); throw Error(String(error) + '\n' + await page.locator('body').innerText()); }
+}, 90000);

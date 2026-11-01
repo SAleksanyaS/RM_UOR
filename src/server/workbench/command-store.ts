@@ -12,6 +12,8 @@ export type CommandOwnership = { scope: 'installation' | 'person'; personId: str
 type Intent = { digest: string; phase: string; request_json: string; accepted_json: string | null; receipt_json: string | null; recovery_json: string | null; owner_scope: 'installation' | 'person'; owner_person_id: string | null };
 const execution = new AsyncLocalStorage<{ context: CommandContext; output: z.ZodType }>();
 const outcomeSchema = z.strictObject({ result: z.record(z.string(), z.unknown()), changedRefs: z.array(entityRefSchema), editToken: z.string().min(1).nullable() });
+/** Trusted active command scope; never reconstructed from an entity header. */
+export function currentCommandContext(): CommandContext | null { return execution.getStore()?.context ?? null; }
 export function stableJson(value: unknown): string {
   if (Array.isArray(value)) return '[' + value.map(stableJson).join(',') + ']';
   if (value !== null && typeof value === 'object') return '{' + Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([k, v]) => JSON.stringify(k) + ':' + stableJson(v)).join(',') + '}';

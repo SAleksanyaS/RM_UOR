@@ -32,7 +32,7 @@ export function createSourceService({ repository, store, adapters, browserAdapte
     },
     async capture(context, unvalidated) {
       const input = captureInputSchema.parse(unvalidated);
-      if (context.repository !== repository || context.actor.installationId !== context.installationId) return problem('COMMAND_CONTEXT_MISMATCH', 'Source command context does not match this installation', 409);
+      if (context.repository !== repository || context.actor.installationId !== context.installationId || context.actor.profilePersonId!==context.ownAccess.personId) return problem('COMMAND_CONTEXT_MISMATCH', 'Source command context does not match this installation', 409);
       const job = jobs.findByCommand(context.commandId, context.installationId);
       if (!job) return problem('SOURCE_JOB_REQUIRED', 'Capture requires its owned accepted job', 409);
       const existing = store.findOperation(context.installationId, job.jobId, input.goalId); if (existing) return { ...existing, duplicate: true };
@@ -66,7 +66,7 @@ export function createSourceService({ repository, store, adapters, browserAdapte
         const rowsByKey = new Map<string, CanonicalSourceRow>(); const rawByKey = new Map(raw.rawRows.map(r => [r.rowKey, r])); const issues: SourceIssue[] = [...checked.issues, ...raw.issues, ...normalized.issues];
         for (const row of normalized.rows) { if (!rawByKey.has(row.rowKey) || rowsByKey.has(row.rowKey)) return problem('SOURCE_ROW_MISMATCH', 'Normalization must preserve unique original row keys'); rowsByKey.set(row.rowKey, row); }
         for (const row of raw.rawRows) if (!rowsByKey.has(row.rowKey)) issues.push(issue('NORMALIZED_ROW_MISSING', [row.rowKey]));
-        stage('source.enrich', 3); const enriched = enrichmentResultSchema.parse(enricher.enrich({ rows: structuredClone(normalized.rows), directoryRevision: binding.directoryRevision })); checkAbort();
+        stage('source.enrich', 3); const enriched = enrichmentResultSchema.parse(enricher.enrichExact ? enricher.enrichExact({capture:{sourceId:binding.source.id,mappingRef:binding.mappingRef,rawRows:structuredClone(raw.rawRows),canonicalRows:structuredClone(normalized.rows)},mapping:structuredClone(binding.mapping),directoryEntities:structuredClone(binding.directoryEntities),directoryLinks:structuredClone(binding.directoryLinks)}) : enricher.enrich({ rows: structuredClone(normalized.rows), directoryRevision: binding.directoryRevision })); checkAbort();
         for (const field of enriched.issues) issues.push({ code: field.code, stage: 'enrich', retryable: false, message: field.message || 'Source enrichment is incomplete', rowKeys: [], refs: field.ref ? [field.ref] : [] });
         for (const ref of enriched.directoryLinkRefs) if (!binding.directoryLinkRefs.some(r => stableJson(r) === stableJson(ref))) return problem('SOURCE_DIRECTORY_MISMATCH', 'Enrichment references an unverified directory link');
         const enrichedKeys = new Set<string>(); const scopes = new Map<string, ScopeRef>();

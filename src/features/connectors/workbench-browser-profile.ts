@@ -43,7 +43,9 @@ export function createBrowserProfileService({ runtimeRoot, observeSession }: { r
         try { if (!path.isAbsolute(profile.browser.executablePath) || !(await stat(profile.browser.executablePath)).isFile()) throw Error(); }
         catch { throw new WorkbenchHttpError(422, 'BROWSER_CONFIGURATION_INVALID', 'Browser executable must be an existing local file'); }
       } else if (!profile.browser.channel) throw new WorkbenchHttpError(422, 'BROWSER_CONFIGURATION_INVALID', 'Configure an executable or installed browser channel');
-      const root = await browserOwnerRoot(runtimeRoot, owner(context)); await browserProfilePath(root, profile);
+      const root = await browserOwnerRoot(runtimeRoot, owner(context));
+      try { await browserProfilePath(root, profile); }
+      catch (error) { if (error instanceof ConnectorError) throw new WorkbenchHttpError(422, 'BROWSER_CONFIGURATION_INVALID', error.message); throw error; }
       return withProfileQueue(`${root}:browser-bindings`, AbortSignal.timeout(10000), async () => {
         const current = await readPrivateProfiles(root);
         const value = await bindings(root);

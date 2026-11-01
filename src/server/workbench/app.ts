@@ -3,8 +3,8 @@ import cookie from '@fastify/cookie';
 import { createWorkbenchApplication, recoverWorkbenchCommands, type WorkbenchApplicationDeps } from './application';
 import { registerWorkbenchRoutes } from './routes';
 
-/** Isolated v1 composition; legacy launcher is deliberately unchanged until T39. */
-export async function createWorkbenchApp(deps: WorkbenchApplicationDeps, options: { configure?: (app: FastifyInstance) => Promise<void> } = {}): Promise<FastifyInstance> {
+/** Production v1 composition; startup admission is controlled by the runtime coordinator. */
+export async function createWorkbenchApp(deps: WorkbenchApplicationDeps, options: { deferActivation?: boolean; configure?: (app: FastifyInstance) => Promise<void> } = {}): Promise<FastifyInstance> {
   await deps.maintenance?.recover?.();
   const application = createWorkbenchApplication(deps);
   const app = Fastify({ logger: false, trustProxy: false });
@@ -15,8 +15,7 @@ export async function createWorkbenchApp(deps: WorkbenchApplicationDeps, options
     await registerWorkbenchRoutes(app, application);
     await options.configure?.(app);
     await app.ready();
-    await recoverWorkbenchCommands(deps);
-    deps.notifications?.start();
+    if (!options.deferActivation) { await recoverWorkbenchCommands(deps); deps.notifications?.start(); }
     return app;
   } catch (error) { await app.close(); throw error; }
 }

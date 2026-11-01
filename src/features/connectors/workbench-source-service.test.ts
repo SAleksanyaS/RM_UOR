@@ -18,6 +18,9 @@ import { captureResultSchema, captureRequestSchema, rawBatchSchema, sourcePayloa
 import { createSourceStore } from './workbench-source-store';
 import { createSourceService, registerSourceCommands } from './workbench-source-service';
 import { createSyntheticDemoSource, syntheticDemoNormalizer } from './workbench-demo-source';
+import { createHash,randomUUID } from 'node:crypto';
+import { createSourceArchiveOwners } from '../workspace-maintenance/workbench/source-archive-owners';
+import { createWorkspaceOwnership } from '../../server/storage/workbench-ownership';
 
 const cleanups: Array<() => void> = [];
 afterEach(() => { while (cleanups.length) cleanups.pop()!(); });
@@ -70,6 +73,48 @@ it('viewer_capture_preserves_raw_and_does_not_confirm', async () => {
   expect(f.fallback()).toMatchObject({ obtainedVia: 'local-cache', sourceDate: '2026-10-27' });
   expect(f.repository.getHead({ entityType: 'attestation', id: result.captureRef.id })).toBeNull();
   expect(f.appendedTypes).toEqual(['capture', 'observed_fact', 'observed_fact']);
+});
+it('passes exact immutable capture mapping and directory to a stateless enrichment owner',async()=>{
+ const f=fixture(),legacy=f.enricher.enrich;let exact=false;
+ f.enricher.enrichExact=input=>{exact=true;expect(input.capture.sourceId).toBe(f.binding.sourceRef.id);expect(input.capture.rawRows).toHaveLength(2);expect(input.mapping.id).toBe(f.binding.mappingRef.id);expect(input.directoryEntities.map(e=>e.id)).toEqual(f.binding.directoryEntityRefs.map(r=>r.id));return legacy({rows:input.capture.canonicalRows,directoryRevision:f.binding.directoryRevision});};
+ f.enricher.enrich=()=>{throw Error('Ambient binding enrichment must not run');};
+ await f.capture();expect(exact).toBe(true);
+});
+it('classifies an exact own capture by indexed metadata without parsing selected or unrelated historical payloads',async()=>{
+ const f=fixture(),captured=await f.capture(),owner={installationId:f.context.installationId,profilePersonId:f.context.ownAccess.personId},sql=f.repository.sqlForModule('sources');
+ sql.run('INSERT INTO wb_sources_captures VALUES(?,?,?,?)',[owner.installationId,randomUUID(),randomUUID(),'unrelated damaged historical payload']);sql.run('UPDATE wb_sources_captures SET value_json=? WHERE capture_id=?',['selected payload is deliberately not parsed',captured.captureRef.id]);
+ expect(f.store.hasOwnCapture(owner,captured.captureRef.id)).toBe(true);expect(f.store.hasOwnCapture({...owner,profilePersonId:randomUUID()},captured.captureRef.id)).toBe(false);expect(f.store.hasOwnCapture(owner,randomUUID())).toBe(false);
+ f.repository.sqlForModule('ownership').run('DELETE FROM wb_ownership_bindings WHERE module_id=? AND object_key=?',['sources','capture:'+captured.captureRef.id]);expect(f.store.hasOwnCapture(owner,captured.captureRef.id)).toBe(false);
+});
+it('archives complete source history and rebinds downloads without changing historical actor',async()=>{
+ const f=fixture(),personId=fixtureId(17);f.context.actor.profilePersonId=personId;f.context.ownAccess.personId=personId as never;
+ f.store.saveAllowedContext(f.saved,f.saved.revision,personId);
+ const collect=f.adapter.collect.bind(f.adapter);
+ f.adapter.collect=async(request,signal)=>{const raw=await collect(request,signal),bytes=Buffer.from('source original '+request.operationId);const artifact=f.store.saveArtifact({installationId:f.context.installationId,personId,artifactId:randomUUID(),mimeType:'text/csv',bytesValue:bytes});return {...raw,artifact,payloadHash:artifact.hash};};
+ const first=await f.capture(),normalize=f.normalizer.normalize;f.normalizer.normalize=input=>{const v=normalize(input);return {...v,rows:v.rows.map((r,i)=>i===0?{...r,numbers:{demo_value:null}}:r)};};
+ const second=await f.capture();expect(f.fallback().latestAttempt!.captureRef).toEqual(second.captureRef);expect(f.fallback().captureRef).toEqual(first.captureRef);
+ const environment={installationId:f.context.installationId,personId:()=>personId,localPreview:false,subjectRoot:()=>f.root};
+ const codec=createSourceArchiveOwners(f.repository,environment)[0],records=codec.exportRecords(f.repository),files=await codec.files(f.repository,records);
+ expect(records.filter(r=>r.schemaId==='capture')).toHaveLength(2);expect(records.filter(r=>r.schemaId==='artifact')).toHaveLength(2);expect(JSON.stringify(records)).not.toContain('profileRef');
+ const target=createWorkbenchRepository({filename:':memory:',artifactRoot:path.join(f.root,'target')});cleanups.push(()=>target.close());
+ const installationId=randomUUID();createSourceArchiveOwners(target,{...environment,installationId});target.restoreWorkspaceCore(f.repository.exportWorkspaceCore());
+ const context={installationId,personId,files:new Map(files.map(file=>[file.path,file.bytesValue])),stagedRoot:f.root,subjectPath:(namespace:string,id:string)=>path.join(f.root,namespace,id)};
+ codec.restoreRecords(target,records,context);expect(codec.exportRecords(target)).toEqual(records);
+ const restored=createSourceStore({repository:target});expect(restored.listOwnCaptures({installationId,profilePersonId:personId})).toHaveLength(2);
+ const original=restored.readOwnCaptureArtifact({installationId,profilePersonId:personId},first.captureRef.id)!;expect(original.view.capture.actor.installationId).toBe(f.context.installationId);expect(createHash('sha256').update(original.bytes).digest('hex')).toBe(original.view.artifact!.hash.slice(7));
+ expect(restored.readOwnCaptureArtifact({installationId,profilePersonId:randomUUID()},first.captureRef.id)).toBeNull();
+ expect(()=>codec.authorize(records,randomUUID(),installationId)).toThrow();
+ const ledger=target.sqlForModule('ownership');ledger.run('DELETE FROM wb_ownership_bindings WHERE module_id=? AND object_key=?',['sources','capture:'+first.captureRef.id]);expect(()=>codec.exportRecords(target)).toThrow();
+ expect(createWorkspaceOwnership(f.repository).read('sources','capture:'+first.captureRef.id)?.personId).toBe(personId);
+});
+it('adopts legacy source linkage only in explicitly trusted exact local preview installation',async()=>{
+ const f=fixture(),personId=fixtureId(17);f.context.actor.profilePersonId=personId;f.context.ownAccess.personId=personId as never;
+ const captured=await f.capture();f.repository.sqlForModule('ownership').run('DELETE FROM wb_ownership_bindings WHERE module_id=?',['sources']);
+ const environment={installationId:f.context.installationId,personId:()=>personId,localPreview:false,subjectRoot:()=>f.root};
+ expect(()=>createSourceArchiveOwners(f.repository,environment)[0].exportRecords(f.repository)).toThrow();
+ expect(()=>createSourceArchiveOwners(f.repository,{...environment,localPreview:true,installationId:randomUUID()})[0].exportRecords(f.repository)).toThrow();
+ const owners=createSourceArchiveOwners(f.repository,{...environment,localPreview:true});expect(owners[0].exportRecords(f.repository).filter(r=>r.schemaId==='capture')).toHaveLength(1);
+ expect(createWorkspaceOwnership(f.repository).read('sources','capture:'+captured.captureRef.id)?.provenance).toBe('local-preview-adoption');
 });
 it('failed_collection_coverage_cancel_and_guard_keep_last_success', async () => {
   const f = fixture(); const first = await f.capture(); const original = f.adapter.collect;

@@ -3,6 +3,8 @@ import type { Clock, EntityRef, Header, VersionRef } from '../../../domain/workb
 import type { PublicationAnchor } from '../../../domain/workbench/publication';
 import { entityReferences, validateReferences } from '../../../domain/workbench/schemas';
 import type { WorkbenchRepository } from '../../../server/storage/workbench-repository';
+import { isPublicationAnchorAttachment } from '../../../server/storage/workbench-repository';
+import { isOwnCoreVersion } from '../../../server/storage/workbench-ownership';
 import type { CommandContext } from '../../../server/workbench/command-registry';
 import { commitCommandEffect, createCommandStore } from '../../../server/workbench/command-store';
 import type { Problem } from '../../../server/workbench/protocol';
@@ -21,9 +23,9 @@ import { canonicalBytes, hashBytes, integrity } from './package-manifest';
 import { fail, objectKey, problem, readMainProjection, versionKey } from './package-projection';
 import { verifyPublicationAnchor } from './publication-anchor';
 
-export type PublicationApplyResult = { appliedCommit: string; stateRevision: string; anchors: PublicationAnchor[]; warnings: Problem[] };
+export type PublicationApplyResult = { appliedCommit: string; appliedAt: string | null; stateRevision: string; anchors: PublicationAnchor[]; warnings: Problem[] };
 export type PublicationApplyDependencies = { repository: WorkbenchRepository; git: PublicationGitPort; artifacts: PackageArtifactStore; clock: Clock; bitbucket: BitbucketPort | null; publication?: PublicationClassification; recheck?: () => Promise<void>; knownProposal?: (packageId: string) => ProposalLink | null; evidence?: { stagePublished(context:CommandContext,evidence:Evidence,bytes:Uint8Array):Promise<{commit():void}> } };
-type Applied = { repositoryId: string; commit: string };
+type Applied = { repositoryId: string; commit: string; appliedAt: string | null };
 type Item = { type: string; value: WorkbenchEntity };
 type Capsule = { manifest: PackageManifest; files: Map<string, Uint8Array>; main: VerifiedMain; anchor: PublicationAnchor };
 const refOf = (item: Item): VersionRef => ({ entityType: item.type, id: item.value.id, revision: item.value.revision });
@@ -33,9 +35,11 @@ const mainSignature = (main: VerifiedMain) => hashBytes(canonicalBytes({ reposit
 function appliedStore(repository: WorkbenchRepository) {
   const sql = repository.sqlForModule('publishing', { trackStateRevision: false });
   sql.execMigration('v1-applied-publication', 'CREATE TABLE wb_publishing_applied(singleton INTEGER PRIMARY KEY CHECK(singleton=1),repository_id TEXT NOT NULL,commit_oid TEXT NOT NULL)');
+  // Existing pointers have no observed local apply time. Preserve that absence.
+  sql.execMigration('v2-applied-publication-time', 'ALTER TABLE wb_publishing_applied ADD COLUMN applied_at TEXT');
   return {
-    read: (): Applied | null => { const row = sql.get<{ repository_id: string; commit_oid: string }>('SELECT repository_id,commit_oid FROM wb_publishing_applied WHERE singleton=1'); return row ? { repositoryId: row.repository_id, commit: row.commit_oid } : null; },
-    write: (value: Applied) => sql.run('INSERT OR REPLACE INTO wb_publishing_applied(singleton,repository_id,commit_oid) VALUES(1,?,?)', [value.repositoryId, value.commit]),
+    read: (): Applied | null => { const row = sql.get<{ repository_id: string; commit_oid: string; applied_at: string | null }>('SELECT repository_id,commit_oid,applied_at FROM wb_publishing_applied WHERE singleton=1'); return row ? { repositoryId: row.repository_id, commit: row.commit_oid, appliedAt: row.applied_at } : null; },
+    write: (value: Applied) => sql.run('INSERT OR REPLACE INTO wb_publishing_applied(singleton,repository_id,commit_oid,applied_at) VALUES(1,?,?,?)', [value.repositoryId, value.commit, value.appliedAt]),
   };
 }
 export function readAppliedPublication(repository: WorkbenchRepository): Applied | null { return appliedStore(repository).read(); }
@@ -68,12 +72,12 @@ function capsules(main: VerifiedMain, verifiedAt: string): { all: Capsule[]; sel
   return { all, selected: [...selected.values()].sort((a, b) => a.anchor.id < b.anchor.id ? -1 : a.anchor.id > b.anchor.id ? 1 : 0) };
 }
 
-function validateIncoming(repository: WorkbenchRepository, selected: Capsule[], anchors: PublicationAnchor[], allCapsules: Capsule[]) {
+function validateIncoming(repository: WorkbenchRepository, selected: Capsule[], anchors: PublicationAnchor[], allCapsules: Capsule[], owner:{installationId:string;personId:string|null}) {
   const incoming = readMainProjection({ repositoryId: 'verified-projection', commit: '0'.repeat(40), files: new Map(selected.flatMap(capsule => [...capsule.main.files])) });
   const byAnchor = new Map(anchors.map(anchor => [anchor.id, anchor]));
   for (const item of incoming.versions.values()) {
     const prior = repository.readVersion<WorkbenchEntity>(refOf(item));
-    if (prior && !equal(prior, item.value)) return fail('REFERENCE_VERSION_COLLISION');
+    if (prior && !equal(prior, item.value) && !(isPublicationAnchorAttachment(prior,item.value) && byAnchor.get(item.value.publicationAnchorId!)?.publicationState==='confirmed' && isOwnCoreVersion(repository,item.type,prior,owner))) return fail('REFERENCE_VERSION_COLLISION');
   }
   for (const anchor of anchors) if (repository.readPublicationAnchor({ entityType: 'publication_anchor', id: anchor.id })?.publicationState !== 'confirmed') {
     for (const item of repository.readVersionsForPublicationAnchor(anchor.id)) {
@@ -219,7 +223,7 @@ export async function applyVerifiedPublication(context: CommandContext, input: {
     }
     anchors.push(anchor);
   }
-  let incoming = validateIncoming(deps.repository, selected, anchors, all);
+  let incoming = validateIncoming(deps.repository, selected, anchors, all, identity);
   if (main.files.size && !deps.publication) return fail('CLASSIFICATION_REQUIRED');
   for (const owner of all) for (const item of readMainProjection(owner.main).versions.values()) {
     if (!deps.publication!.classifyRecord(item.type, structuredClone(item.value))) return fail('CLASSIFICATION_REQUIRED');
@@ -249,15 +253,21 @@ export async function applyVerifiedPublication(context: CommandContext, input: {
   return commitCommandEffect(context, () => {
     assertContext();
     if (!equal(store.read(), priorApplied)) return fail('PREVIEW_STALE', 409);
-    incoming = validateIncoming(deps.repository, selected, anchors, all);
+    incoming = validateIncoming(deps.repository, selected, anchors, all, identity);
     for (const anchor of anchors) {
       const ref = { entityType: 'publication_anchor', id: anchor.id }, existing = deps.repository.readPublicationAnchor(ref);
       if (!existing || !equal(existing, anchor)) deps.repository.appendPublicationAnchor(anchor, deps.repository.publicationAnchorMetadataRevision(ref));
     }
     const changedRefs: EntityRef[] = anchors.map(anchor => ({ entityType: 'publication_anchor', id: anchor.id }));
-    for (const item of [...incoming.versions.values()].sort((a, b) => versionKey(refOf(a)) < versionKey(refOf(b)) ? -1 : 1)) { deps.repository.importPublishedVersion(item.type, item.value); changedRefs.push({ entityType: item.type, id: item.value.id }); }
+    for (const item of [...incoming.versions.values()].sort((a, b) => versionKey(refOf(a)) < versionKey(refOf(b)) ? -1 : 1)) {
+      const prior=deps.repository.readVersion(refOf(item));
+      if(prior && isPublicationAnchorAttachment(prior,item.value))deps.repository.attachVerifiedPublicationAnchor(item.type,item.value,identity);
+      else deps.repository.importPublishedVersion(item.type, item.value);
+      changedRefs.push({ entityType: item.type, id: item.value.id });
+    }
     for(const commitEvidence of evidenceCommits) commitEvidence();
-    store.write({ repositoryId: main.repositoryId, commit: main.commit });
-    return { result: { appliedCommit: main.commit, stateRevision: (BigInt(deps.repository.getStateRevision()) + 1n).toString(), anchors, warnings }, changedRefs, editToken: null };
+    const appliedAt = priorApplied?.commit === main.commit ? priorApplied.appliedAt : deps.clock.now();
+    store.write({ repositoryId: main.repositoryId, commit: main.commit, appliedAt });
+    return { result: { appliedCommit: main.commit, appliedAt, stateRevision: (BigInt(deps.repository.getStateRevision()) + 1n).toString(), anchors, warnings }, changedRefs, editToken: null };
   }).result;
 }

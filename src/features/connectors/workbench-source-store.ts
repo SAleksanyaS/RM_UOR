@@ -6,13 +6,15 @@ import { uuidSchema, versionRefSchema } from '../../domain/workbench/primitives'
 import { fileArtifactRefSchema } from '../../domain/workbench/schemas';
 import type { WorkbenchRepository } from '../../server/storage/workbench-repository';
 import { globalContextSchema, revisionTokenSchema, WorkbenchHttpError, type GlobalContext, type RevisionToken } from '../../server/workbench/protocol';
-import { stableJson } from '../../server/workbench/command-store';
-import { captureResultSchema, rawBatchSchema, sourceIssueSchema, type CaptureRequest, type CaptureResult, type RawBatch, type SourceIssue } from './workbench-source-contracts';
+import { stableJson,currentCommandContext } from '../../server/workbench/command-store';
+import { captureRequestSchema,captureResultSchema, rawBatchSchema, sourceIssueSchema, type CaptureRequest, type CaptureResult, type RawBatch, type SourceIssue } from './workbench-source-contracts';
+import { createWorkspaceOwnership } from '../../server/storage/workbench-ownership';
 
 export type PublishedSourceBinding = { goalRef: VersionRef; sourceRef: VersionRef; mappingRef: VersionRef; assignmentRef: VersionRef; templateRef: VersionRef | null; methodRef: VersionRef; metricRefs: VersionRef[]; directoryEntityRefs: VersionRef[]; directoryLinkRefs: VersionRef[]; directoryRevision: RevisionToken };
 export type SavedCaptureContext = { installationId: UUIDv4; goalId: UUIDv4; context: GlobalContext; revision: RevisionToken };
 export type ResolvedCaptureBinding = PublishedSourceBinding & { goal: CoreGoalDefinition; source: SourceDefinition; mapping: SourceFieldMapping; assignment: GoalAssignment; method: MethodVersion; metrics: MetricDefinition[]; directoryEntities: DirectoryEntity[]; directoryLinks: DirectoryLink[]; context: GlobalContext; businessTime: GlobalContext['time']; configurationRevision: RevisionToken; adapterKey: string; profileRef: string | null };
-type CaptureEvidence = { request: CaptureRequest; raw: RawBatch; issues: SourceIssue[]; factRefs: VersionRef[]; result: CaptureResult; contextKey: string };
+export type CaptureEvidence = { request: CaptureRequest; raw: RawBatch; issues: SourceIssue[]; factRefs: VersionRef[]; result: CaptureResult; contextKey: string };
+export const captureEvidenceSchema=z.strictObject({request:captureRequestSchema,raw:rawBatchSchema,issues:z.array(sourceIssueSchema),factRefs:z.array(versionRefSchema),result:captureResultSchema,contextKey:z.string().regex(/^[a-f0-9]{64}$/)});
 export type SourceCaptureView = { capture: Capture; facts: ObservedFact[]; issues: SourceIssue[]; coverage: RawBatch['coverage']; artifact: FileArtifactRef | null };
 export type SourceLatestAttempt = { operationId: string; captureRef: VersionRef; sourceId: string; result: Capture['result']; complete: boolean; acceptedRows: number; rejectedRows: number; capturedAt: string; sourceUpdatedAt: string | null; coverage: RawBatch['coverage']; issues: SourceIssue[] };
 /** T17/T21 consumption gate: combine latestAttempt.complete/issues with current calculation completeness before enabling confirmation or claiming current completeness. Retained facts/coverage alone do not prove that the latest ingestion was complete. T14 exposes this evidence; future confirmation/read-model wiring is not implemented here. */
@@ -20,7 +22,7 @@ export type SourceFallback = { obtainedVia: 'local-cache' | 'git' | 'no-data'; s
 export interface SourceStore {
   installPublished(bindings: PublishedSourceBinding[]): void;
   bindAdapter(input: { sourceId: string; adapterKey: string; profileRef: string | null; revision: string }): void;
-  saveAllowedContext(input: SavedCaptureContext, expectedRevision: string | null): void;
+  saveAllowedContext(input: SavedCaptureContext, expectedRevision: string | null, ownerPersonId?: string | null): void;
   sourceIdForGoal(goalId: string): string;
   resolveCapture(input: { installationId: string; goalId: string }): ResolvedCaptureBinding;
   assertUnchanged(binding: ResolvedCaptureBinding, installationId: string): void;
@@ -28,27 +30,34 @@ export interface SourceStore {
   commitCapture(input: { installationId: string; binding: ResolvedCaptureBinding; request: CaptureRequest; raw: RawBatch; capture: Capture; facts: ObservedFact[]; retainedFactRefs?: VersionRef[]; issues: SourceIssue[] }): CaptureResult;
   readCapture(ref: VersionRef, installationId: string): SourceCaptureView | null;
   listOwnCaptures(owner:{installationId:string;profilePersonId:string|null}):SourceCaptureView[];
+  hasOwnCapture(owner:{installationId:string;profilePersonId:string|null},captureId:string):boolean;
   readOwnCaptureArtifact(owner:{installationId:string;profilePersonId:string|null},captureId:string):{view:SourceCaptureView;bytes:Uint8Array}|null;
   /** Read-only current owner+goal+saved-context+source evidence, including partial captures with no facts. */
   readLatestAttempt(input: { installationId: string; goalId: string }): SourceLatestAttempt | null;
   readFallback(input: { installationId: string; goalId: string }): SourceFallback;
   installVerifiedGit(input: { goalId: string; captureRef: VersionRef; factRefs: VersionRef[]; context: GlobalContext; coverage: RawBatch['coverage'] }): void;
-  saveArtifact(input: { installationId: string; artifactId: string; mimeType: string; bytesValue: Uint8Array }): FileArtifactRef;
+  saveArtifact(input: { installationId: string; personId?: string | null; artifactId: string; mimeType: string; bytesValue: Uint8Array }): FileArtifactRef;
   assertArtifact(installationId: string, artifact: FileArtifactRef): void;
 }
 const digest = (value: unknown) => createHash('sha256').update(stableJson(value)).digest('hex');
 const toRef = (entityType: string, value: Header): VersionRef => ({ entityType, id: value.id, revision: value.revision });
 const fail = (code = 'SOURCE_INVALID_CONFIGURATION'): never => { throw new WorkbenchHttpError(409, code, 'Source configuration is unavailable or has changed'); };
 const key = (scope: ScopeRef) => `${scope.kind}/${scope.id}`;
-const bindingSchema = z.strictObject({ goalRef: versionRefSchema, sourceRef: versionRefSchema, mappingRef: versionRefSchema, assignmentRef: versionRefSchema, templateRef: versionRefSchema.nullable(), methodRef: versionRefSchema, metricRefs: z.array(versionRefSchema), directoryEntityRefs: z.array(versionRefSchema), directoryLinkRefs: z.array(versionRefSchema), directoryRevision: revisionTokenSchema });
-const savedSchema = z.strictObject({ installationId: uuidSchema, goalId: uuidSchema, context: globalContextSchema, revision: revisionTokenSchema });
+export const bindingSchema = z.strictObject({ goalRef: versionRefSchema, sourceRef: versionRefSchema, mappingRef: versionRefSchema, assignmentRef: versionRefSchema, templateRef: versionRefSchema.nullable(), methodRef: versionRefSchema, metricRefs: z.array(versionRefSchema), directoryEntityRefs: z.array(versionRefSchema), directoryLinkRefs: z.array(versionRefSchema), directoryRevision: revisionTokenSchema });
+export const savedSchema = z.strictObject({ installationId: uuidSchema, goalId: uuidSchema, context: globalContextSchema, revision: revisionTokenSchema });
 const edges = { dit_cluster: ['dit', 'cluster'], cluster_product: ['cluster', 'product'], cluster_team: ['cluster', 'team'], product_team: ['product', 'team'] } as const;
 export function sourceScopeReachable(from: ScopeRef, to: ScopeRef, links: DirectoryLink[]): boolean {
   const pending = [key(from)], seen = new Set<string>();
   while (pending.length) { const current = pending.pop()!; if (current === key(to)) return true; if (seen.has(current)) continue; seen.add(current); for (const link of links) if (link.kind !== 'leader') { const [parent, child] = edges[link.kind]; if (current === `${parent}/${link.from.id}`) pending.push(`${child}/${link.to.id}`); } }
   return false;
 }
-export function createSourceStore({ repository }: { repository: WorkbenchRepository }): SourceStore {
+export function createSourceStore({ repository, ownership }: { repository: WorkbenchRepository; ownership?: { installationId:string;personId:()=>string|null } }): SourceStore {
+  const bindings = createWorkspaceOwnership(repository);
+  const bind = (key:string, installationId:string, fallbackPerson:string|null=null) => {
+    if(ownership && ownership.installationId!==installationId)return fail('SOURCE_OWNER_MISMATCH');
+    const command=currentCommandContext();if(command&&(command.repository!==repository||command.installationId!==installationId||command.ownAccess.personId!==fallbackPerson))return fail('SOURCE_OWNER_MISMATCH');
+    bindings.bind({moduleId:'sources',key,installationId,personId:fallbackPerson,provenance:'created'});
+  };
   const sql = repository.sqlForModule('sources');
   sql.execMigration('v1', `CREATE TABLE wb_sources_bindings(goal_id TEXT NOT NULL,assignment_id TEXT NOT NULL,value_json TEXT NOT NULL,PRIMARY KEY(goal_id,assignment_id));
     CREATE TABLE wb_sources_adapters(source_id TEXT PRIMARY KEY,value_json TEXT NOT NULL);
@@ -59,6 +68,7 @@ export function createSourceStore({ repository }: { repository: WorkbenchReposit
     CREATE TABLE wb_sources_artifacts(installation_id TEXT NOT NULL,artifact_id TEXT NOT NULL,metadata_json TEXT NOT NULL,bytes_value BLOB NOT NULL,PRIMARY KEY(installation_id,artifact_id));`);
   sql.execMigration('v2-latest-attempt', `CREATE TABLE wb_sources_attempts(installation_id TEXT NOT NULL,goal_id TEXT NOT NULL,context_key TEXT NOT NULL,source_id TEXT NOT NULL,capture_id TEXT NOT NULL,PRIMARY KEY(installation_id,goal_id,context_key,source_id));
     INSERT OR REPLACE INTO wb_sources_attempts SELECT installation_id,json_extract(value_json,'$.request.goalRef.id'),json_extract(value_json,'$.contextKey'),json_extract(value_json,'$.request.sourceRef.id'),capture_id FROM wb_sources_captures ORDER BY rowid;`);
+  sql.execMigration('v3-original-omissions','CREATE TABLE wb_sources_original_omissions(file_key TEXT PRIMARY KEY,sha256 TEXT NOT NULL,bytes INTEGER NOT NULL)');
   const published = <T extends Header>(value: T | null): T => {
     if (!value || !value.publicationAnchorId) return fail();
     const anchor = repository.readPublicationAnchor({ entityType: 'publication_anchor', id: value.publicationAnchorId });
@@ -107,12 +117,13 @@ export function createSourceStore({ repository }: { repository: WorkbenchReposit
     const anchors = [...new Set([cfg.goal, cfg.source, cfg.mapping, cfg.assignment, cfg.method, ...cfg.metrics, ...cfg.directoryEntities, ...cfg.directoryLinks, ...(cfg.templateRef ? [exact<Template>(cfg.templateRef, 'template')] : [])].map(e => e.publicationAnchorId!))].sort().map(id => repository.readPublicationAnchor({ entityType: 'publication_anchor', id }));
     return { ...cfg, context: saved.context, businessTime: saved.context.time, adapterKey: adapter.adapterKey, profileRef: adapter.profileRef, configurationRevision: digest({ cfg, anchors, saved, adapter }) };
   };
-  const evidenceFor = (ref: VersionRef, installationId: string): CaptureEvidence | null => { if (ref.entityType !== 'capture' || ref.revision !== 1) return null; const row = sql.get<{ value_json: string }>('SELECT value_json FROM wb_sources_captures WHERE installation_id=? AND capture_id=?', [installationId, ref.id]); return row ? JSON.parse(row.value_json) : null; };
+  const evidenceFor = (ref: VersionRef, installationId: string): CaptureEvidence | null => { if (ref.entityType !== 'capture' || ref.revision !== 1) return null; const row = sql.get<{ value_json: string }>('SELECT value_json FROM wb_sources_captures WHERE installation_id=? AND capture_id=?', [installationId, ref.id]); return row ? captureEvidenceSchema.parse(JSON.parse(row.value_json)) : null; };
   // Central ownership seam shared by enumeration and exact artifact reads.
   const ownCaptureView = (owner: { installationId: string; profilePersonId: string | null }, captureId: string): SourceCaptureView | null => {
     const ref = { entityType: 'capture', id: captureId, revision: 1 };
     const capture = repository.readVersion<Capture>(ref);
-    if (!capture || capture.actor.installationId !== owner.installationId || capture.actor.profilePersonId !== owner.profilePersonId) return null;
+    const binding=bindings.read('sources','capture:'+captureId);
+    if (!capture || !binding || binding.installationId !== owner.installationId || binding.personId !== owner.profilePersonId) return null;
     return store.readCapture(ref, owner.installationId);
   };
   const latestAttemptFor = (installationId: string, binding: ResolvedCaptureBinding): SourceLatestAttempt | null => {
@@ -129,14 +140,15 @@ export function createSourceStore({ repository }: { repository: WorkbenchReposit
       repository.transaction(() => { for (const goalId of new Set(parsed.map(b => b.goalRef.id))) sql.run('DELETE FROM wb_sources_bindings WHERE goal_id=?', [goalId]); for (const b of parsed) sql.run('INSERT INTO wb_sources_bindings VALUES(?,?,?)', [b.goalRef.id, b.assignmentRef.id, stableJson(b)]); });
     },
     bindAdapter(input) { const value = z.strictObject({ sourceId: uuidSchema, adapterKey: z.string().min(1), profileRef: z.string().min(1).nullable(), revision: revisionTokenSchema }).parse(input); sql.run('INSERT OR REPLACE INTO wb_sources_adapters VALUES(?,?)', [value.sourceId, stableJson(value)]); },
-    saveAllowedContext(input, expectedRevision) {
+    saveAllowedContext(input, expectedRevision, ownerPersonId) {
+      const command=currentCommandContext();if(ownerPersonId===undefined&&command)ownerPersonId=command.ownAccess.personId;
       const value = savedSchema.parse(input); resolve(value.installationId, value.goalId, value);
-      repository.transaction(() => { const old = sql.get<{ value_json: string }>('SELECT value_json FROM wb_sources_contexts WHERE installation_id=? AND goal_id=?', [value.installationId, value.goalId]); const revision = old ? savedSchema.parse(JSON.parse(old.value_json)).revision : null; if (revision !== expectedRevision) return fail('SOURCE_CONTEXT_CONFLICT'); if (revision === value.revision && stableJson(JSON.parse(old!.value_json)) !== stableJson(value)) return fail('SOURCE_CONTEXT_CONFLICT'); sql.run('INSERT OR REPLACE INTO wb_sources_contexts VALUES(?,?,?)', [value.installationId, value.goalId, stableJson(value)]); });
+      repository.transaction(() => { const old = sql.get<{ value_json: string }>('SELECT value_json FROM wb_sources_contexts WHERE installation_id=? AND goal_id=?', [value.installationId, value.goalId]); const revision = old ? savedSchema.parse(JSON.parse(old.value_json)).revision : null; if (revision !== expectedRevision) return fail('SOURCE_CONTEXT_CONFLICT'); if (revision === value.revision && stableJson(JSON.parse(old!.value_json)) !== stableJson(value)) return fail('SOURCE_CONTEXT_CONFLICT'); if(ownerPersonId!==undefined)bind('context:'+value.goalId,value.installationId,ownerPersonId); sql.run('INSERT OR REPLACE INTO wb_sources_contexts VALUES(?,?,?)', [value.installationId, value.goalId, stableJson(value)]); });
     },
     sourceIdForGoal(goalId) { const bindings = inventory(goalId); const sources = new Set(bindings.map(b => b.sourceRef.id)); if (sources.size !== 1) return fail(); return [...sources][0]; },
     resolveCapture({ installationId, goalId }) { return resolve(installationId, goalId); },
     assertUnchanged(binding, installationId) { let current: ResolvedCaptureBinding; try { current = resolve(installationId, binding.goal.id); } catch { return fail('SOURCE_CONFIGURATION_CHANGED'); } if (current.configurationRevision !== binding.configurationRevision) return fail('SOURCE_CONFIGURATION_CHANGED'); },
-    findOperation(installationId, operationId, goalId) { const row = sql.get<{ value_json: string }>('SELECT value_json FROM wb_sources_captures WHERE installation_id=? AND operation_id=?', [uuidSchema.parse(installationId), uuidSchema.parse(operationId)]); if (!row) return null; const evidence: CaptureEvidence = JSON.parse(row.value_json); if (goalId !== undefined && evidence.request.goalRef.id !== uuidSchema.parse(goalId)) return fail('IDEMPOTENCY_CONFLICT'); return captureResultSchema.parse(evidence.result); },
+    findOperation(installationId, operationId, goalId) { const row = sql.get<{ value_json: string }>('SELECT value_json FROM wb_sources_captures WHERE installation_id=? AND operation_id=?', [uuidSchema.parse(installationId), uuidSchema.parse(operationId)]); if (!row) return null; const evidence = captureEvidenceSchema.parse(JSON.parse(row.value_json)); if (goalId !== undefined && evidence.request.goalRef.id !== uuidSchema.parse(goalId)) return fail('IDEMPOTENCY_CONFLICT'); return captureResultSchema.parse(evidence.result); },
     commitCapture({ installationId, binding, request, raw, capture, facts, retainedFactRefs = [], issues }) {
       // Caller wraps this entire method in commitCommandEffect, including the durable receipt.
       store.assertUnchanged(binding, installationId);
@@ -146,12 +158,20 @@ export function createSourceStore({ repository }: { repository: WorkbenchReposit
       const captureRef = repository.append('capture', capture, null); const factRefs = [...retainedFactRefs, ...facts.map(f => repository.append('observed_fact', f, f.revision === 1 ? null : f.revision - 1))];
       const result = captureResultSchema.parse({ captureRef, acceptedRows: capture.acceptedRows, rejectedRows: capture.rejectedRows, duplicate: false });
       const evidence: CaptureEvidence = { request, raw: rawBatchSchema.parse(raw), issues: z.array(sourceIssueSchema).parse(issues), factRefs, result, contextKey: contextKey(binding.context) };
+      if(capture.actor.installationId!==installationId)return fail('SOURCE_OWNER_MISMATCH');
+      bind('capture:'+capture.id,installationId,capture.actor.profilePersonId);
+      if(raw.artifact)bind('artifact:'+raw.artifact.artifactId,installationId,capture.actor.profilePersonId);
       sql.run('INSERT INTO wb_sources_captures VALUES(?,?,?,?)', [installationId, request.operationId, capture.id, stableJson(evidence)]);
       sql.run('INSERT OR REPLACE INTO wb_sources_attempts VALUES(?,?,?,?,?)', [installationId, binding.goal.id, evidence.contextKey, binding.source.id, capture.id]);
       if (capture.result === 'accepted') sql.run('INSERT OR REPLACE INTO wb_sources_success VALUES(?,?,?,?)', [installationId, binding.goal.id, evidence.contextKey, capture.id]);
       return result;
     },
     readCapture(ref, installationId) { const evidence = evidenceFor(ref, installationId); if (!evidence) return null; const capture = repository.readVersion<Capture>(ref); if (!capture) return null; return { capture, facts: evidence.factRefs.map(r => repository.readVersion<ObservedFact>(r) ?? fail()), issues: evidence.issues, coverage: evidence.raw.coverage, artifact: evidence.raw.artifact }; },
+    hasOwnCapture(owner,captureId) {
+      if(!uuidSchema.safeParse(captureId).success||!uuidSchema.safeParse(owner.installationId).success||!uuidSchema.nullable().safeParse(owner.profilePersonId).success)return false;
+      const binding=bindings.read('sources','capture:'+captureId);
+      return !!binding&&binding.installationId===owner.installationId&&binding.personId===owner.profilePersonId&&sql.get('SELECT 1 FROM wb_sources_captures WHERE installation_id=? AND capture_id=?',[owner.installationId,captureId])!==null;
+    },
     listOwnCaptures(owner) {
       return sql.all<{capture_id:string}>('SELECT capture_id FROM wb_sources_captures WHERE installation_id=? ORDER BY capture_id',[owner.installationId]).flatMap(row=>{
         const view=ownCaptureView(owner,row.capture_id); return view?[view]:[];
@@ -162,6 +182,8 @@ export function createSourceStore({ repository }: { repository: WorkbenchReposit
       const selected=sql.get<{capture_id:string}>('SELECT capture_id FROM wb_sources_captures WHERE installation_id=? AND capture_id=?',[owner.installationId,captureId]);
       const view=selected?ownCaptureView(owner,selected.capture_id):null;
       if(!view || view.capture.result!=='accepted' || !view.artifact || view.capture.rawArtifactId!==view.artifact.artifactId || view.capture.payloadHash!==view.artifact.hash) return null;
+      const artifactOwner=bindings.read('sources','artifact:'+view.artifact.artifactId);if(!artifactOwner||artifactOwner.installationId!==owner.installationId||artifactOwner.personId!==owner.profilePersonId)return null;
+      if(sql.get('SELECT file_key FROM wb_sources_original_omissions WHERE file_key=?',[view.artifact.artifactId]))return null;
       store.assertArtifact(owner.installationId,view.artifact);
       const row=sql.get<{bytes_value:Uint8Array}>('SELECT bytes_value FROM wb_sources_artifacts WHERE installation_id=? AND artifact_id=?',[owner.installationId,view.artifact.artifactId]);
       if(!row)return fail('SOURCE_ARTIFACT_INVALID');
@@ -181,7 +203,7 @@ export function createSourceStore({ repository }: { repository: WorkbenchReposit
       return { obtainedVia: via, sourceId: binding.source.id, captureRef, businessTimes: times, sourceDate: times.length === 1 && times[0].kind === 'as_of' ? times[0].date : null, sourceUpdatedAt: capture?.sourceUpdatedAt ?? null, capturedAt: capture?.capturedAt ?? null, coverage, facts, latestAttempt, warnings };
     },
     installVerifiedGit(input) { const capture = exact<Capture>(input.captureRef, 'capture'); const cfg = inventory(input.goalId).map(b => loadConfiguration(b, true)); if (!cfg.length || cfg.some(b => b.source.id !== capture.sourceId)) return fail(); const coverage = rawBatchSchema.shape.coverage.parse(input.coverage); if (!coverage.complete || !coverage.evidence.length || coverage.receivedRows !== capture.rawRows.length || coverage.expectedRows !== null && coverage.expectedRows !== coverage.receivedRows || capture.result !== 'accepted') return fail(); for (const ref of input.factRefs) { const fact = exact<ObservedFact>(ref, 'observed_fact'); if (fact.captureId !== capture.id) return fail(); } const context = globalContextSchema.parse(input.context); if (!cfg.some(c => assertContext(context, c))) return fail(); sql.run('INSERT OR REPLACE INTO wb_sources_git VALUES(?,?,?)', [input.goalId, contextKey(context), stableJson(input)]); },
-    saveArtifact({ installationId, artifactId, mimeType, bytesValue }) { uuidSchema.parse(installationId); uuidSchema.parse(artifactId); const artifact = fileArtifactRefSchema.parse({ artifactId, mimeType, bytes: bytesValue.byteLength, hash: 'sha256:' + createHash('sha256').update(bytesValue).digest('hex') }); const old = sql.get<{ metadata_json: string; bytes_value: Uint8Array }>('SELECT metadata_json,bytes_value FROM wb_sources_artifacts WHERE installation_id=? AND artifact_id=?', [installationId, artifactId]); if (old) { if (old.metadata_json !== stableJson(artifact) || !Buffer.from(old.bytes_value).equals(Buffer.from(bytesValue))) return fail('SOURCE_ARTIFACT_CONFLICT'); return artifact; } sql.run('INSERT INTO wb_sources_artifacts VALUES(?,?,?,?)', [installationId, artifactId, stableJson(artifact), bytesValue]); return artifact; },
+    saveArtifact({ installationId, personId, artifactId, mimeType, bytesValue }) { if(personId!==undefined)bind('artifact:'+artifactId,installationId,personId); uuidSchema.parse(installationId); uuidSchema.parse(artifactId); const artifact = fileArtifactRefSchema.parse({ artifactId, mimeType, bytes: bytesValue.byteLength, hash: 'sha256:' + createHash('sha256').update(bytesValue).digest('hex') }); const old = sql.get<{ metadata_json: string; bytes_value: Uint8Array }>('SELECT metadata_json,bytes_value FROM wb_sources_artifacts WHERE installation_id=? AND artifact_id=?', [installationId, artifactId]); if (old) { if (old.metadata_json !== stableJson(artifact) || !Buffer.from(old.bytes_value).equals(Buffer.from(bytesValue))) return fail('SOURCE_ARTIFACT_CONFLICT'); return artifact; } sql.run('INSERT INTO wb_sources_artifacts VALUES(?,?,?,?)', [installationId, artifactId, stableJson(artifact), bytesValue]); return artifact; },
     assertArtifact(installationId, artifact) { fileArtifactRefSchema.parse(artifact); const row = sql.get<{ metadata_json: string; bytes_value: Uint8Array }>('SELECT metadata_json,bytes_value FROM wb_sources_artifacts WHERE installation_id=? AND artifact_id=?', [installationId, artifact.artifactId]); if (!row || row.metadata_json !== stableJson(artifact) || row.bytes_value.byteLength !== artifact.bytes || 'sha256:' + createHash('sha256').update(row.bytes_value).digest('hex') !== artifact.hash) return fail('SOURCE_ARTIFACT_INVALID'); },
   };
   return store;

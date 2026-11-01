@@ -25,6 +25,8 @@ import { createAcceptedGitRegistry } from './oko-registry';
 import { loadOkoConfiguration } from './oko-config';
 import { createLocalPreviewPolicy } from './oko-local-role';
 import type { PlatformModule } from './modules';
+import { assertNoManagedWorkbenchLayout } from '../workspace/managed-workbench-guard';
+import { acquireRuntimeLease } from './runtime-lease';
 
 async function staticEntry(app: FastifyInstance, root: string) {
   const dist = path.join(root, 'dist');
@@ -49,7 +51,10 @@ async function staticEntry(app: FastifyInstance, root: string) {
 
 /** Real isolated UI composition. No demo policy, catalog, scenario, source facts or legacy startup. */
 export async function createOkoApplication({ projectRoot, browserLauncher }: { projectRoot: string; browserLauncher?: BrowserLauncherPort }) {
-  const root = await realpath(projectRoot), config = await loadOkoConfiguration(root);
+  const root = await realpath(projectRoot);await assertNoManagedWorkbenchLayout(root);
+  const releaseRuntimeLease=await acquireRuntimeLease(root);let openedRepository:ReturnType<typeof createWorkbenchRepository>|undefined,openedWorkflow:ReturnType<typeof createOkoWorkflowService>|undefined;
+  try {
+  await assertNoManagedWorkbenchLayout(root);const config = await loadOkoConfiguration(root);
   try {
     const site = JSON.parse(await readFile(path.join(root, 'config/site.local.json'), 'utf8')) as { allowedWorkspaceRoots?: string[] };
     if (site.allowedWorkspaceRoots) {
@@ -66,6 +71,7 @@ export async function createOkoApplication({ projectRoot, browserLauncher }: { p
   try { installationId = uuidSchema.parse(JSON.parse(await readFile(identityPath, 'utf8')).installationId); }
   catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; installationId = randomUUID(); await writeFile(identityPath, JSON.stringify({ installationId }), { flag: 'wx', mode: 0o600 }); }
   const clock = { now: () => new Date().toISOString() }, repository = createWorkbenchRepository({ filename: path.join(runtimeRoot, 'workbench.sqlite'), artifactRoot: path.join(runtimeRoot, 'artifacts') });
+  openedRepository=repository;
   let commands: ReturnType<typeof createCommandRegistry>;
   const capabilityFor = (name: string) => commands?.getCapability(name) ?? 'uor.prepare';
   const localPolicy = config.roleMode === 'local-preview' ? await createLocalPreviewPolicy({ directory: runtimeRoot, personId: installationId, clock, capabilityFor }) : null;
@@ -77,6 +83,7 @@ export async function createOkoApplication({ projectRoot, browserLauncher }: { p
     setup: () => ({ hostname: hostname(), registryConfigured: config.roleMode === 'registry' && config.registry !== null, message: localPolicy ? 'Временный режим: переключайтесь между читателем и редактором в правом верхнем углу.' : config.registry ? null : 'Реестр допуска не подключён. Инструкция: docs/OKO_WORKFLOW.md. Для временного переключения ролей выберите roleMode: local-preview в config/oko.local.json.' }),
     recheckGuard: async context => { const own = await accessPolicy.resolveOwnAccess(); if (!canUseCapability(own, 'uor.prepare') || own.personId !== context.ownAccess.personId) throw new WorkbenchHttpError(403, 'ACCESS_RECHECK_REQUIRED', 'Допуск изменился во время операции. Результат не сохранён.'); },
   });
+  openedWorkflow=workflow;
   const roleModule: PlatformModule[] = localPolicy ? [{ id: 'oko-local-access', version: '1.0.0', platformContractVersion: 1, dependsOn: [], owns: { entityTypes: [], namespaces: ['oko-local-access'] }, schemas: [], hooks: {}, queries: [], commands: [{ name: 'source.browser.role.set', ownership: 'person', capability: 'personal.write', effect: 'local', execution: 'sync', inputSchema: z.strictObject({ role: z.enum(['viewer', 'curator']) }), outputSchema: z.strictObject({ role: z.enum(['viewer', 'curator']), mode: z.literal('local-preview') }), handler: async (_context, input) => { await localPolicy.setRole(input.role); return { result: { role: input.role, mode: 'local-preview' as const }, changedRefs: [], editToken: null }; } }] }] : [];
   let closed = false;
   const app = await createWorkbenchApp({ repository, clock, hostname, accessPolicy, commands, jobs, queries: new QueryRegistry(), files, sessions: createLocalSessionStore({ clock }), modules: [createOkoWorkflowModule({ service: workflow }), ...roleModule], installationId,
@@ -85,9 +92,12 @@ export async function createOkoApplication({ projectRoot, browserLauncher }: { p
   }, { configure: app => staticEntry(app, root) });
   const close = async () => {
     if (closed) return; closed = true;
+    try {
     for (const candidate of jobs.recoveryCandidates(installationId)) if (!['succeeded', 'partial', 'failed', 'cancelled'].includes(candidate.snapshot.status)) await jobs.cancel(candidate.snapshot.jobId, installationId).catch(() => {});
     if ('shutdown' in workflow && typeof workflow.shutdown === 'function') await workflow.shutdown();
-    await commands.idle(); await app.close(); repository.close();
+    await commands.idle(); await app.close();
+    } finally {repository.close();await releaseRuntimeLease();}
   };
   return { app, repository, workflow, runtime, installationId, config, close };
+  } catch(error) {try{await openedWorkflow?.shutdown();}finally{openedRepository?.close();await releaseRuntimeLease();}throw error;}
 }

@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { JobSnapshot, SessionView } from '../../../server/workbench/protocol';
 import type { OkoWorkspaceView, OkoWorkflowView } from '../workbench-workflow-contracts';
 import { OkoClient, OkoClientError } from './client';
@@ -6,17 +6,26 @@ import { OkoClient, OkoClientError } from './client';
 type Workspace = { client: OkoClient; session: SessionView | null; workspace: OkoWorkspaceView | null; current: OkoWorkflowView | null; loading: boolean; busy: boolean; error: string; job: JobSnapshot | null; refresh(): Promise<void>; open(id?: string, title?: string): Promise<void>; run(name: string, payload: Record<string, unknown>): Promise<unknown>; select(id: string): Promise<void>; clearError(): void };
 const Context = createContext<Workspace | null>(null);
 const defaultClient = new OkoClient();
-const pendingKey = 'uor.oko.pending-job.v1', commandKey = 'uor.oko.pending-command.v1', releaseKey = 'uor.oko.pending-release.v1';
 const releaseCommand = 'source.browser.record.cancel';
 type PendingJob = { personId: string | null; workflowId: string; jobId: string; kind: 'marker' | 'replay' };
 // Deliberately contains no payload, URL, title or filter values. Receipts are read from the own server.
 type PendingCommand = { personId: string | null; commandId: string; name: string; workflowId: string | null };
+function createRecoveryStorage(scope: string) {
+const pendingKey = 'uor.oko.pending-job.v1' + scope, commandKey = 'uor.oko.pending-command.v1' + scope, releaseKey = 'uor.oko.pending-release.v1' + scope;
+const loginPrefix = 'uor.oko.login.v1' + scope + ':';
 const ownJobKey = (value: Pick<PendingJob, 'personId' | 'workflowId'>) => `${pendingKey}:${value.personId ?? 'unassigned'}:${value.workflowId}`;
 function readPending(): PendingJob | null { try { const pointer = JSON.parse(sessionStorage.getItem(pendingKey) ?? 'null'); if (!pointer || typeof pointer.workflowId !== 'string' || !(typeof pointer.personId === 'string' || pointer.personId === null)) return null; const value = JSON.parse(sessionStorage.getItem(ownJobKey(pointer)) ?? 'null'); return value && value.workflowId === pointer.workflowId && value.personId === pointer.personId && typeof value.jobId === 'string' && ['marker', 'replay'].includes(value.kind) ? value : null; } catch { return null; } }
 function rememberPending(value: PendingJob | null) { try { if (value) { sessionStorage.setItem(ownJobKey(value), JSON.stringify(value)); sessionStorage.setItem(pendingKey, JSON.stringify({ personId: value.personId, workflowId: value.workflowId })); } else { const previous = readPending(); if (previous) sessionStorage.removeItem(ownJobKey(previous)); sessionStorage.removeItem(pendingKey); } } catch { /* Live ownership still applies if browser storage is unavailable. */ } }
 function readCommand(key = commandKey): PendingCommand | null { try { const v = JSON.parse(sessionStorage.getItem(key) ?? 'null'); return v && (v.personId === null || typeof v.personId === 'string') && typeof v.commandId === 'string' && typeof v.name === 'string' && (v.workflowId === null || typeof v.workflowId === 'string') ? v : null; } catch { return null; } }
-function clearForeignMetadata(personId: string | null) { try { const own = personId ?? 'unassigned'; for (const key of Object.keys(sessionStorage)) { if ((key.startsWith(pendingKey + ':') && !key.startsWith(`${pendingKey}:${own}:`)) || (key.startsWith('uor.oko.login.v1:') && !key.startsWith(`uor.oko.login.v1:${own}:`))) sessionStorage.removeItem(key); } if (readPending()?.personId !== personId) sessionStorage.removeItem(pendingKey); if (readCommand()?.personId !== personId) sessionStorage.removeItem(commandKey); } catch { /* The server remains authoritative. */ } }
+function clearForeignMetadata(personId: string | null) { try { const own = personId ?? 'unassigned'; for (const key of Object.keys(sessionStorage)) { if (!scope && (key === pendingKey + ':oko.workflow' || key.startsWith(pendingKey + ':oko.workflow:') || key.startsWith(loginPrefix + 'oko.workflow:'))) continue; if ((key.startsWith(pendingKey + ':') && !key.startsWith(`${pendingKey}:${own}:`)) || (key.startsWith(loginPrefix) && !key.startsWith(`${loginPrefix}${own}:`))) sessionStorage.removeItem(key); } if (readPending()?.personId !== personId) sessionStorage.removeItem(pendingKey); if (readCommand()?.personId !== personId) sessionStorage.removeItem(commandKey); } catch { /* The server remains authoritative. */ } }
+return { commandKey, releaseKey, readPending, rememberPending, readCommand, clearForeignMetadata };
+}
 export function WorkbenchProvider({ children, client = defaultClient }: { children: React.ReactNode; client?: OkoClient }) {
+  return <PersonalProviderState key={client.storageScope ?? ''} client={client}>{children}</PersonalProviderState>;
+}
+function PersonalProviderState({ children, client }: { children: React.ReactNode; client: OkoClient }) {
+  const storage = useMemo(() => createRecoveryStorage(client.storageScope ?? ''), [client.storageScope]);
+  const { commandKey, releaseKey, readPending, rememberPending, readCommand, clearForeignMetadata } = storage;
   const [session, setSession] = useState<SessionView | null>(null), [workspace, setWorkspace] = useState<OkoWorkspaceView | null>(null);
   const [loading, setLoading] = useState(true), [busy, setBusy] = useState(false), [error, setError] = useState(''), [job, setJob] = useState<JobSnapshot | null>(null);
   const selected = useRef<string | undefined>(undefined), mounted = useRef(true), generation = useRef(0), pollGeneration = useRef(0), ownPerson = useRef<string | null | undefined>(undefined);
@@ -35,7 +44,7 @@ export function WorkbenchProvider({ children, client = defaultClient }: { childr
     if (changed) { selected.current = undefined; ++pollGeneration.current; setJob(null); setWorkspace(null); }
     ownPerson.current = own.personId; setSession(own);
     return changed;
-  }, []);
+  }, [storage]);
   const refresh = useCallback(async () => { const ticket = ++generation.current; const own = await client.session(); if (!mounted.current || ticket !== generation.current) return; acceptSession(own); const pending = readPending(); if (!selected.current && pending?.personId === own.personId) selected.current = pending.workflowId; if (!selected.current && pendingCommand.current?.workflowId) selected.current = pendingCommand.current.workflowId; const value = await client.workspace(selected.current); if (mounted.current && ticket === generation.current) { setWorkspace(value); if (value.current) selected.current = value.current.workflowId; } }, [client, acceptSession]);
   const poll = useCallback(async (id: string) => {
     const ticket = ++pollGeneration.current, personId = ownPerson.current; setBusy(true);

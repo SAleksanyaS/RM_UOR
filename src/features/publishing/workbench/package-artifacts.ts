@@ -5,9 +5,9 @@ import { packageManifestSchema, packageRevisionSchema, type PackageArtifactStore
 import { assertPhysicalPackagePath, buildPackageManifest, canonicalBytes, hashBytes, integrity, readPhysicalPackageFile, validatePortablePaths } from './package-manifest';
 
 /** Files are staged privately, checked and atomically promoted; completed revisions are immutable. */
-export function createPackageArtifactStore({artifactRoot}:{artifactRoot:string}):PackageArtifactStore {
-  const root = path.resolve(artifactRoot);
-  const directory = (ref:PackageRevision) => { const value=packageRevisionSchema.parse(ref); return path.join(root,value.packageId,String(value.revision)); };
+export function createPackageArtifactStore({artifactRoot}:{artifactRoot:string|(()=>string)}):PackageArtifactStore {
+  const activeRoot = () => path.resolve(typeof artifactRoot==='function'?artifactRoot():artifactRoot);
+  const directory = (ref:PackageRevision,root=activeRoot()) => { const value=packageRevisionSchema.parse(ref); return path.join(root,value.packageId,String(value.revision)); };
   const read:PackageArtifactStore['readRevision'] = async ref => {
     try {
       const target=directory(ref);
@@ -37,12 +37,13 @@ export function createPackageArtifactStore({artifactRoot}:{artifactRoot:string})
   return {
     readRevision:read,
     async writeRevision(ref,provided) {
+      const root=activeRoot();
       const {contentHash,...base}=packageRevisionSchema.parse(ref);
       const files = new Map([...provided].map(([name,bytes])=>[name,new Uint8Array(bytes)]));
       const manifest=buildPackageManifest({package:base,files});
       if (manifest.packageRevision.contentHash !== contentHash) return integrity();
       await assertPhysicalPackagePath(root,true); await mkdir(root,{recursive:true}); await assertPhysicalPackagePath(root);
-      const target=directory(ref); const parent=path.dirname(target);
+      const target=directory(ref,root); const parent=path.dirname(target);
       await assertPhysicalPackagePath(parent,true); await mkdir(parent,{recursive:true}); await assertPhysicalPackagePath(parent);
       let exists=true;
       try { await lstat(target); } catch(error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; exists=false; }

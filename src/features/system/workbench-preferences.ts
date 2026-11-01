@@ -3,6 +3,7 @@ import type { DirectoryEntity, PersonalPreferences } from '../../domain/workbenc
 import type { Clock } from '../../domain/workbench/primitives';
 import { uuidSchema } from '../../domain/workbench/primitives';
 import type { WorkbenchRepository } from '../../server/storage/workbench-repository';
+import { createWorkspaceOwnership } from '../../server/storage/workbench-ownership';
 import type { CommandContext } from '../../server/workbench/command-registry';
 import { commitCommandEffect, createCommandStore } from '../../server/workbench/command-store';
 import { globalContextSchema, sortSchema, WorkbenchHttpError } from '../../server/workbench/protocol';
@@ -24,9 +25,15 @@ type Row = { revision:number;payload:string };
 export function createPreferencesService({repository,installationId,clock}:{repository:WorkbenchRepository;installationId:string;clock:Clock}) {
   uuidSchema.parse(installationId);
   const sql = repository.sqlForModule('preferences');
+  const ownership = createWorkspaceOwnership(repository);
   sql.execMigration('001','CREATE TABLE wb_preferences_personal(installation_id TEXT PRIMARY KEY,revision INTEGER NOT NULL,payload TEXT NOT NULL,updated_at TEXT NOT NULL)');
   const own = (id:string) => { if (id !== installationId) fail('PREFERENCES_NOT_FOUND',404); };
   const read = () => sql.get<Row>('SELECT revision,payload FROM wb_preferences_personal WHERE installation_id=?',[installationId]);
+  const assertPerson = (personId:string|null|undefined) => {
+    if(personId===undefined||!read())return;
+    const binding=ownership.read('preferences',installationId);
+    if(!binding||binding.installationId!==installationId||binding.personId!==personId)fail('PREFERENCES_NOT_FOUND',404);
+  };
   const defaults = ():PersonalPreferences => ({context:null,sorts:{},visual:{theme:'system',density:'comfortable'},notificationPersonId:null});
   const token = (row:Row|null) => row ? `preferences:${installationId}:${row.revision}` : null;
   const write = (revision:number,values:PersonalPreferences) => {
@@ -47,8 +54,8 @@ export function createPreferencesService({repository,installationId,clock}:{repo
   };
   const backupSchema = z.strictObject({schemaVersion:z.literal(1),values:personalPreferencesSchema});
   const service = {
-    get(id:string):PersonalPreferences { own(id); const row = read(); return row ? personalPreferencesSchema.parse(JSON.parse(row.payload)) : defaults(); },
-    editToken(id:string) { own(id); return token(read()); },
+    get(id:string,personId?:string|null):PersonalPreferences { own(id);assertPerson(personId); const row = read(); return row ? personalPreferencesSchema.parse(JSON.parse(row.payload)) : defaults(); },
+    editToken(id:string,personId?:string|null) { own(id);assertPerson(personId); return token(read()); },
     async set(context:CommandContext,input:{values:PersonalPreferences}):Promise<{values:PersonalPreferences}> {
       own(context.installationId);
       if (context.repository !== repository || context.actor.installationId !== installationId || context.actor.profilePersonId !== context.ownAccess.personId) fail('COMMAND_CONTEXT_MISMATCH',409);
@@ -59,6 +66,7 @@ export function createPreferencesService({repository,installationId,clock}:{repo
         const row = read();
         if (JSON.parse(intent.request_json).baseRevision !== token(row)) return fail('REVISION_CONFLICT',409);
         const revision = (row?.revision ?? 0)+1;
+        ownership.bind({moduleId:'preferences',key:installationId,installationId,personId:context.ownAccess.personId,provenance:'created'});
         write(revision,values);
         return {result:{values},changedRefs:[],editToken:`preferences:${installationId}:${revision}`};
       }).result;

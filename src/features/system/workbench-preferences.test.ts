@@ -21,6 +21,10 @@ it('lets viewers persist only personal preferences with CAS and durable receipts
   expect(f.preferences.get(f.context.installationId)).toEqual(values);
   expect(() => f.preferences.get(fixtureId(999))).toThrow();
 });
+it('does not expose one person preferences or edit token to another person on the same installation',async()=>{
+ const f=fixture(),values=f.preferences.get(f.context.installationId);await f.execute('preferences.set',{values},{baseRevision:null});
+ expect(()=>f.preferences.get(f.context.installationId,fixtureId(777))).toThrow();expect(()=>f.preferences.editToken(f.context.installationId,fixtureId(777))).toThrow();expect(f.preferences.get(f.context.installationId,f.context.ownAccess.personId)).toEqual(values);
+});
 it.each([{role:'chief'},{registry:{role:'chief'}},{sorts:{'goals.list':[{field:'sql',direction:'asc'}]}},{notificationPersonId:fixtureId(101)}])('rejects policy keys, unknown sorts or a non-person recipient %j', async patch => {
   const f = fixture(); await expect(f.execute('preferences.set',{values:{...f.preferences.get(f.context.installationId),...patch}},{baseRevision:null})).rejects.toMatchObject({statusCode:422});
 });

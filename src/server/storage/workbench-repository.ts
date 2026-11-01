@@ -15,6 +15,15 @@ import type { PublicationAnchor } from '../../domain/workbench/publication';
 import { entityReferences, entitySchemas, publicationAnchorSchema } from '../../domain/workbench/schemas';
 import type { ReferenceRequirement } from '../../domain/workbench/schemas';
 import { migrateWorkbench } from './workbench-schema';
+import { isOwnCoreVersion } from './workbench-ownership';
+import { openReadonlyWorkbenchDatabase } from './workbench-readonly-database';
+
+/** One-way publication metadata attachment; every other persisted byte remains immutable. */
+export function isPublicationAnchorAttachment(previous: Header, published: Header): boolean {
+  const { publicationAnchorId: oldAnchor, ...oldValue } = previous;
+  const { publicationAnchorId: newAnchor, ...newValue } = published;
+  return oldAnchor === null && newAnchor !== null && isDeepStrictEqual(oldValue, newValue);
+}
 
 export type SqlValue = string | number | bigint | null | Uint8Array;
 export interface WorkbenchSql {
@@ -33,6 +42,7 @@ export interface WorkbenchRepository {
   readVersion<T extends Header>(ref: VersionRef): T | null;
   append<T extends Header>(entityType: string, value: T, expectedHead: number | null): VersionRef;
   importPublishedVersion<T extends Header>(entityType:string,value:T):VersionRef;
+  attachVerifiedPublicationAnchor<T extends Header>(entityType:string,value:T,owner:{installationId:string;personId:string|null}):VersionRef;
   publicationAnchorMetadataRevision(ref:EntityRef):number|null;
   readVersionsForPublicationAnchor(id:string):Array<{entityType:string;value:Header}>;
   exportWorkspaceCore():WorkspaceCoreRecord[];
@@ -62,12 +72,13 @@ type PayloadRow = { payload_json: string };
 type Frame = { dirty: boolean; staged: Array<{ type: string; value: Header; archived?:true }>; catalogRefs:Map<string,EntityRef> };
 type Lease = { active: boolean; parent?: Lease };
 
-export function createWorkbenchRepository(options: { filename: string; artifactRoot: string }): WorkbenchRepository {
-  if (options.filename !== ':memory:') mkdirSync(path.dirname(path.resolve(options.filename)), { recursive: true });
+export function createWorkbenchRepository(options: { filename: string; artifactRoot: string; readOnly?: boolean }): WorkbenchRepository {
+  const readOnly = options.readOnly === true;
+  if (!readOnly && options.filename !== ':memory:') mkdirSync(path.dirname(path.resolve(options.filename)), { recursive: true });
   const artifactRoot = path.resolve(options.artifactRoot);
-  mkdirSync(artifactRoot, { recursive: true });
-  const db = new DatabaseSync(options.filename);
-  migrateWorkbench(db);
+  if (!readOnly) mkdirSync(artifactRoot, { recursive: true });
+  const db = readOnly ? openReadonlyWorkbenchDatabase(options.filename) : new DatabaseSync(options.filename);
+  if (!readOnly) migrateWorkbench(db);
   const registrations = new Map<string, EntityRegistration<Header>>();
   const projections = new Map<string, (type: string, value: Header) => void>();
   const catalogProjections=new Map<string,(refs:EntityRef[])=>void>();
@@ -80,6 +91,7 @@ export function createWorkbenchRepository(options: { filename: string; artifactR
   const assertOpen = () => { if (closed) throw new WorkbenchError('REPOSITORY_CLOSED'); };
   const assertWritable = () => {
     assertOpen();
+    if (readOnly) throw new WorkbenchError('REPOSITORY_READ_ONLY');
     for (let lease = leases.getStore(); lease; lease = lease.parent) if (!lease.active) throw new WorkbenchError('TRANSACTION_CONTEXT_CLOSED');
   };
   const currentFrame = () => { const frame = frames.at(-1); if (!frame) throw new WorkbenchError('TRANSACTION_REQUIRED'); return frame; };
@@ -200,6 +212,24 @@ export function createWorkbenchRepository(options: { filename: string; artifactR
         db.prepare('INSERT INTO wb_entity_versions VALUES(?,?,?,?,?,?)').run(type,parsed.id,parsed.revision,JSON.stringify(parsed),parsed.recordedAt,parsed.publicationAnchorId);
         db.prepare('INSERT INTO wb_entity_heads VALUES(?,?,?) ON CONFLICT(entity_type,id) DO UPDATE SET revision=MAX(revision,excluded.revision)').run(type,parsed.id,parsed.revision);
         indexEntity(type,parsed);const frame=currentFrame();frame.dirty=true;frame.staged.push({type,value:parsed});frame.catalogRefs.set(`${type}/${parsed.id}`,{entityType:type,id:parsed.id});return ref;
+      });
+    },
+    attachVerifiedPublicationAnchor<T extends Header>(type:string,value:T,owner:{installationId:string;personId:string|null}):VersionRef {
+      assertWritable();if(projecting)throw new WorkbenchError('PROJECTION_ENTITY_WRITE_FORBIDDEN');
+      uuidSchema.parse(owner.installationId);if(owner.personId!==null)uuidSchema.parse(owner.personId);
+      return atomic(()=>{
+        const parsed=registration(type).schema.parse(value),ref={entityType:type,id:parsed.id,revision:parsed.revision};
+        const previous=repository.readVersion(ref);
+        if(!previous)throw new WorkbenchError('REFERENCE_NOT_FOUND',{ref});
+        if(!isOwnCoreVersion(repository,type,previous,owner))throw new WorkbenchError('PUBLICATION_ATTACHMENT_FORBIDDEN');
+        const anchor=parsed.publicationAnchorId?repository.readPublicationAnchor({entityType:'publication_anchor',id:parsed.publicationAnchorId}):null;
+        if(!anchor||anchor.publicationState!=='confirmed')throw new WorkbenchError('PUBLICATION_UNCONFIRMED');
+        if(isDeepStrictEqual(previous,parsed))return ref;
+        if(!isPublicationAnchorAttachment(previous,parsed))throw new WorkbenchError('VERSION_CONTENT_IMMUTABLE');
+        db.prepare('UPDATE wb_entity_versions SET payload_json=?,publication_anchor_id=? WHERE entity_type=? AND id=? AND revision=? AND publication_anchor_id IS NULL').run(JSON.stringify(parsed),parsed.publicationAnchorId,type,parsed.id,parsed.revision);
+        // Identity, references and business fields are unchanged; existing indexes remain valid.
+        const frame=currentFrame();frame.dirty=true;frame.staged.push({type,value:parsed});frame.catalogRefs.set(`${type}/${parsed.id}`,{entityType:type,id:parsed.id});
+        return ref;
       });
     },
     publicationAnchorMetadataRevision(ref) {assertOpen();entityRefSchema.parse(ref);return ref.entityType==='publication_anchor'?anchorRow(ref.id)?.revision??null:null;},

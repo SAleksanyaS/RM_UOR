@@ -79,5 +79,7 @@ export async function withProfileQueue<T>(key: string, signal: AbortSignal, run:
 }
 export async function browserProfilePath(runtimeRoot: string, profile: PrivateProfile) {
   if (!profile.browser) throw new ConnectorError('configuration_required', 'Не настроен браузерный профиль');
-  return safeArtifactPath(runtimeRoot, `browser-profiles/${profile.browser.profileDirectory}`);
+  const folder = await safeArtifactPath(runtimeRoot, `browser-profiles/${profile.browser.profileDirectory}`);
+  if (process.platform === 'win32' && folder.length >= 260) throw new ConnectorError('configuration_required', 'Путь профиля браузера слишком длинный для Windows. Выберите короткое имя профиля или запустите рабочее место из более короткой разрешённой папки.');
+  return folder;
 }

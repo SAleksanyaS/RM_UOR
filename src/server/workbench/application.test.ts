@@ -52,11 +52,19 @@ it('query_has_no_capture_or_draft_effect_and_registered_local_tool_is_personal_o
   const missing = await app.inject({ method: 'POST', url: '/api/v1/commands', headers, payload: { commandId: id, name: 'test-tool.local.unregistered', baseRevision: null, payload: {} } });
   expect(missing.statusCode).toBe(404);
 });
-it('test_fixture_is_empty_or_scope_split_and_fails_explicitly_for_unimplemented_scenarios', async () => {
+it('test_fixture_supports_empty_scope_split_and_partial_file_and_rejects_unknown_scenarios', async () => {
   const empty = await createWorkbenchTestApplication({ role: 'viewer', scenario: 'empty' }); cleanup.push(empty.close);
   const session = await empty.app.inject({ method: 'GET', url: '/api/v1/session', headers: { host: 'localhost' } }); expect(session.json().data.defaultContext).toBeNull();
   const split = await createWorkbenchTestApplication({ role: 'curator', scenario: 'scope-split' }); cleanup.push(split.close);
   expect(split.refs.ditAssignment.id).not.toBe(split.refs.clusterAssignment.id);
   expect(split.repository.readVersion(split.refs.goal)).toMatchObject({ title: 'Тестовая цель' });
-  await expect(createWorkbenchTestApplication({ role: 'viewer', scenario: 'partial-file' })).rejects.toThrow(/not implemented/i);
+  const partial = await createWorkbenchTestApplication({ role: 'viewer', scenario: 'partial-file' }); cleanup.push(partial.close);
+  const partialSession = await partial.app.inject({ method: 'GET', url: '/api/v1/session', headers: { host: 'localhost' } });
+  expect(partialSession.statusCode).toBe(200);
+  expect(partialSession.json().data.defaultContext.goalId).toBe(partial.refs.goal.id);
+  expect(partial.repository.readVersion(partial.refs.source)).toMatchObject({ id: partial.refs.source.id });
+  // Deliberately exercise the runtime boundary outside the compile-time scenario union.
+  // Close an unexpected success before the assertion formats it (Fastify has live getters).
+  // @ts-expect-error Unsupported test scenario must fail explicitly.
+  await expect(createWorkbenchTestApplication({ role: 'viewer', scenario: 'not-implemented' }).then(async unexpected => { await unexpected.close(); })).rejects.toThrow(/not implemented/i);
 });

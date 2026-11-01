@@ -36,7 +36,7 @@ export interface NotificationService {
 const own = (context: NotificationContext): PersonalOwner => ({ installationId: context.installationId, profilePersonId: context.ownAccess.personId });
 const dedup = (cause: NotificationCause, recipient: UUIDv4 | null): string => createHash('sha256').update(JSON.stringify([cause.provider, cause.objectRef.entityType, cause.objectRef.id, cause.sourceVersion, cause.kind, recipient])).digest('hex');
 
-export function createNotificationService(options: { repository: WorkbenchRepository; provider: NotificationProvider; preferences: (installationId: UUIDv4) => RecipientPreferences; resolveOwnAccess?: () => Promise<OwnAccessProfile> }): NotificationService {
+export function createNotificationService(options: { repository: WorkbenchRepository; provider: NotificationProvider; preferences: (installationId: UUIDv4,personId?:UUIDv4|null) => RecipientPreferences; resolveOwnAccess?: () => Promise<OwnAccessProfile> }): NotificationService {
   const store = createNotificationStore(options);
   // Concurrent lifecycle ticks for one owner share preparation, never duplicate an event.
   const pumping = new Map<string, Promise<void>>();
@@ -52,7 +52,7 @@ export function createNotificationService(options: { repository: WorkbenchReposi
         if (signal?.aborted) return;
         if (options.resolveOwnAccess && (await options.resolveOwnAccess()).personId !== context.ownAccess.personId) return;
         if (signal?.aborted) return;
-        const recipient = resolveNotificationRecipient({ ownAccess: context.ownAccess, preferences: options.preferences(context.installationId) });
+        const recipient = resolveNotificationRecipient({ ownAccess: context.ownAccess, preferences: options.preferences(context.installationId,context.ownAccess.personId) });
         businessCalendarSchema.parse(snapshot.calendar); reminderSettingsSchema.parse(snapshot.settings);
         if (snapshot.settings.calendarId !== snapshot.calendar.id) throw new WorkbenchHttpError(422, 'REMINDER_CALENDAR_MISMATCH', 'Reminder settings reference another calendar');
         const causes = z.array(notificationCauseSchema).parse(snapshot.causes);

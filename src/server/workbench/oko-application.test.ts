@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync,readdirSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, expect, it } from 'vitest';
@@ -6,6 +6,19 @@ import { createOkoApplication } from './oko-application';
 
 const cleanup: Array<() => Promise<void>> = [];
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close(); });
+it('holds one runtime lease through standalone close and releases it for the next startup',async()=>{
+ const root=mkdtempSync(path.join(os.tmpdir(),'uor-oko-application-')),first=await createOkoApplication({projectRoot:root});cleanup.push(async()=>{await first.close();rmSync(root,{recursive:true,force:true});});
+ const before=first.repository.getStateRevision(),second=await createOkoApplication({projectRoot:root}).catch(error=>error);if(second&&typeof second==='object'&&'close' in second&&typeof second.close==='function')await second.close();expect(second?.code).toBe('WORKSPACE_BUSY');expect(first.repository.getStateRevision()).toBe(before);
+ await first.close();const next=await createOkoApplication({projectRoot:root});await next.close();expect(readdirSync(path.join(root,'.runtime/workbench'))).not.toContain('runtime.lock');
+});
+it('releases a standalone lease when configuration rejects startup before identity and SQLite',async()=>{
+ const root=mkdtempSync(path.join(os.tmpdir(),'uor-oko-application-'));cleanup.push(async()=>rmSync(root,{recursive:true,force:true}));mkdirSync(path.join(root,'config'));mkdirSync(path.join(root,'allowed'));writeFileSync(path.join(root,'config/site.local.json'),JSON.stringify({allowedWorkspaceRoots:[path.join(root,'allowed')]}));await expect(createOkoApplication({projectRoot:root})).rejects.toThrow('outside configured allowed roots');expect(readdirSync(path.join(root,'.runtime/workbench'))).toEqual([]);
+ writeFileSync(path.join(root,'config/site.local.json'),JSON.stringify({allowedWorkspaceRoots:[root]}));const next=await createOkoApplication({projectRoot:root});await next.close();
+});
+it('refuses the combined managed layout before creating a second database or standalone identity',async()=>{
+ const root=mkdtempSync(path.join(os.tmpdir(),'uor-oko-application-'));cleanup.push(async()=>rmSync(root,{recursive:true,force:true}));const runtime=path.join(root,'.runtime/workbench');mkdirSync(runtime,{recursive:true});writeFileSync(path.join(runtime,'active.json'),'{malformed but owned combined marker');
+ await expect(createOkoApplication({projectRoot:root})).rejects.toMatchObject({code:'WORKBENCH_COMBINED_ENTRY_REQUIRED'});expect(readdirSync(runtime)).toEqual(['active.json']);
+});
 it('starts a real empty installation without manufacturing curator access or business scope', async () => {
   const root = mkdtempSync(path.join(os.tmpdir(), 'uor-oko-application-'));
   mkdirSync(path.join(root, 'dist')); writeFileSync(path.join(root, 'dist', 'oko.html'), '<html><title>ОКО</title><div id="root"></div></html>');

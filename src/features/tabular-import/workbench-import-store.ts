@@ -5,6 +5,7 @@ import type { FileHandleView } from '../../server/workbench/files';
 import { stableJson } from '../../server/workbench/command-store';
 import type { ResolvedCaptureBinding } from '../connectors/workbench-source-store';
 import type { ImportApplyResult, ImportPreviewResult } from './workbench-import';
+import { createWorkspaceOwnership } from '../../server/storage/workbench-ownership';
 
 export type ImportPreviewRecord = {
   installationId: string; personId: string; goalId: string; file: FileHandleView;
@@ -23,10 +24,12 @@ export interface ImportStore {
   rememberGroups(record: ImportPreviewRecord, selectedKeys: string[]): void;
 }
 export function createImportStore({ repository }: { repository: WorkbenchRepository }): ImportStore {
+  const ownership=createWorkspaceOwnership(repository);
   const sql = repository.sqlForModule('imports');
   sql.execMigration('v1', `CREATE TABLE wb_imports_previews(token TEXT PRIMARY KEY,installation_id TEXT NOT NULL,person_id TEXT NOT NULL,goal_id TEXT NOT NULL,file_handle TEXT NOT NULL,configuration_revision TEXT NOT NULL,value_json TEXT NOT NULL,selection_digest TEXT,result_json TEXT);
     CREATE INDEX wb_imports_owned_file ON wb_imports_previews(installation_id,person_id,goal_id,file_handle,configuration_revision);`);
   sql.execMigration('v2-group-membership', `CREATE TABLE wb_imports_groups(installation_id TEXT NOT NULL,source_id TEXT NOT NULL,mapping_id TEXT NOT NULL,mapping_revision INTEGER NOT NULL,group_key TEXT NOT NULL,members_json TEXT NOT NULL,PRIMARY KEY(installation_id,source_id,mapping_id,mapping_revision,group_key));`);
+  sql.execMigration('v3-original-omissions','CREATE TABLE wb_imports_original_omissions(file_key TEXT PRIMARY KEY,sha256 TEXT NOT NULL,bytes INTEGER NOT NULL)');
   const owned = (token: string, installationId: string, personId: string) => sql.get<{ value_json: string; selection_digest: string | null; result_json: string | null }>('SELECT value_json,selection_digest,result_json FROM wb_imports_previews WHERE token=? AND installation_id=? AND person_id=?', [token,installationId,personId]);
   const groupRows = (installationId: string, sourceId: string, mappingRef: VersionRef, keys: string[]): Record<string,string[]> => {
     const result:Record<string,string[]>={};
@@ -49,6 +52,7 @@ export function createImportStore({ repository }: { repository: WorkbenchReposit
       for(const [key,members] of Object.entries(record.groupMembership)) {
         if(!selectedKeys.includes(key)&&record.validGroupKeys.includes(key))continue;
         const next=selectedKeys.includes(key)?members:[...new Set([...(previous[key]??[]),...members])].sort();
+        ownership.bind({moduleId:'imports',key:JSON.stringify([record.binding.source.id,record.binding.mappingRef.id,record.binding.mappingRef.revision,key]),installationId:record.installationId,personId:record.personId,provenance:'created'});
         sql.run('INSERT OR REPLACE INTO wb_imports_groups VALUES(?,?,?,?,?,?)', [record.installationId,record.binding.source.id,record.binding.mappingRef.id,record.binding.mappingRef.revision,key,JSON.stringify(next)]);
       }
     },

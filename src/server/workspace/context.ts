@@ -5,6 +5,7 @@ import type { Attestation, CatalogSnapshot, Evaluation, LocalSnapshot, Session, 
 import { LocalDatabase } from '../storage/database';
 import { OperationStore } from '../operations/operation-store';
 import { resolveWorkspace, type WorkspacePaths } from './paths';
+import { assertNoManagedWorkbenchLayout } from './managed-workbench-guard';
 import { recoverWorkspaceMaintenance } from '../../features/workspace-maintenance/recovery';
 import { CatalogStore } from '../../features/catalog/catalog-store';
 import { RoleService, type CuratorRecord } from '../../features/identity/role-service';
@@ -172,6 +173,7 @@ export class ApplicationContext {
 }
 function sessionlessChanged(before: Evaluation | null, after: Evaluation) { return !before || before.fingerprint !== after.fingerprint || before.official !== after.official || before.validation !== after.validation; }
 export async function createContext(options: AppOptions): Promise<ApplicationContext> {
+  await assertNoManagedWorkbenchLayout(options.projectRoot,'WORKBENCH_COMBINED_ENTRY_REQUIRED',{rejectLease:true});
   const config = await loadSite(options.projectRoot);
   if (options.repositoryUrl !== undefined) config.repositoryUrl = options.repositoryUrl;
   if (options.publicationMode) config.publicationMode = options.publicationMode;

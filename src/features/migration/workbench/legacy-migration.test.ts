@@ -203,6 +203,10 @@ describe('legacy migration through real FileStore and T28 staging', () => {
     expect(result.code).toBe(1); expect(result.stderr).toContain('WORKBENCH_MIGRATION_REQUIRED');
     await expect(readdir(path.join(f.root, '.runtime', 'imports'))).rejects.toMatchObject({ code: 'ENOENT' });
   });
+  it('actual legacy import and history guards refuse the managed pointer even without a static database',async()=>{
+    const f=await setup(),runtime=path.join(f.root,'.runtime/workbench');await mkdir(runtime,{recursive:true});await writeFile(path.join(runtime,'active.json'),'{invalid pointer remains managed');await expect(assertLegacyCliAllowed(f.root)).rejects.toThrow('WORKBENCH_MIGRATION_REQUIRED');await expect(archiveLocalHistory({projectRoot:f.root})).rejects.toThrow('WORKBENCH_MIGRATION_REQUIRED');
+    const result=await promisify(execFile)(process.execPath,[path.resolve('node_modules/tsx/dist/cli.mjs'),path.resolve('scripts/import-local.ts'),'nonexistent-source.html'],{cwd:f.root,windowsHide:true}).then(value=>({...value,code:0}),error=>error as {stdout:string;stderr:string;code:number});expect(result.code).toBe(1);expect(result.stderr).toContain('WORKBENCH_MIGRATION_REQUIRED');await expect(readdir(path.join(f.root,'.runtime/imports'))).rejects.toMatchObject({code:'ENOENT'});
+  });
   it('legacy CLI refuses aliased runtime paths even before a database exists', async () => {
     const f = await setup(); const target = path.join(f.root, 'aliased-runtime'); await mkdir(target);
     await symlink(target, path.join(f.root, '.runtime'), process.platform === 'win32' ? 'junction' : 'dir');

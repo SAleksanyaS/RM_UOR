@@ -11,7 +11,7 @@ import type { QueryContext } from './query-registry';
 import type { CommandOwnership } from './command-store';
 import { commandDigest, createCommandStore, validateCommandOutcome, withCommandExecution } from './command-store';
 
-export type CommandContext = { requestId: string; commandId: string; installationId: string; actor: ActorRef; repository: WorkbenchRepository; clock: Clock; ownAccess: OwnAccessProfile };
+export type CommandContext = { sessionId?: string; requestId: string; commandId: string; installationId: string; actor: ActorRef; repository: WorkbenchRepository; clock: Clock; ownAccess: OwnAccessProfile };
 export type CommandOutcome<R> = { result: R; changedRefs: EntityRef[]; editToken: RevisionToken | null };
 export type CommandDescriptor<P, R> = { name: string; inputSchema: z.ZodType<P>; outputSchema: z.ZodType<R>; capability: Capability; effect: 'local' | 'sharedDraft' | 'external'; execution: 'sync' | 'async'; handler: (context: CommandContext, payload: P) => Promise<CommandOutcome<R>>; resourceKey?: (payload: P) => string; queuedRecovery?: 'restart-safe-local'; ownership?: 'person' | 'person-if-present'; manualAuthRecovery?: true; manualRecovery?: 'browser-capture'; explicitRecovery?:'reconcile-on-user-retry' };
 type ErasedDescriptor = { capability: Capability; ownership?: CommandDescriptor<unknown, unknown>['ownership']; manualAuthRecovery?: true; manualRecovery?: 'browser-capture'; explicitRecovery?:'reconcile-on-user-retry'; effect: CommandDescriptor<unknown, unknown>['effect']; execution: 'sync' | 'async'; input: z.ZodType; output: z.ZodType; run: (context: CommandContext, payload: unknown) => Promise<CommandOutcome<unknown>>; resourceKey: (payload: unknown) => string; queuedRecovery?: 'restart-safe-local' };

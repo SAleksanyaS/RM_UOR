@@ -36,6 +36,11 @@ const evidenceSchema = z.strictObject({ owner: z.strictObject({ installationId: 
 const previewEvidenceSchema = evidenceSchema.omit({ publishedAssignment: true }).extend({ assignment: z.strictObject({ kind: z.literal('own-draft'), packageId: uuidSchema, assignmentRef: versionRefSchema.refine(v => v.entityType === 'goal_assignment'), editToken: z.string().min(1) }) });
 type Binding = { source: SourceDefinition; mapping: SourceFieldMapping & { parsingProfile: NonNullable<SourceFieldMapping['parsingProfile']> }; goal: CoreGoalDefinition; directory: DraftDirectoryInventory | null; configurationHash: Sha256 };
 type TestReceipt = { profileRevision: string | null; inputHash: Sha256; configurationHash: Sha256 | null; payloadHash: Sha256 | null; assignmentHash: Sha256 | null; evidence: BrowserExportEvidence | BrowserPreviewExportEvidence | null; result: BrowserScenarioTestResult; expiresAt: string };
+export const browserScenarioReceiptSchema=z.strictObject({profileRevision:z.string().nullable(),inputHash:sha256Schema,configurationHash:sha256Schema.nullable(),payloadHash:sha256Schema.nullable(),assignmentHash:sha256Schema.nullable(),evidence:z.union([evidenceSchema,previewEvidenceSchema]).nullable(),result:browserScenarioTestResultSchema,expiresAt:utcInstantSchema});
+export function initializeBrowserScenarioStore(repository:WorkbenchRepository):void {
+ const sql=repository.sqlForModule('browser_scenarios');
+ sql.execMigration('v1', `CREATE TABLE wb_browser_scenarios_tests(sequence INTEGER PRIMARY KEY AUTOINCREMENT, installation_id TEXT NOT NULL, person_id TEXT NOT NULL, command_id TEXT NOT NULL, draft_id TEXT NOT NULL, receipt_json TEXT NOT NULL, UNIQUE(installation_id,command_id)); CREATE INDEX wb_browser_scenarios_tests_draft ON wb_browser_scenarios_tests(installation_id,person_id,draft_id,sequence);`);
+}
 
 /** Preview diagnostics are private append-only receipts, never source captures or portable entities. */
 export function createBrowserScenarioService({ repository, drafts, runtime, profiles, parser, enricher, clock, accessPolicy }: {
@@ -197,7 +202,7 @@ export function createBrowserScenarioService({ repository, drafts, runtime, prof
         if (scenario.expectedExport.requiredColumns.some(column => !table.columns.includes(column))) return fail('SOURCE_SCHEMA_CHANGED');
         result.columns = table.columns; result.previewRows = table.rows.slice(0, 20).map(row => Object.fromEntries(Object.entries(row.cells).map(([column, cell]) => [column, cell.original])));
         const normalized = normalizeParsedWorkbenchTable({ table, mapping: cfg.mapping });
-        const enriched = enrichmentResultSchema.parse(enricher.enrich({ rows: normalized.canonicalRows, directoryRevision: hash(directoryDefinition(cfg.directory)) }));
+        const enriched = enrichmentResultSchema.parse(enricher.enrichExact ? enricher.enrichExact({capture:{sourceId:cfg.source.id,mappingRef:ref('source_field_mapping',cfg.mapping),rawRows:normalized.rawRows,canonicalRows:normalized.canonicalRows},mapping:cfg.mapping,directoryEntities:cfg.directory!.entities,directoryLinks:cfg.directory!.links}) : enricher.enrich({ rows: normalized.canonicalRows, directoryRevision: hash(directoryDefinition(cfg.directory)) }));
         // The injected adapter must agree with T16 on the exact frozen projected directory.
         // A stale adapter cannot bless a new key, removed alias or changed relationship.
         const checkedEnrichment = enrichSourceRows({ capture: { sourceId: cfg.source.id, mappingRef: ref('source_field_mapping', cfg.mapping), rawRows: normalized.rawRows, canonicalRows: normalized.canonicalRows }, mapping: cfg.mapping, directoryEntities: cfg.directory!.entities, directoryLinks: cfg.directory!.links });

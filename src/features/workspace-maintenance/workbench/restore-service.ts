@@ -84,7 +84,7 @@ export class RestoreService {
       const bytes = new Uint8Array(staged.bytesValue); const archiveSha256 = archiveHash(bytes); if (archiveSha256 !== staged.sha256 || bytes.length !== staged.bytes) throw new WorkbenchHttpError(422, 'INTEGRITY_MISMATCH', 'Uploaded workspace bytes changed');
       const archive = await validateWorkspaceArchive(bytes, this.deps.modules, w); const current = await snapshotWorkspace(this.deps);
       synchronousArchiveCall(() => w.authorizeCompleteWorkspace(context, { operation: 'replace', records: current.records, incomingRecords: archive.records }));
-      await this.stage(archive, randomUUID());
+      await this.stage(archive, randomUUID(), context);
       if(expectedSourceRevision!==undefined&&current.revision!==expectedSourceRevision)throw stale();
       if (this.deps.sessionId(context) !== sessionId) throw tokenMissing();
       const expiresAt = new Date(Date.parse(this.deps.clock.now()) + 30 * 60_000).toISOString(); const token = randomBytes(32).toString('hex');
@@ -93,16 +93,20 @@ export class RestoreService {
       return { restoreToken: token, archiveSha256, repoId: current.repositoryId, currentStateRevision: current.revision, currentEmpty: current.empty, mode: 'replace', expiresAt, counts: { records: archive.records.length, files: archive.files.size }, warnings: archive.manifest.exclusions.includes('originals') ? [{code:'ORIGINALS_OMITTED',message:'Архив неполный: исходные файлы не включены и не будут восстановлены.',retryable:false,details:[],operationId:null,provider:null}] : [] };
     });
   }
-  private async stage(archive: ValidatedWorkspaceArchive, id: string): Promise<string> {
+  private async stage(archive: ValidatedWorkspaceArchive, id: string, context: CommandContext): Promise<string> {
     const w = requireArchiveWorkspace(this.deps); await ensurePhysicalDirectory(w.managedRoot); const stagedRoot = path.join(w.managedRoot, 'restore-' + id);
     await mkdir(stagedRoot, { mode: 0o700 }); await assertOwnedWorkspaceRoot(w.managedRoot, stagedRoot);
     await durableWrite(stagedRoot, 'workspace-archive-manifest.json', JSON.stringify(archive.manifest));
     for (const [relative, bytes] of archive.files) await durableWrite(stagedRoot, relative, bytes);
     const repository = await w.openStagedRepository(stagedRoot);
     try {
-      repository.transaction(() => { for (const [moduleId, codec] of this.deps.modules) synchronousArchiveCall(() => codec.restoreRecords(repository, archive.records.filter(r => r.moduleId === moduleId))); });
-      const actual = [...this.deps.modules].flatMap(([moduleId, codec]) => codec.exportRecords(repository).map(r => { if (r.moduleId !== moduleId) throw Error('Foreign staged namespace'); synchronousArchiveCall(() => codec.validate(r)); return r; }));
+      const bindings = w.stageBindings?.(stagedRoot, repository), modules = bindings?.modules ?? this.deps.modules;
+      const stageContext = w.restoreContext?.(stagedRoot, archive, context);
+      repository.transaction(() => { for (const [moduleId, codec] of modules) synchronousArchiveCall(() => codec.restoreRecords(repository, archive.records.filter(r => r.moduleId === moduleId), stageContext)); });
+      const snapshot = bindings ? await snapshotWorkspace({ ...this.deps, repository, modules, workspace: { ...w, files: bindings.files, omittedOriginals: bindings.omittedOriginals, validateArchive: bindings.validateArchive } }) : null;
+      const actual = snapshot?.records ?? [...modules].flatMap(([moduleId, codec]) => codec.exportRecords(repository).map(r => { if (r.moduleId !== moduleId) throw Error('Foreign staged namespace'); synchronousArchiveCall(() => codec.validate(r)); return r; }));
       if (!isDeepStrictEqual(sortedRecords(actual), sortedRecords(archive.records))) throw new WorkbenchHttpError(422, 'INTEGRITY_MISMATCH', 'Staged records do not match the validated archive');
+      if (snapshot && snapshot.revision !== workspaceRevision(w.repositoryId(), archive.records, archive.manifest.files)) throw new WorkbenchHttpError(422, 'INTEGRITY_MISMATCH', 'Staged owner files do not match the validated archive');
     } finally { repository.close(); }
     for (const [relative, bytes] of archive.files) { const actual = await readPrivate(stagedRoot, relative); if (archiveHash(actual) !== archiveHash(bytes)) throw new WorkbenchHttpError(422, 'INTEGRITY_MISMATCH', 'Staged workspace file changed'); }
     return stagedRoot;
@@ -117,7 +121,7 @@ export class RestoreService {
       const authorizedCurrent = await this.verifyLive(saved, context);
       const archive = await validateWorkspaceArchive(await readPrivate(this.deps.artifactRoot, `tokens/${input.restoreToken}/archive.zip`), this.deps.modules, w);
       synchronousArchiveCall(() => w.authorizeCompleteWorkspace(context, { operation: 'replace', records: authorizedCurrent.records, incomingRecords: archive.records }));
-      const id = randomUUID(); const stagedRoot = await this.stage(archive, id); await this.verifyLive(saved, context);
+      const id = randomUUID(); const stagedRoot = await this.stage(archive, id, context); await this.verifyLive(saved, context);
       const current = await snapshotWorkspace(this.deps); let rescue: RestoreApplyResult['rescue'] = { status: 'empty', backupId: null };
       if (!current.empty) { const backup = await saveWorkspaceBackup(context, { label: 'Before workspace replacement', includeOriginals: true }, this.deps, true); const verified = await readOwnBackup(context, backup.backupId, this.deps); await validateWorkspaceArchive(verified.bytes, this.deps.modules, w); if (backup.sourceStateRevision !== saved.binding.stateRevision) throw stale(); rescue = { status: 'created', backupId: backup.backupId }; }
       let quiesced = false; let journal: RestoreJournal | null = null; let activationAttempted = false; let commitAttempted = false;

@@ -11,6 +11,8 @@ export type PackageRevision = z.infer<typeof packageRevisionSchema>;
 /** Own read projection; never a package state or client-supplied delivery flag. */
 export const packageDeliverySchema = z.strictObject({packageRevision:packageRevisionSchema,preparedCommit:gitOidSchema,pushState:z.enum(['prepared','unknown','confirmed']),job:jobSnapshotSchema});
 export type PackageDelivery = z.infer<typeof packageDeliverySchema>;
+export const retainedPackageDeliverySchema=z.strictObject({packageRevision:packageRevisionSchema,preparedCommit:gitOidSchema,historicalJobIds:z.array(uuidSchema),reconciliationNeeded:z.literal(true)});
+export type RetainedPackageDelivery=z.infer<typeof retainedPackageDeliverySchema>;
 export const packageFileSchema = z.strictObject({path:z.string().min(1),sha256:rawSha256Schema,bytes:z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER)});
 export type PackageFile = z.infer<typeof packageFileSchema>;
 export const packageManifestSchema = z.strictObject({packageRevision:packageRevisionSchema,files:z.array(packageFileSchema)});
@@ -44,5 +46,5 @@ export type PackageStatusResult=z.infer<typeof packageStatusResultSchema>;
 export const publicationCheckResultSchema=z.strictObject({currentCommit:gitOidSchema.nullable(),availableCommit:gitOidSchema.nullable(),available:z.boolean(),warnings:z.array(problemSchema)});
 export type PublicationCheckResult=z.infer<typeof publicationCheckResultSchema>;
 export const publicationApplyInputSchema=z.strictObject({mainCommit:gitOidSchema});
-export const publicationApplyResultSchema=z.strictObject({appliedCommit:gitOidSchema,stateRevision:revisionTokenSchema,anchors:z.array(publicationAnchorSchema),warnings:z.array(problemSchema)});
+export const publicationApplyResultSchema=z.strictObject({appliedCommit:gitOidSchema,appliedAt:utcInstantSchema.nullable(),stateRevision:revisionTokenSchema,anchors:z.array(publicationAnchorSchema),warnings:z.array(problemSchema)});
 export type PublicationApplyResult=z.infer<typeof publicationApplyResultSchema>;

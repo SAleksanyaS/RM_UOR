@@ -53,3 +53,12 @@ it('refreshes the same known running job after one lost GET without another muta
   expect((await h.fetch(screen.getByRole('link',{name:'Скачать созданную копию'}).getAttribute('href')!)).status).toBe(200);
  }finally{release();}
 });
+it('rechecks the local session after invalidation and reads the same committed job without repeating a mutation',async()=>{
+ const h=await open(),read=h.client.job.bind(h.client);let invalidated=false;
+ vi.spyOn(h.client,'job').mockImplementation(async id=>{if(!invalidated){invalidated=true;h.invalidateSession();}return read(id);});
+ fireEvent.click(screen.getByRole('button',{name:'Создать копию'}));
+ await screen.findByText('Копия создана',{}, {timeout:10000});
+ expect(invalidated).toBe(true);expect(h.requests.filter(request=>request.body?.name==='backup.create')).toHaveLength(1);
+ expect(h.requests.filter(request=>request.url==='/api/v1/session').length).toBeGreaterThan(1);
+ await waitFor(()=>expect(screen.queryByRole('alert')).toBeNull());
+});
