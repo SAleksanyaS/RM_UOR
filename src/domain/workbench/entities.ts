@@ -15,9 +15,11 @@ import type { Applicability, ManualCorrection, ManualStatusEvent } from './entit
 import type { Work, WorkDependency, Decision } from './entities/execution';
 import type { CustomFieldDef, CustomFieldValue, Commentary, Evidence, DashboardDef } from './entities/extensions';
 import type { BusinessCalendar, ReminderSettings } from './entities/notifications';
+import type { BrowserScenarioDefinition } from './browser-scenario';
 import type { EvaluationBasis, CalculationResult, Attestation, AgreedSnapshot } from './entities/evaluation';
 
 export type WorkbenchEntityMap = {
+  browser_scenario: BrowserScenarioDefinition;
   core_goal_definition: CoreGoalDefinition; goal_assignment: GoalAssignment; template: Template; metric_definition: MetricDefinition; method_version: MethodVersion;
   directory_entity: DirectoryEntity; directory_link: DirectoryLink; source_field_mapping: SourceFieldMapping; source_definition: SourceDefinition;
   capture: Capture; observed_fact: ObservedFact; applicability: Applicability; manual_correction: ManualCorrection; manual_status_event: ManualStatusEvent;

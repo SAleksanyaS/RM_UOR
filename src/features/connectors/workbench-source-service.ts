@@ -9,8 +9,8 @@ import { commitCommandEffect, stableJson } from '../../server/workbench/command-
 import type { JobStore } from '../../server/workbench/jobs';
 import { WorkbenchHttpError } from '../../server/workbench/protocol';
 import { reduceRows } from '../evaluation/workbench/reducers';
-import { captureInputSchema, captureRequestSchema, captureResultSchema, enrichmentResultSchema, rawBatchSchema, sourceCheckSchema, sourceIssueSchema, sourcePayloadHash, type CaptureResult, type EnricherPort, type NormalizerPort, type SourceAdapter, type SourceIssue } from './workbench-source-contracts';
-import { sourceScopeReachable, type ResolvedCaptureBinding, type SourceStore } from './workbench-source-store';
+import { validateSourceConfiguration, captureInputSchema, captureRequestSchema, captureResultSchema, enrichmentResultSchema, rawBatchSchema, sourceCheckSchema, sourceIssueSchema, sourcePayloadHash, type CaptureResult, type EnricherPort, type NormalizerPort, type SourceAdapter, type SourceIssue } from './workbench-source-contracts';
+import { sourceScopeReachable, type SourceStore } from './workbench-source-store';
 
 export type SourceJobs = Pick<JobStore, 'findByCommand' | 'getResourceKey' | 'registerControl' | 'registerStage' | 'stage'>;
 export interface SourceService { capture(context: CommandContext, input: { goalId: string }): Promise<CaptureResult>; sourceIdForGoal(goalId: string): string }
@@ -18,21 +18,6 @@ const problem = (code: string, message: string, status = 422): never => { throw 
 const scopeKey = (scope: ScopeRef) => `${scope.kind}/${scope.id}`;
 const issue = (code: string, rowKeys: string[], refs: VersionRef[] = []): SourceIssue => ({ code, stage: 'normalize', retryable: false, message: 'Source rows require a valid published mapping or value', rowKeys, refs: refs.map(({ entityType, id }) => ({ entityType, id })) });
 
-function validateProfile(binding: ResolvedCaptureBinding): void {
-  if (binding.source.kind !== 'qlik' || binding.goal.mode !== 'numeric' || binding.method.mode !== 'numeric') return problem('SOURCE_UNSUPPORTED', 'Only the configured numeric automatic source can be captured');
-  if (!binding.assignment.expectedPopulation?.length || !binding.mapping.fixedScope && !binding.mapping.productKeyField) return problem('SOURCE_INVALID_CONFIGURATION', 'Published population and scope mapping are required');
-  if (new Set(binding.metrics.map(m => m.unit.code)).size !== 1) return problem('UNSUPPORTED_REDUCER', 'A canonical row cannot carry incompatible metric units');
-  const canonicalFields = new Map<string, string>();
-  for (const rule of binding.method.rules) {
-    const fields = binding.mapping.metricFields.find(m => m.metricId === rule.metricRef.id)?.fields;
-    const required = rule.reducer.kind === 'count' ? [] : rule.reducer.kind === 'ratio' ? [rule.reducer.numeratorField, rule.reducer.denominatorField] : [rule.reducer.valueField];
-    if (!fields || required.some(field => !fields[field])) return problem('SOURCE_INVALID_CONFIGURATION', 'Every reducer field must be explicitly published in the metric mapping');
-  }
-  for (const entry of binding.mapping.metricFields) {
-    if (!binding.metrics.some(m => m.id === entry.metricId)) return problem('SOURCE_INVALID_CONFIGURATION', 'Mapping contains a metric outside the published method');
-    for (const [field, raw] of Object.entries(entry.fields)) { if (canonicalFields.has(field) && canonicalFields.get(field) !== raw) return problem('SOURCE_INVALID_CONFIGURATION', 'Flat canonical fields cannot represent conflicting raw columns'); canonicalFields.set(field, raw); }
-  }
-}
 
 export function createSourceService({ repository, store, adapters, normalizer, enricher, jobs, clock, recheckGuard }: { repository: WorkbenchRepository; store: SourceStore; adapters: Map<string, SourceAdapter>; normalizer: NormalizerPort; enricher: EnricherPort; jobs: SourceJobs; clock: Clock; recheckGuard: (context: CommandContext) => Promise<void> }): SourceService {
   for (const stage of ['source.check', 'source.collect', 'source.normalize', 'source.enrich', 'source.commit']) jobs.registerStage(stage);
@@ -47,7 +32,7 @@ export function createSourceService({ repository, store, adapters, normalizer, e
       if (job.status !== 'running') return problem('SOURCE_JOB_NOT_RUNNING', 'Capture job is not running', 409);
       const binding = store.resolveCapture({ installationId: context.installationId, goalId: input.goalId });
       if (store.sourceIdForGoal(input.goalId) !== binding.source.id || jobs.getResourceKey(job.jobId, context.installationId) !== 'source:' + binding.source.id) return problem('SOURCE_CONFIGURATION_CHANGED', 'Queued source identity has changed', 409);
-      validateProfile(binding); const adapter = adapters.get(binding.adapterKey); if (!adapter) return problem('SOURCE_UNSUPPORTED', 'Configured adapter is unavailable');
+      validateSourceConfiguration(binding); const adapter = adapters.get(binding.adapterKey); if (!adapter) return problem('SOURCE_UNSUPPORTED', 'Configured adapter is unavailable');
       const request = captureRequestSchema.parse({ operationId: job.jobId, goalRef: binding.goalRef, sourceRef: binding.sourceRef, mappingRef: binding.mappingRef, businessTime: binding.businessTime, context: binding.context, configurationRevision: binding.configurationRevision, profileRef: binding.profileRef });
       const controller = new AbortController();
       jobs.registerControl(job.jobId, { cancel: async () => { controller.abort(); } });

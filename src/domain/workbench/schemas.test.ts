@@ -5,7 +5,7 @@ import { fixtureId, makeEntityGraph, makeHeader, makeNumericFixture, versionRef 
 describe('versioned domain schemas', () => {
   it('registers every header entity and validates a complete reference graph', () => {
     expect([...entitySchemas.keys()].sort()).toEqual([
-      'core_goal_definition', 'goal_assignment', 'template', 'metric_definition', 'method_version', 'directory_entity', 'directory_link',
+      'browser_scenario', 'core_goal_definition', 'goal_assignment', 'template', 'metric_definition', 'method_version', 'directory_entity', 'directory_link',
       'source_field_mapping', 'source_definition', 'capture', 'observed_fact', 'applicability', 'manual_correction', 'manual_status_event',
       'work', 'work_dependency', 'decision', 'custom_field_def', 'custom_field_value', 'commentary', 'evidence', 'dashboard_def',
       'business_calendar', 'reminder_settings', 'evaluation_basis', 'calculation_result', 'attestation', 'agreed_snapshot',

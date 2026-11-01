@@ -30,16 +30,18 @@ export type DraftOpenResult = { draftId: string; objectId: string; entityRef: En
 export type DraftSaveInput = { draftId: string; definition: PartialDraftInput<WorkbenchEntity> };
 export type DraftSaveResult = { draftId: string; entityRef: EntityRef; versionRef: VersionRef; complete: boolean; problems: FieldProblem[] };
 export type DraftOwnerSave = { context: CommandContext; entry: StoredDraft; definition: Record<string, unknown>; previous: Header | null };
+/** Complete directory of the exact package projection; point lookups cannot expose additions/removals. */
+export type DraftDirectoryInventory = { entities: DirectoryEntity[]; links: DirectoryLink[] };
 export type DraftOwnerPolicy = {
   initialDefinition?(entityType: string): Record<string, unknown>;
   validateSave?(input: DraftOwnerSave): void | FieldProblem[];
   validateMaterialization?(input: { entityType: string; value: WorkbenchEntity; resolve: (ref: EntityRef | VersionRef) => Header | null }): void;
   afterSave?(input: DraftOwnerSave): void;
-  validatePackage?(input: { context: CommandContext; entry: StoredDraft; value: WorkbenchEntity; previous: Header | null; resolve: (ref: EntityRef | VersionRef) => Header | null }): void;
+  validatePackage?(input: { context: CommandContext; entry: StoredDraft; value: WorkbenchEntity; previous: Header | null; resolve: (ref: EntityRef | VersionRef) => Header | null; directoryInventory?: DraftDirectoryInventory }): void;
 };
 const headerKeys = new Set(['schemaVersion','id','revision','recordedAt','actor','publicationAnchorId']);
-export const draftEntityTypes = ['core_goal_definition','goal_assignment','method_version','metric_definition','template','source_definition','source_field_mapping','applicability','directory_entity','directory_link','manual_status_event','manual_correction','attestation','agreed_snapshot','commentary','evidence','work','work_dependency','decision','dashboard_def','custom_field_def','custom_field_value','business_calendar','reminder_settings'] as const;
-const definitionTypes = new Set<string>(['core_goal_definition','goal_assignment','method_version','metric_definition','template','source_definition','source_field_mapping','applicability','directory_entity','directory_link','work','work_dependency','decision','dashboard_def','custom_field_def','custom_field_value','business_calendar','reminder_settings']);
+export const draftEntityTypes = ['browser_scenario','core_goal_definition','goal_assignment','method_version','metric_definition','template','source_definition','source_field_mapping','applicability','directory_entity','directory_link','manual_status_event','manual_correction','attestation','agreed_snapshot','commentary','evidence','work','work_dependency','decision','dashboard_def','custom_field_def','custom_field_value','business_calendar','reminder_settings'] as const;
+const definitionTypes = new Set<string>(['browser_scenario','core_goal_definition','goal_assignment','method_version','metric_definition','template','source_definition','source_field_mapping','applicability','directory_entity','directory_link','work','work_dependency','decision','dashboard_def','custom_field_def','custom_field_value','business_calendar','reminder_settings']);
 const fail = (code: string, status = 422): never => { throw new WorkbenchHttpError(status, code, code); };
 const refOf = (entityType: string, value: Header): VersionRef => ({ entityType, id: value.id, revision: value.revision });
 export const businessDefinition = (value: object): Record<string, unknown> => Object.fromEntries(Object.entries(value).filter(([key]) => !headerKeys.has(key)));
@@ -121,7 +123,7 @@ export function createDraftService({ repository, store, clock, prepareEvaluation
         const key = `${ref.entityType}/${value.id}/${value.revision}`;
         if (!closure.has(key)) {
           closure.set(key, { type: ref.entityType, value });
-          if (['dashboard_def','custom_field_def','custom_field_value'].includes(ref.entityType) && !ownerPolicies.has(ref.entityType)) fail('DRAFT_OWNER_REQUIRED');
+          if (['browser_scenario','dashboard_def','custom_field_def','custom_field_value'].includes(ref.entityType) && !ownerPolicies.has(ref.entityType)) fail('DRAFT_OWNER_REQUIRED');
           validateReferences(entityReferences(ref.entityType as WorkbenchEntityType, value), visit);
           ownerPolicies.get(ref.entityType)?.validateMaterialization?.({ entityType: ref.entityType, value, resolve: visit });
           if (ref.entityType === 'goal_assignment') {
@@ -295,14 +297,14 @@ export function createDraftService({ repository, store, clock, prepareEvaluation
       return [...new Map(refs.map(ref=>[`${ref.entityType}/${ref.id}/${ref.revision}`,ref])).values()];
     },
     readOwnEvidenceArtifact(context: CommandContext, packageId: string, artifactId: string) { assertContext(context,false); ownPackage(context,packageId); return evidence.readArtifactForContext(context,artifactId); },
-    validateMaterializedForPackage(context: CommandContext, packageId: string, entityType: string, value: WorkbenchEntity, read: (ref: EntityRef | VersionRef) => Header | null, previous: Header | null) {
+    validateMaterializedForPackage(context: CommandContext, packageId: string, entityType: string, value: WorkbenchEntity, read: (ref: EntityRef | VersionRef) => Header | null, previous: Header | null, directoryInventory?: DraftDirectoryInventory) {
       assertContext(context); const pkg=ownPackage(context,packageId); const original=pkg.entries.find(e=>e.entityRef.entityType===entityType && e.entityRef.id===value.id) as StoredDraft | undefined;
       const checked=validatedEntity(entityType,value) as WorkbenchEntity;
       validateReferences(entityReferences(entityType as WorkbenchEntityType,checked).filter(r=>r.ref.entityType!=='publication_anchor'),read);
       const policy=ownerPolicies.get(entityType);
-      if(['work','work_dependency','decision','dashboard_def','custom_field_def','custom_field_value'].includes(entityType) && !policy) fail('DRAFT_OWNER_REQUIRED');
+      if(['browser_scenario','work','work_dependency','decision','dashboard_def','custom_field_def','custom_field_value'].includes(entityType) && !policy) fail('DRAFT_OWNER_REQUIRED');
       policy?.validateMaterialization?.({entityType,value:checked,resolve:read});
-      if(original) policy?.validatePackage?.({context,entry:{...original,definition:businessDefinition(checked),header:checked},value:checked,previous,resolve:read});
+      if(original) policy?.validatePackage?.({context,entry:{...original,definition:businessDefinition(checked),header:checked},value:checked,previous,resolve:read,directoryInventory});
     },
     validateDraftPackage(packageId: string, options?: { allowRebase?: boolean }): DraftValidation {
       const pkg = store.getPackage(packageId); if (!pkg) return fail('DRAFT_NOT_FOUND', 404);
@@ -310,7 +312,11 @@ export function createDraftService({ repository, store, clock, prepareEvaluation
       const context: CommandContext = { repository, clock, installationId: pkg.installationId, commandId: newUuid(), requestId: newUuid(), actor: { hostname: 'package-validation', installationId: pkg.installationId, profilePersonId: pkg.ownerPersonId }, ownAccess: { role: 'curator', personId: pkg.ownerPersonId, displayName: null, policyState: 'local_preview', checkedAt: null } };
       for (const entry of pkg.entries as StoredDraft[]) {
         const parsed = schemaForEntity(entry.entityRef.entityType).safeParse(materialize(entry));
-        if (!parsed.success) { problems.push(...fieldProblems(parsed.error).map(p => ({ ...p, path: `/entries/${entry.draftId}${p.path}` }))); continue; }
+        if (!parsed.success) {
+          problems.push(...fieldProblems(parsed.error).map(p => ({ ...p, path: `/entries/${entry.draftId}${p.path}` })));
+          if (entry.entityRef.entityType === 'browser_scenario') problems.push(...(ownerPolicies.get('browser_scenario')?.validateSave?.({ context, entry, definition: entry.definition, previous: previousFrozen(entry) }) ?? []));
+          continue;
+        }
         candidates.set(`${entry.entityRef.entityType}/${entry.entityRef.id}`, parsed.data as WorkbenchEntity);
       }
       const target = (ref: EntityRef | VersionRef) => {
@@ -326,7 +332,7 @@ export function createDraftService({ repository, store, clock, prepareEvaluation
       for (const entry of pkg.entries as StoredDraft[]) {
         const value = candidates.get(`${entry.entityRef.entityType}/${entry.entityRef.id}`); if (!value) continue;
         try {
-          if (['work','work_dependency','decision','dashboard_def','custom_field_def','custom_field_value'].includes(entry.entityRef.entityType) && !ownerPolicies.has(entry.entityRef.entityType)) fail('DRAFT_OWNER_REQUIRED');
+          if (['browser_scenario','work','work_dependency','decision','dashboard_def','custom_field_def','custom_field_value'].includes(entry.entityRef.entityType) && !ownerPolicies.has(entry.entityRef.entityType)) fail('DRAFT_OWNER_REQUIRED');
           validateReferences(entityReferences(entry.entityRef.entityType as WorkbenchEntityType, value), target);
           ownerPolicies.get(entry.entityRef.entityType)?.validateMaterialization?.({ entityType: entry.entityRef.entityType, value, resolve: target });
           if (entry.baseRef && !options?.allowRebase) { const published = repository.readPublishedHead(entry.entityRef); if (!published || published.revision !== entry.baseRef.revision) fail('REVISION_CONFLICT', 409); }
@@ -352,7 +358,13 @@ export function createDraftService({ repository, store, clock, prepareEvaluation
               manualChain(context, pkg, entry.versionRef, event.assignmentId);
             }
           }
-          ownerPolicies.get(entry.entityRef.entityType)?.validatePackage?.({ context, entry, value, previous: previousFrozen(entry, true), resolve: target });
+          let directoryInventory: DraftDirectoryInventory | undefined;
+          if (entry.entityRef.entityType === 'browser_scenario') {
+            const projectedDirectory = new Map(repository.readPublishedCatalog().filter(v => ['directory_entity','directory_link'].includes(v.entityType)).map(v => [`${v.entityType}/${v.value.id}`, { type: v.entityType, value: v.value }]));
+            for (const candidate of pkg.entries) if (['directory_entity','directory_link'].includes(candidate.entityRef.entityType)) { const resolved = target(candidate.entityRef); if (!resolved) fail('DRAFT_REFERENCE_INCOMPLETE'); projectedDirectory.set(`${candidate.entityRef.entityType}/${candidate.entityRef.id}`, { type: candidate.entityRef.entityType, value: resolved! }); }
+            directoryInventory = { entities: [...projectedDirectory.values()].filter(v => v.type === 'directory_entity').map(v => v.value as DirectoryEntity), links: [...projectedDirectory.values()].filter(v => v.type === 'directory_link').map(v => v.value as DirectoryLink) };
+          }
+          ownerPolicies.get(entry.entityRef.entityType)?.validatePackage?.({ context, entry, value, previous: previousFrozen(entry, true), resolve: target, directoryInventory });
         }
         catch (error) { problems.push(issue((error as { code?: string }).code ?? 'DRAFT_REFERENCE_INVALID', `/entries/${entry.draftId}`, entry.entityRef)); }
       }

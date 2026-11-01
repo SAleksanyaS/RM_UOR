@@ -7,6 +7,7 @@ import * as sources from './schemas/sources';
 import * as states from './schemas/states';
 import * as extensions from './schemas/extensions';
 import * as evaluation from './schemas/evaluation';
+import { browserScenarioDefinitionSchema } from './browser-scenario';
 
 export * from './schemas/core';
 export * from './schemas/sources';
@@ -15,6 +16,7 @@ export * from './schemas/extensions';
 export * from './schemas/evaluation';
 
 export const entitySchemas: ReadonlyMap<WorkbenchEntityType, z.ZodType<Header>> = new Map<WorkbenchEntityType, z.ZodType<Header>>([
+  ['browser_scenario', browserScenarioDefinitionSchema],
   ['core_goal_definition', core.coreGoalDefinitionSchema], ['goal_assignment', core.goalAssignmentSchema], ['template', core.templateSchema],
   ['metric_definition', core.metricDefinitionSchema], ['method_version', core.methodVersionSchema], ['directory_entity', core.directoryEntitySchema], ['directory_link', core.directoryLinkSchema],
   ['source_field_mapping', sources.sourceFieldMappingSchema], ['source_definition', sources.sourceDefinitionSchema], ['capture', sources.captureSchema], ['observed_fact', sources.observedFactSchema],
@@ -48,6 +50,10 @@ export function entityReferences(type: WorkbenchEntityType, value: WorkbenchEnti
   if (value.publicationAnchorId !== null) id('publication_anchor', value.publicationAnchorId);
   // Actor identity is an installation-local attribution; it need not be a public directory person.
   switch (type) {
+    case 'browser_scenario': {
+      const v = value as WorkbenchEntityMap['browser_scenario'];
+      id('source_definition', v.sourceId, target => { if (sources.sourceDefinitionSchema.parse(target).kind !== 'qlik') throw new WorkbenchError('SOURCE_SCENARIO_MISMATCH'); }); break;
+    }
     case 'core_goal_definition': {
       const v = value as WorkbenchEntityMap['core_goal_definition']; id('source_definition', v.sourceId, target => {
         const source = sources.sourceDefinitionSchema.parse(target);
@@ -77,7 +83,8 @@ export function entityReferences(type: WorkbenchEntityType, value: WorkbenchEnti
       const v = value as WorkbenchEntityMap['source_definition']; id('core_goal_definition', v.goalId, target => {
         const goal = core.coreGoalDefinitionSchema.parse(target);
         if (goal.sourceId !== v.id || (v.kind === 'manual_status') !== (goal.mode === 'manual_status')) throw new WorkbenchError('GOAL_SOURCE_MISMATCH');
-      }); if (v.mappingRef) add(v.mappingRef, ['source_field_mapping']); if (v.browserScenarioRef) add(v.browserScenarioRef, ['browser_scenario']); break;
+      }); if (v.mappingRef) add(v.mappingRef, ['source_field_mapping'], target => { if (sources.sourceFieldMappingSchema.parse(target).sourceId !== v.id) throw new WorkbenchError('SOURCE_MAPPING_MISMATCH'); });
+      if (v.browserScenarioRef) add(v.browserScenarioRef, ['browser_scenario'], target => { if (v.kind !== 'qlik' || browserScenarioDefinitionSchema.parse(target).sourceId !== v.id) throw new WorkbenchError('SOURCE_SCENARIO_MISMATCH'); }); break;
     }
     case 'capture': {
       const v = value as WorkbenchEntityMap['capture']; id('source_definition', v.sourceId); add(v.mappingRef, ['source_field_mapping']); break;

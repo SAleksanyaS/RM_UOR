@@ -155,7 +155,10 @@ export function buildPackageProjection(context:CommandContext,packageId:string,d
     if(isOwn) exported.set(key,{type:ref.entityType,value});
     const current=combined.get(objectKey(ref))?.value.revision===value.revision;
     validateReferences(requirements({type:ref.entityType,value},current),visit);
-    if(isOwn && current) drafts.validateMaterializedForPackage(context,packageId,ref.entityType,value,visit,mainData.heads.get(objectKey(ref))?.value??null);
+    if(isOwn && current) drafts.validateMaterializedForPackage(context,packageId,ref.entityType,value,visit,mainData.heads.get(objectKey(ref))?.value??null,ref.entityType==='browser_scenario'?{
+      entities:[...combined.values()].filter(v=>v.type==='directory_entity').map(v=>v.value as DirectoryEntity),
+      links:[...combined.values()].filter(v=>v.type==='directory_link').map(v=>v.value as DirectoryLink),
+    }:undefined);
     return value;
   };
   for(const entry of roots.values()) {try{visit(headerRef(entry.type,entry.value));}catch(error){errors.push(problem((error as {code?:string}).code??'VALIDATION_FAILED'));}}
