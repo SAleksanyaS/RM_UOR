@@ -96,7 +96,8 @@ function mountedJob(initial: JobSnapshot | null, initialWorkflow = readyWorkflow
       if (body.name === 'job.openAuth') job = snapshot({ retryAvailable: true, nextAction: { commandName: 'job.retry', payload: { jobId }, route: null, label: 'Вход выполнен — продолжить', enabled: true, disabledReason: null } });
       else if (body.name === 'job.cancel') job = snapshot({ status: 'cancelled', stage: 'cancelled', cancelAvailable: false, finishedAt: '2026-11-01T09:01:00Z' });
       else if (body.name === 'job.retry') job = snapshot({ status: 'succeeded', stage: 'completed', cancelAvailable: false, result: value, finishedAt: '2026-11-01T09:01:00Z' });
-      else if (body.name === 'oko.workflow.record.finish') value = { ...value, revision: 'own:2', recording: { ...value.recording, state: 'completed' } };
+      else if (body.name === 'oko.workflow.record.start') value = { ...value, revision: 'own:start', recording: { ...value.recording, state: 'recording', recordingId: fixtureId(8210), steps: [] } };
+      else if (body.name === 'oko.workflow.record.finish') value = { ...value, revision: 'own:2', columns: ['ID', 'Значение'], recording: { ...value.recording, state: 'completed', steps: [{ action: 'download', locator: { kind: 'css', selector: '#export' } }] } };
       else throw Error('Unexpected synthetic command ' + body.name);
       return Response.json({ data: { commandId: body.commandId, result: body.name.startsWith('job.') ? { jobId } : value, changedRefs: [], editToken: null } });
     }
@@ -147,12 +148,15 @@ it('cancelled first acquisition never claims that a previous successful result e
 });
 
 it('collapsed personal setup stays mounted and automatically accepts a completed download exactly once', async () => {
-  const value = readyWorkflow(); value.recording = { ...value.recording, state: 'recording', recordingId: fixtureId(8210) };
+  const value = readyWorkflow(); value.recording = { ...value.recording, state: 'idle', recordingId: null, steps: [] }; value.columns = [];
   const f = mountedJob(null, value);
   fireEvent.click(await screen.findByRole('button', { name: 'Настроить' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Начать запись действий' }));
+  await waitFor(() => expect(f.sent.filter(command => command.name === 'oko.workflow.record.start')).toHaveLength(1));
+  await waitFor(() => expect((screen.getByRole('button', { name: 'Получить записанные шаги' }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.change(screen.getByLabelText('Адрес отчёта'), { target: { value: 'https://report.example.invalid/unsaved' } });
   fireEvent.click(screen.getByRole('button', { name: 'Закрыть настройки' }));
-  f.replace({ ...value, revision: 'download-completed', recording: { ...value.recording, state: 'completed' } });
+  f.replace({ ...value, revision: 'download-completed', recording: { ...value.recording, state: 'completed', recordingId: fixtureId(8210) } });
   await waitFor(() => expect(f.sent.filter(command => command.name === 'oko.workflow.record.finish')).toHaveLength(1));
   expect(document.getElementById('wb-personal-settings')?.hidden).toBe(true);
   fireEvent.click(screen.getByRole('button', { name: 'Настроить' }));

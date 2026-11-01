@@ -82,7 +82,8 @@ export function createWorkbenchApplication(deps: WorkbenchApplicationDeps): Work
     async upload(input, request) {
       const ctx = await context(request);
       const purpose = filePurposeSchema.safeParse(input.purpose); if (!purpose.success) throw new WorkbenchHttpError(422, 'VALIDATION_FAILED', 'Invalid file purpose');
-      if (!canUseCapability(ctx.ownAccess, purpose.data === 'workspace-restore' ? 'workspace.backup' : 'uor.prepare')) throw new WorkbenchHttpError(403, 'ACCESS_DENIED', 'The current own profile does not permit this upload');
+      const personalDirectory = purpose.data === 'oko-directory';
+      if (!canUseCapability(ctx.ownAccess, purpose.data === 'workspace-restore' ? 'workspace.backup' : personalDirectory ? 'personal.write' : 'uor.prepare') || personalDirectory && ctx.ownAccess.personId === null) throw new WorkbenchHttpError(403, 'ACCESS_DENIED', 'The current own profile does not permit this upload');
       return envelope(await deps.files.stage({ ...input, purpose: purpose.data, installationId: deps.installationId, profilePersonId: ctx.ownAccess.personId }), request);
     },
     async query(name, request, local) {

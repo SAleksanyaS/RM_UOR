@@ -43,6 +43,30 @@ async function fixture(prefix: PersonalWorkflowPrefix = 'source.browser'){
  const context=()=>({requestId:randomUUID(),installationId,repository,clock,ownAccess:own});
  return{app,headers,service,profiles,runtime,closedOwners,command,result,prepare,files,installationId,context,repository,root,commands,jobs,restart:()=>createOkoWorkflowService({repository,runtime,profiles,files,jobs,clock}),setReplayFailure:(v:boolean)=>{failReplay=v;},setDuringReplay:(v:()=>Promise<void>)=>{duringReplay=v;},setDuringGuard:(v:()=>Promise<void>)=>{duringGuard=v;},setOwn:(v:Partial<OwnAccessProfile>)=>{own={...own,...v};}};
 }
+it('a recorded file with a wrong delimiter returns a known validation error and preserves the previous result',async()=>{
+ const f=await fixture('oko.workflow');f.setOwn({role:'viewer'});
+ let view=await f.prepare();view=await f.result('source.browser.record.test',{workflowId:view.workflowId,expectedRevision:view.revision});
+ const previous=view.result;
+ view=await f.result('source.browser.record.start',{workflowId:view.workflowId,expectedRevision:view.revision,reportUrl:view.reportUrl,parsingProfile:{...view.parsingProfile,csvDelimiter:','}});
+ const response=await f.app.inject({method:'POST',url:'/api/v1/commands',headers:f.headers,payload:{commandId:randomUUID(),name:'oko.workflow.record.finish',baseRevision:null,payload:{workflowId:view.workflowId,recordingId:view.recording.recordingId}}});
+ expect(response.statusCode,response.body).toBe(422);
+ expect(response.json().error).toMatchObject({code:'INVALID_TABLE',details:[{path:'/parsingProfile',code:'INVALID_TABLE',message:'Row width differs from the header'}]});
+ expect(response.json().error.message).toContain('разделитель CSV');
+ const current=(await f.service.workspace(f.context(),view.workflowId)).current!;
+ expect(current.recording).toMatchObject({state:'failed',problem:{code:'INVALID_TABLE'}});
+ expect(current.result).toEqual(previous);
+ expect(f.repository.exportWorkspaceCore()).toEqual([]);
+});
+it('personal directory preview accepts only the own dedicated upload purpose',async()=>{
+ const f=await fixture('oko.workflow');f.setOwn({role:'viewer'});const view=await f.prepare();
+ const bytes=Buffer.from('key;name\r\nP1;Synthetic');
+ const stage=(purpose:'oko-directory'|'goal-import',profilePersonId:string|null)=>f.files.stage({installationId:f.installationId,profilePersonId,purpose,name:'directory.csv',mediaType:'text/csv',stream:(async function*(){yield bytes;})()});
+ const own=await stage('oko-directory',f.context().ownAccess.personId);
+ const parsed=await f.result('source.browser.directory.preview',{workflowId:view.workflowId,fileHandle:own.fileHandle,parsingProfile:view.parsingProfile});
+ expect(parsed.dictionary.columns).toEqual(['key','name']);
+ for(const file of [await stage('oko-directory',randomUUID()),await stage('goal-import',f.context().ownAccess.personId)]) await expect(f.command('source.browser.directory.preview',{workflowId:view.workflowId,fileHandle:file.fileHandle,parsingProfile:view.parsingProfile})).rejects.toThrow(/FILE_NOT_FOUND/);
+ expect(f.repository.exportWorkspaceCore()).toEqual([]);
+});
 it('reader configures, records and replays only an own personal workflow; foreign recipe, profile and result remain inaccessible',async()=>{
  const f=await fixture('oko.workflow');f.setOwn({role:'viewer'});
  let view=await f.prepare();view=await f.result('source.browser.record.test',{workflowId:view.workflowId,expectedRevision:view.revision});

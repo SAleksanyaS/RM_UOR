@@ -31,6 +31,14 @@ it('keeps response-loss uncertainty for invalid or server-error command replies'
 });
 
 const validCommandId = '11111111-1111-4111-8111-111111111111', validJobId = '22222222-2222-4222-8222-222222222222';
+it('uses the dedicated upload purpose only for the personal OKO namespace',async()=>{
+  for(const [prefix,purpose] of [['oko.workflow','oko-directory'],['source.browser','goal-import']] as const){
+    let sent:FormData|undefined;
+    const client=new OkoClient((async(_input,init)=>{sent=init?.body as FormData;return Response.json({data:{fileHandle:validCommandId}});}) as typeof fetch,{prefix});
+    await client.upload(new File(['key;name\r\nP1;Synthetic'],'directory.csv',{type:'text/csv'}));
+    expect(sent?.get('purpose')).toBe(purpose);
+  }
+});
 it.each([
   { label: 'null', data: null }, { label: 'number', data: 7 }, { label: 'string', data: 'accepted' }, { label: 'boolean', data: true }, { label: 'array', data: [] },
   { label: 'missing result', data: { commandId: validCommandId, changedRefs: [], editToken: null } },

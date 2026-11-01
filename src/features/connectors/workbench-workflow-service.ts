@@ -218,11 +218,14 @@ export function createOkoWorkflowService(deps: OkoWorkflowDependencies) {
         }); }
         catch (error) {
             if (error instanceof Error && error.name === 'AbortError') throw error;
+            const failure = error instanceof WorkbenchParserError
+                ? new WorkbenchHttpError(422, error.code, 'Не удалось прочитать файл отчёта. Проверьте формат, разделитель CSV, кодировку и выбранный лист XLSX; затем повторите запись.', [{ path: '/parsingProfile', code: error.code, message: error.message, ref: null }])
+                : error;
             await freshPrepare(context);
             draft.view.recording.state = 'failed';
-            draft.view.recording.problem = { code: error instanceof WorkbenchHttpError ? error.code : 'RECORDING_FAILED', message: 'Запись или выгрузка не завершена. Повторите запись.' };
+            draft.view.recording.problem = { code: failure instanceof WorkbenchHttpError ? failure.code : 'RECORDING_FAILED', message: failure instanceof WorkbenchHttpError ? failure.message : 'Запись или выгрузка не завершена. Повторите запись.' };
             persist(context, draft);
-            throw error;
+            throw failure;
         } },
         async cancel(context: CommandContext, input: {
             workflowId: string;
@@ -239,7 +242,7 @@ export function createOkoWorkflowService(deps: OkoWorkflowDependencies) {
             workflowId: string;
             fileHandle: string;
             parsingProfile: OkoWorkflowView['parsingProfile'];
-        }) { requirePrepare(context); const draft = load(context, input.workflowId), file = await files.read(input.fileHandle, context.installationId, 'goal-import', context.ownAccess.personId); let table: ParsedSourceTable; try { table = await parseWorkbenchTable({ bytes: file.bytesValue, name: file.name, parsingProfile: input.parsingProfile }); } catch (error) { if (error instanceof WorkbenchParserError) fail(error.code, error.message); throw error; } await freshPrepare(context); draft.dictionaryTable = table; draft.dictionaryRows = []; draft.previousDirectoryGraph = draft.dictionaryGraph; draft.dictionaryGraph = undefined; draft.view.dictionary = { columns: table.columns, sampleRows: rawRows(table).slice(0, 50), mapping: null, origin: 'local-preview', issues: [] }; persist(context, draft); return view(context, draft); },
+        }) { requirePrepare(context); const draft = load(context, input.workflowId), file = await files.read(input.fileHandle, context.installationId, preparationCapability === 'personal.write' ? 'oko-directory' : 'goal-import', context.ownAccess.personId); let table: ParsedSourceTable; try { table = await parseWorkbenchTable({ bytes: file.bytesValue, name: file.name, parsingProfile: input.parsingProfile }); } catch (error) { if (error instanceof WorkbenchParserError) fail(error.code, error.message); throw error; } await freshPrepare(context); draft.dictionaryTable = table; draft.dictionaryRows = []; draft.previousDirectoryGraph = draft.dictionaryGraph; draft.dictionaryGraph = undefined; draft.view.dictionary = { columns: table.columns, sampleRows: rawRows(table).slice(0, 50), mapping: null, origin: 'local-preview', issues: [] }; persist(context, draft); return view(context, draft); },
         async directoryApply(context: CommandContext, input: {
             workflowId: string;
             expectedRevision: string;

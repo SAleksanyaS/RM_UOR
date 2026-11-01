@@ -94,3 +94,28 @@ runuser -u nobody -- env \
 ## Следующий независимый шаг
 
 Реальная сквозная UI-запись первичной настройки/справочника/исправления/повтора, manual-auth/cancel/error screenshots и daily path выполняются отдельно через `scripts/design-reference/completion-runtime.ts` и `completion-oko-flow.ts`. Этот журнал будет дополнен их фактическими результатами. Приведённые выше 136 tests и native2 tests сами по себе не являются этим сквозным UI доказательством.
+
+## Границы, обнаруженные первым реальным сквозным проходом
+
+Первый driver пропустил настройку CSV delimiter: фактический файл разделён `;`, сохранённый профиль содержал `,`. Чистый разбор тех же байтов подтвердил `INVALID_TABLE: Row width differs from the header`; с `;` получены четыре точных столбца и восемь строк. Автозавершение было отправлено. Исправлен driver; это не дефект recorder.
+
+Вместе с этим воспроизведены и исправлены три реальные границы:
+
+- Известная `WorkbenchParserError` на `record.finish` возвращала HTTP500 и неопределённый ответ. Теперь возвращается HTTP422 с исходным code и detail `/parsingProfile`; пользователь получает действие для проверки формата. Failed recording и предыдущий результат сохраняются.
+- Личный справочник использовал общий `goal-import`, поэтому reader не мог пройти настройку целиком. Новый purpose `oko-directory` разрешён через `personal.write` только ненулевому personId; лимит10MiB, CSV/XLSX safety и person/installation/purpose isolation обязательны. Reader по-прежнему не может загружать `goal-import`/evidence и выполнять общий setup/publication. Чужие handle и handle другого purpose недоступны личному preview.
+- Любой новый mount формы завершал уже completed recording. Теперь auto-finish вооружается только recordingId из успешного `record.start` этой формы и исключает уже сохранённые steps. Hidden settings сохраняют форму и автозавершение собственного старта. Чтение текущего workflow в новой вкладке ничего не отправляет; после reload доступны явные «Получить записанные шаги» и recovery.
+
+RED: один test ожидал422 и получил500; следующие пять tests выявили недоступный personal purpose/client namespace и незапрошенные finish на pending/saved recording. GREEN на обновлённых dependencies: **7 файлов,105 tests PASS,15.30s, exit0**, Node22.16.0/Vitest4.1.12, `--maxWorkers=2`. Промежуточный проверочный test использовал отсутствующий matcher `toBeDisabled`; заменён наблюдением штатной enabled finish-кнопки, production обходов не добавлено. Vitest4 больше не поддерживает `--minWorkers`; первая попытка с ним завершилась CLI error до tests и не считается RED.
+
+```sh
+PATH=/workspace/scratch/ab925b2abe56/redesign/runtime/node-v22.16.0-linux-x64/bin:$PATH \
+node node_modules/vitest/vitest.mjs run \
+  src/server/workbench/upload.test.ts src/server/workbench/files.test.ts \
+  src/features/connectors/workbench-workflow-service.test.ts \
+  src/features/connectors/workbench-personal-access.test.ts \
+  src/features/connectors/workbench/client.test.ts \
+  src/features/connectors/workbench/BrowserScenarioWizard.test.tsx \
+  src/features/connectors/workbench/personal-workspace-states.test.tsx --maxWorkers=2
+```
+
+Логи вне репозитория: `redesign/oko-parser-error-red.log`, `oko-parser-error-green.log`, `oko-upload-autofinish-red.log`, `oko-upload-autofinish-green-final.log`. Фактический non-root Chrome copy содержит штатный `chrome-sandbox` root:root4755; production `chromiumSandbox:true` сохранён.

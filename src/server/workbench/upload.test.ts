@@ -16,10 +16,10 @@ import type { AccessPolicyService, OwnAccessProfile } from '../../features/ident
 const installationId = '11111111-1111-4111-8111-111111111111';
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => { for (const close of cleanups.splice(0).reverse()) await close(); });
-async function fixture(role: OwnAccessProfile['role'] = 'curator') {
+async function fixture(role: OwnAccessProfile['role'] = 'curator', personId: string | null = null) {
   const root = await mkdtemp(path.join(tmpdir(), 'wb-upload-')), directory = path.join(root, 'private');
   const repository = createWorkbenchRepository({ filename: ':memory:', artifactRoot: root });
-  const clock = { now: () => '2026-10-28T09:00:00Z' }; const own: OwnAccessProfile = { role, displayName: null, personId: null, policyState: 'verified', checkedAt: clock.now() };
+  const clock = { now: () => '2026-10-28T09:00:00Z' }; const own: OwnAccessProfile = { role, displayName: null, personId, policyState: 'verified', checkedAt: clock.now() };
   const accessPolicy: AccessPolicyService = { resolveOwnAccess: async () => own, assertCommandAllowed: async () => own, assertFreshPublishAllowed: async () => own };
   const jobs = createJobStore({ repository, clock }), commands = createCommandRegistry({ repository, jobs, accessPolicy }), files = createFileStore({ directory, limits: defaultFileLimits });
   const app = await createWorkbenchApp({ hostname: () => 'synthetic-host', installationId, repository, clock, accessPolicy, commands, jobs, queries: new QueryRegistry(), modules: [], files, sessions: createLocalSessionStore({ clock }), allowedOrigins: ['http://localhost:5173'] });
@@ -31,6 +31,24 @@ async function fixture(role: OwnAccessProfile['role'] = 'curator') {
 const field = (name: string, value: string) => Buffer.from('--synthetic-boundary\r\nContent-Disposition: form-data; name="' + name + '"\r\n\r\n' + value + '\r\n');
 const file = (bytes: Uint8Array = Buffer.from('product,value\ndemo,92.00\n'), name = 'input.csv', mime = 'text/csv') => Buffer.concat([Buffer.from('--synthetic-boundary\r\nContent-Disposition: form-data; name="file"; filename="' + name + '"\r\nContent-Type: ' + mime + '\r\n\r\n'), bytes, Buffer.from('\r\n')]);
 const body = (parts: Buffer[]) => Buffer.concat([...parts, Buffer.from('--synthetic-boundary--\r\n')]);
+it('reader uploads only an owned bounded OKO directory without gaining shared import rights', async () => {
+  const personId = '22222222-2222-4222-8222-222222222222', f = await fixture('viewer', personId);
+  const response = await f.post(body([field('purpose', 'oko-directory'), file()]));
+  expect(response.statusCode, response.body).toBe(201);
+  const handle = response.json().data.fileHandle;
+  expect((await f.files.read(handle, installationId, 'oko-directory', personId)).bytesValue.length).toBe(25);
+  await expect(f.files.read(handle, installationId, 'oko-directory', installationId)).rejects.toMatchObject({statusCode:404});
+  await expect(f.files.read(handle, installationId, 'goal-import', personId)).rejects.toMatchObject({statusCode:404});
+  await expect(f.files.read(handle, installationId, 'oko-directory')).rejects.toMatchObject({statusCode:404});
+  expect((await f.post(body([field('purpose', 'goal-import'), file()]))).statusCode).toBe(403);
+  expect((await f.post(body([field('purpose', 'evidence'), file()]))).statusCode).toBe(403);
+  expect((await f.post(body([field('purpose', 'oko-directory'), file(Buffer.alloc(10 * 1024 ** 2 + 1, 97))]))).statusCode).toBe(413);
+  expect((await f.post(body([field('purpose', 'oko-directory'), file(Buffer.from('{}'), 'directory.json', 'application/json')]))).statusCode).toBe(422);
+  expect(await f.stored()).toHaveLength(1);
+  const unidentified = await fixture('viewer');
+  expect((await unidentified.post(body([field('purpose', 'oko-directory'), file()]))).statusCode).toBe(403);
+  expect(await unidentified.stored()).toEqual([]);
+});
 it('streams_either_field_order_and_returns_exact_201_envelope_and_owned_handle', async () => {
   const f = await fixture();
   for (const parts of [[field('purpose', 'goal-import'), file()], [file(), field('purpose', 'goal-import')]]) {

@@ -45,9 +45,22 @@ function WorkflowForm({ workflow: w, personId, prepare, run, client, busy, job, 
   const loginKey = `uor.oko.login.v1${client.storageScope ?? ''}:${personId ?? 'unassigned'}:${w.workflowId}`;
   const [login, updateLogin] = useState<string | null>(() => { try { return sessionStorage.getItem(loginKey); } catch { return null; } }), [localError, setLocalError] = useState(''), [notice, setNotice] = useState('');
   const setLogin = (id: string | null) => { updateLogin(id); try { if (id) sessionStorage.setItem(loginKey, id); else sessionStorage.removeItem(loginKey); } catch { /* Own close-browser recovery remains available without browser storage. */ } };
-  const finished = useRef(new Set<string>()), [uploading, setUploading] = useState(false);
-  const execute = async (name: string, payload: Record<string, unknown>) => { setLocalError(''); setNotice(''); try { return await run(name, name.startsWith('job.') ? payload : { workflowId: w.workflowId, ...payload }); } catch (failure) { setLocalError((failure as Error).message); return null; } };
-  useEffect(() => { const id = w.recording.recordingId; if (prepare && !busy && w.recording.state === 'completed' && id && !finished.current.has(id)) { finished.current.add(id); void execute('source.browser.record.finish', { recordingId: id }); } }, [w.recording.state, w.recording.recordingId, prepare, busy]);
+  const finished = useRef(new Set<string>()), [uploading, setUploading] = useState(false), [ownRecordingId, setOwnRecordingId] = useState<string | null>(null);
+  const execute = async (name: string, payload: Record<string, unknown>) => {
+    setLocalError(''); setNotice('');
+    if (name === 'source.browser.record.start' || name === 'source.browser.record.cancel') setOwnRecordingId(null);
+    try {
+      const value = await run(name, name.startsWith('job.') ? payload : { workflowId: w.workflowId, ...payload });
+      if (name === 'source.browser.record.start') {
+        const recordingId = (value as { recording?: { recordingId?: unknown } } | null)?.recording?.recordingId;
+        if (typeof recordingId === 'string') setOwnRecordingId(recordingId);
+      }
+      return value;
+    } catch (failure) { setLocalError((failure as Error).message); return null; }
+  };
+  // Reading a pending recording in another tab must never finish it. Only this
+  // form's confirmed start arms auto-finish; an explicit finish recovers reloads.
+  useEffect(() => { const id = w.recording.recordingId; if (prepare && !busy && w.recording.state === 'completed' && !w.recording.steps.length && id && id === ownRecordingId && !finished.current.has(id)) { finished.current.add(id); void execute('source.browser.record.finish', { recordingId: id }); } }, [w.recording.state, w.recording.recordingId, w.recording.steps.length, ownRecordingId, prepare, busy]);
   const revision = { expectedRevision: w.revision };
   const disabled = busy || uploading;
   const mapping: OkoMapping = { rowKeyColumns: rowKeys, productKeyColumn: product || null, numberColumns: record(numbers), dimensionColumns: record(dimensions), dateColumn: date || null, unitColumn: unit || null, fixedUnitCode: unit ? null : fixedUnit || null };

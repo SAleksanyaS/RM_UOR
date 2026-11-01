@@ -38,7 +38,7 @@ export class OkoClient {
   job(id: string): Promise<JobSnapshot> { return this.request('/jobs/' + encodeURIComponent(id)); }
   async reconcileCommand(id: string): Promise<CommandReconciliation> { const value = await this.request<CommandReconciliation>('/commands/' + encodeURIComponent(id)); if (value.name === null || this.prefix === 'source.browser') return value; const name = personalWorkflowAlias(this.prefix, value.name); if (name === null) throw new OkoClientError('INVALID_RESPONSE', 'Ответ относится к другому сценарию.'); return { ...value, name }; }
   async upload(file: File): Promise<string> {
-    const body = new FormData(); body.append('purpose', 'goal-import'); body.append('file', file);
+    const body = new FormData(); body.append('purpose', this.prefix === 'oko.workflow' ? 'oko-directory' : 'goal-import'); body.append('file', file);
     const response = await this.fetcher('/api/v1/files', { method: 'POST', credentials: 'same-origin', headers: { 'x-csrf-token': this.csrf }, body });
     const envelope = await response.json().catch(() => null);
     if (!response.ok) throw new OkoClientError(envelope?.error?.code ?? 'UPLOAD_FAILED', envelope?.error?.message ?? 'Не удалось загрузить справочник.', envelope?.error?.details ?? []);

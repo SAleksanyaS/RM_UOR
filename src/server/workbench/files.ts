@@ -9,7 +9,7 @@ import { WorkbenchHttpError } from './protocol';
 import { fileHandleViewSchema, type FileHandleView } from './file-view';
 export { fileHandleViewSchema, type FileHandleView } from './file-view';
 
-export type FilePurpose = 'goal-import' | 'evidence' | 'workspace-restore';
+export type FilePurpose = 'goal-import' | 'oko-directory' | 'evidence' | 'workspace-restore';
 export type StagedFile = FileHandleView & { purpose: FilePurpose; installationId: UUIDv4; profilePersonId?: UUIDv4 | null; bytesValue: Uint8Array };
 export type FileLimits = { goalImportBytes: number; evidenceBytes: number; restoreBytes: number; restoreExpandedBytes: number };
 export interface FileStore {
@@ -17,7 +17,7 @@ export interface FileStore {
   read(handle: UUIDv4, installationId: UUIDv4, purpose: FilePurpose, profilePersonId?: UUIDv4 | null): Promise<StagedFile>;
 }
 export const defaultFileLimits: Readonly<FileLimits> = { goalImportBytes: 10 * 1024 ** 2, evidenceBytes: 32 * 1024 ** 2, restoreBytes: 64 * 1024 ** 2, restoreExpandedBytes: 256 * 1024 ** 2 };
-export const filePurposeSchema = z.enum(['goal-import', 'evidence', 'workspace-restore']);
+export const filePurposeSchema = z.enum(['goal-import', 'oko-directory', 'evidence', 'workspace-restore']);
 const metadataSchema = fileHandleViewSchema.extend({ purpose: filePurposeSchema, installationId: uuidSchema, profilePersonId: uuidSchema.nullable().optional() });
 export const fileValidationError = () => new WorkbenchHttpError(422, 'INVALID_FILE', 'The file is invalid or unsupported');
 /** Server-only referenced upload port. It accepts UUID metadata, never an archive path. */
@@ -64,7 +64,7 @@ export async function assertPhysicalPath(target: string, directory: boolean): Pr
 export function createFileStore(options: { directory: string | (()=>string); limits: FileLimits }): FileStore {
   const selectedDirectory=()=>path.resolve(typeof options.directory==='function'?options.directory():options.directory); const limits = { ...options.limits };
   for (const key of Object.keys(defaultFileLimits) as Array<keyof FileLimits>) if (!Number.isSafeInteger(limits[key]) || limits[key] < 1 || limits[key] > defaultFileLimits[key]) throw Error('Invalid server file limits');
-  const cap = (purpose: FilePurpose) => purpose === 'goal-import' ? limits.goalImportBytes : purpose === 'evidence' ? limits.evidenceBytes : limits.restoreBytes;
+  const cap = (purpose: FilePurpose) => purpose === 'goal-import' || purpose === 'oko-directory' ? limits.goalImportBytes : purpose === 'evidence' ? limits.evidenceBytes : limits.restoreBytes;
   const root = async () => {
     const directory=selectedDirectory();
     // Before recursive mkdir, reject existing aliases; only absent suffixes may be created.
@@ -80,6 +80,7 @@ export function createFileStore(options: { directory: string | (()=>string); lim
     async stage(input) {
       assertFileName(input.name);
       if (!uuidSchema.safeParse(input.installationId).success || (input.profilePersonId !== undefined && !uuidSchema.nullable().safeParse(input.profilePersonId).success) || !filePurposeSchema.safeParse(input.purpose).success || typeof input.mediaType !== 'string') throw fileValidationError();
+      if (input.purpose === 'oko-directory' && !uuidSchema.safeParse(input.profilePersonId).success) throw fileValidationError();
       const base = await root(), id = randomUUID(), temporary = path.join(base, '.pending-' + id), final = path.join(base, id);
       await mkdir(temporary, { mode: 0o700 }); let finalized = false;
       try {
@@ -110,7 +111,7 @@ export function createFileStore(options: { directory: string | (()=>string); lim
         const base = await root(); const stored = path.join(base, handle);
         const parsed = metadataSchema.safeParse(JSON.parse((await verifiedRead(path.join(stored, 'metadata.json'), 32768)).toString('utf8')));
         if (!parsed.success) throw fileValidationError(); const metadata = parsed.data;
-        if (metadata.installationId !== installationId || metadata.purpose !== purpose || (metadata.profilePersonId !== undefined && metadata.profilePersonId !== profilePersonId)) throw missing();
+        if (metadata.installationId !== installationId || metadata.purpose !== purpose || (metadata.profilePersonId !== undefined && metadata.profilePersonId !== profilePersonId) || purpose === 'oko-directory' && !uuidSchema.safeParse(metadata.profilePersonId).success) throw missing();
         if (metadata.fileHandle !== handle || metadata.bytes > cap(purpose)) throw fileValidationError(); assertFileName(metadata.name);
         const bytes = await verifiedRead(path.join(stored, 'bytes'), cap(purpose));
         if (bytes.length !== metadata.bytes || createHash('sha256').update(bytes).digest('hex') !== metadata.sha256) throw new WorkbenchHttpError(422, 'INTEGRITY_MISMATCH', 'The staged file failed integrity verification');
