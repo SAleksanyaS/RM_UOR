@@ -24,11 +24,15 @@ const defaultPersonal = new OkoClient(undefined, { prefix: 'oko.workflow' });
 function Overview() { return <><WorkbenchOverviewPage /><details className="wb-dashboard-disclosure"><summary>Мои дашборды и настройки представления</summary><DashboardView /></details></>; }
 function LocalAccess() {
   const { session, client, refreshSession, loading } = useWorkbench();
+  const { approveLeave } = useGlobalContext();
   const [busy, setBusy] = useState(false), [error, setError] = useState<unknown>(null), [pending, setPending] = useState<CommandRequest | null>(null);
   const generation = useRef(0);
   useEffect(() => { generation.current++; setPending(null); setError(null); setBusy(false); return () => { generation.current++; }; }, [client, session?.personId]);
   if (session?.policyState !== 'local_preview' || !session.allowedCommands.includes('workbench.role.set')) return null;
   const apply = async (request: CommandRequest) => {
+    // A role refresh can remove an editor. Ask before any request, including
+    // recovery after the user may have entered more data; retain its same ID.
+    if (!approveLeave()) return;
     const current = generation.current; setBusy(true); setError(null); setPending(request);
     try { await client.command(request); if (generation.current !== current) return; await refreshSession(); if (generation.current === current) setPending(null); }
     catch (failure) { if (generation.current === current) { setError(failure); if (failure instanceof WorkbenchApiError && failure.status >= 400 && failure.status < 500 && !['INVALID_RESPONSE', 'COMMAND_INTERRUPTED'].includes(failure.problem.code)) setPending(null); } }

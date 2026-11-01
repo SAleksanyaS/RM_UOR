@@ -22,8 +22,8 @@ export function ContextLink({ path, label }: { path: string; label: string }) {
   return <a href={routeUrl(path, context)} onClick={event => { if (event.button === 0 && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey) { event.preventDefault(); navigate(path); } }}>{label}</a>;
 }
 export function GoalOpenButton({ goalId, title, compact = false }: { goalId: string; title: string; compact?: boolean }) {
-  const { navigate, setContext } = useGlobalContext();
-  return <button type="button" aria-label={"Открыть цель: " + title} onClick={() => { void setContext({ goalId }).catch(() => undefined); navigate('/goals/' + goalId); }}>{compact ? "Открыть" : "Открыть цель: " + title}</button>;
+  const { navigate } = useGlobalContext();
+  return <button type="button" aria-label={"Открыть цель: " + title} onClick={() => navigate('/goals/' + goalId)}>{compact ? "Открыть" : "Открыть цель: " + title}</button>;
 }
 export function ResultModeSelector({ goalId, selectedSnapshot }: { goalId?: string; selectedSnapshot?: AgreedSnapshot | null }) {
   const { context, setContext } = useGlobalContext();

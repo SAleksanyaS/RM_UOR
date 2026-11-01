@@ -5,6 +5,8 @@ import { act, cleanup, fireEvent, screen, waitFor } from '@testing-library/react
 import { createWorkbenchUiHarness } from './testing/ui-harness';
 import { useGlobalContext } from './context';
 import { useUnsavedChanges } from './use-unsaved-changes';
+import { GoalOpenButton } from '../../features/overview/workbench/goal-view-utils';
+import { fixtureId } from '../../../tests/fixtures/workbench/factories';
 
 const closes: Array<() => Promise<void>> = [];
 afterEach(async () => { cleanup(); for (const close of closes.splice(0)) await close(); vi.restoreAllMocks(); window.history.replaceState(null, '', '/'); });
@@ -44,4 +46,23 @@ it('guards browser history and unload but stops prompting after the form is save
   const savedUnload = new Event('beforeunload', { cancelable: true }); window.dispatchEvent(savedUnload); expect(savedUnload.defaultPrevented).toBe(false);
   confirm.mockClear(); fireEvent.click(screen.getByRole('button', { name: 'Цели' }));
   await screen.findByText('Каталог целей'); expect(confirm).not.toHaveBeenCalled();
+});
+
+it('one goal-opening action asks once and a rejected prompt does not change or persist context', async () => {
+  const goalId = fixtureId(12345), confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+  function WithGoal() { return <><Editor /><GoalOpenButton goalId={goalId} title="Связанная цель" /></>; }
+  const h = await createWorkbenchUiHarness({ role: 'viewer', scenario: 'scope-split' }, { views: { overview: WithGoal, goalDetail: () => <p>Открыта связанная цель</p> } }); closes.push(h.close);
+  await h.open('/overview'); const initial = window.location.href;
+  const before = h.requests.filter(request => request.body?.name === 'preferences.set').length;
+  fireEvent.change(screen.getByLabelText('Личный ввод'), { target: { value: 'Не потерять' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Открыть цель: Связанная цель' }));
+  expect(confirm).toHaveBeenCalledTimes(1);
+  expect(window.location.href).toBe(initial);
+  expect(h.requests.filter(request => request.body?.name === 'preferences.set')).toHaveLength(before);
+  confirm.mockClear(); confirm.mockReturnValue(true);
+  fireEvent.click(screen.getByRole('button', { name: 'Открыть цель: Связанная цель' }));
+  await screen.findByText('Открыта связанная цель');
+  expect(confirm).toHaveBeenCalledTimes(1);
+  expect(window.location.pathname).toBe('/goals/' + goalId);
+  expect(new URLSearchParams(window.location.search).get('goal')).toBe(goalId);
 });

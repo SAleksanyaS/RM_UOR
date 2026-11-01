@@ -28,7 +28,7 @@ it('local mode switch keeps one person and refreshes embedded personal permissio
   fireEvent.change(screen.getByLabelText('Название отчёта'), { target: { value: 'Сохранённый ввод' } });
   fireEvent.change(screen.getByLabelText('Режим работы'), { target: { value: 'viewer' } });
   await waitFor(() => expect((screen.getByLabelText('Режим работы') as HTMLSelectElement).value).toBe('viewer'));
-  await waitFor(() => expect(screen.queryByRole('button', { name: 'Новый сценарий' })).toBeNull());
+  await screen.findByRole('button', { name: 'Новый сценарий' });
   expect((await new OkoClient(f.fetcher, { prefix: 'oko.workflow' }).session()).personId).toBe(f.personId);
   fireEvent.change(screen.getByLabelText('Режим работы'), { target: { value: 'curator' } });
   await screen.findByRole('button', { name: 'Новый сценарий' });

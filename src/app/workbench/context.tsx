@@ -6,7 +6,7 @@ import { canonicalPageTarget, goalContextForPath, readRouteState, routeUrl, upda
 
 type WorkbenchValue = { client: WorkbenchClient; session: SessionView | null; preferences: PreferencesRead | null; loading: boolean; error: unknown; refreshSession(): Promise<void>; refreshPreferences(): Promise<PreferencesRead> };
 type LeaveGuard = () => boolean;
-type GlobalContextValue = WorkbenchRouteState & { setContext(patch: ContextPatch): Promise<void>; navigate(pathname: string, options?: { replace?: boolean }): void; registerLeaveGuard(guard: LeaveGuard): () => void; persistenceError: unknown };
+type GlobalContextValue = WorkbenchRouteState & { setContext(patch: ContextPatch): Promise<void>; navigate(pathname: string, options?: { replace?: boolean }): void; registerLeaveGuard(guard: LeaveGuard): () => void; approveLeave(): boolean; persistenceError: unknown };
 const Workbench = createContext<WorkbenchValue | null>(null);
 const Global = createContext<GlobalContextValue | null>(null);
 const ownRequest = { context: null, filter: {}, sort: [], page: { limit: 50, cursor: null } } as const;
@@ -126,7 +126,7 @@ export function WorkbenchProvider({ client, children }: { client: WorkbenchClien
     applyRoute({ ...current, pathname: url.pathname, context });
     if (context?.goalId !== current.context?.goalId) void persist(context).catch(() => undefined);
   }, [applyRoute, persist, approveLeave]);
-  return <Workbench.Provider value={{ client, session, preferences, loading, error, refreshSession, refreshPreferences }}><Global.Provider value={{ ...route, setContext, navigate, registerLeaveGuard, persistenceError }}>{children}</Global.Provider></Workbench.Provider>;
+  return <Workbench.Provider value={{ client, session, preferences, loading, error, refreshSession, refreshPreferences }}><Global.Provider value={{ ...route, setContext, navigate, registerLeaveGuard, approveLeave, persistenceError }}>{children}</Global.Provider></Workbench.Provider>;
 }
 export function useWorkbench(): WorkbenchValue {
   const value = useContext(Workbench); if (!value) throw Error('WorkbenchProvider is required'); return value;
