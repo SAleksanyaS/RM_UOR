@@ -1,7 +1,8 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
-import { afterEach, expect, it } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
+import { DatabaseSync } from 'node:sqlite';
 import { z } from 'zod';
 import { fixtureId, makeEntityGraph, makeHeader, makeNumericFixture } from '../../../tests/fixtures/workbench/factories';
 import { seedGraph } from '../../../tests/fixtures/workbench/repository';
@@ -105,6 +106,9 @@ it('archives complete source history and rebinds downloads without changing hist
  const context={installationId,personId,files:new Map(files.map(file=>[file.path,file.bytesValue])),stagedRoot:f.root,subjectPath:(namespace:string,id:string)=>path.join(f.root,namespace,id)};
  codec.restoreRecords(target,records,context);expect(codec.exportRecords(target)).toEqual(records);
  const restored=createSourceStore({repository:target});expect(restored.listOwnCaptures({installationId,profilePersonId:personId})).toHaveLength(2);
+ expect(restored.ownCaptureMetadata({installationId,profilePersonId:personId},[f.input.goal.sourceId]).map(c=>c.id).sort()).toEqual([first.captureRef.id,second.captureRef.id].sort());
+ expect(restored.ownCaptureIssuePage({installationId,profilePersonId:personId},second.captureRef.id,0,32)).toEqual(f.store.readCapture(second.captureRef,f.context.installationId)!.issues.map(({code,message})=>({code,message})));
+ expect(target.readCaptureMetadata(first.captureRef)).toMatchObject({id:first.captureRef.id,sourceId:f.input.goal.sourceId,result:'accepted'});
  const original=restored.readOwnCaptureArtifact({installationId,profilePersonId:personId},first.captureRef.id)!;expect(original.view.capture.actor.installationId).toBe(f.context.installationId);expect(createHash('sha256').update(original.bytes).digest('hex')).toBe(original.view.artifact!.hash.slice(7));
  expect(restored.readOwnCaptureArtifact({installationId,profilePersonId:randomUUID()},first.captureRef.id)).toBeNull();
  expect(()=>codec.authorize(records,randomUUID(),installationId)).toThrow();
@@ -356,4 +360,35 @@ it('final_I1_dashboard_issue_summary_reads_no_raw_history_and_retains_diagnostic
  const index=createWorkbenchReadIndex(f.repository),ports={repository:f.repository,index,sources:f.store} as WorkbenchReadPorts;
  const output=await queryWorkbench('dashboards.view',{context:f.saved.context,filter:{ref:{entityType:'dashboard_def',id:dashboard.id}},sort:[],page:{limit:1,cursor:null}},f.context,ports);
  expect(output.blocks[0]).toMatchObject({type:'data-issues',items:[{kind:'unmapped',code:expect.stringMatching(/SCOPE/),ref:{entityType:'capture',id:captured.captureRef.id}}]});
+});
+
+it('final_I1_native_SQL_metadata_and_diagnostics_never_read_lifetime_payload_columns',async()=>{
+ const f=fixture(),first=await f.capture(),second=await f.capture();
+ const published={...f.input.captures[0],id:fixtureId(999001),operationId:fixtureId(999002)};f.repository.append('capture',published,null);
+ const index=createWorkbenchReadIndex(f.repository),owner={installationId:f.context.installationId,profilePersonId:null};
+ const queries:string[]=[],prepare=DatabaseSync.prototype.prepare;
+ const spy=vi.spyOn(DatabaseSync.prototype,'prepare').mockImplementation(function(this:DatabaseSync,sql:string){if(/^SELECT\b/i.test(sql)&&/json_(?:extract|valid)\(/i.test(sql))queries.push(sql);return prepare.call(this,sql);});
+ try{
+  expect(f.repository.readCaptureMetadata(first.captureRef)).toMatchObject({id:first.captureRef.id,result:'accepted',sourceId:f.input.goal.sourceId});
+  expect(index.captureMetadata([f.input.goal.sourceId]).map(c=>c.id)).toEqual([published.id]);
+  expect(f.store.ownCaptureMetadata(owner,[f.input.goal.sourceId])).toHaveLength(2);
+  expect(f.store.ownCaptureIssuePage(owner,first.captureRef.id,0,32)).toEqual([]);
+  f.repository.sqlForModule('sources').run('UPDATE wb_sources_captures SET value_json=? WHERE capture_id=?',['deliberately damaged evidence',second.captureRef.id]);
+  expect(f.store.ownCaptureMetadata(owner,[f.input.goal.sourceId])).toHaveLength(2);
+  expect(f.store.ownCaptureIssuePage(owner,second.captureRef.id,0,32)).toEqual([{code:'SOURCE_EVIDENCE_INVALID',message:expect.any(String)}]);
+ }finally{spy.mockRestore();}
+ const sqlPrograms=[...new Set(queries)];expect(sqlPrograms.length).toBeGreaterThanOrEqual(5);
+ const native=new DatabaseSync(f.config.filename);
+ try{
+  const roots=new Set((native.prepare("SELECT rootpage FROM sqlite_master WHERE type='table' AND name IN ('wb_entity_versions','wb_read_catalog','wb_sources_captures')").all() as Array<{rootpage:number}>).map(row=>row.rootpage));
+  const proof:Array<{sql:string;payloadTableColumns:number;jsonFunctions:number}>=[];
+  for(const sql of sqlPrograms){
+   const program=native.prepare('EXPLAIN '+sql).all(...Array((sql.match(/\?/g)??[]).length).fill(null)) as Array<{opcode:string;p1:number;p2:number;p4:string|null}>;
+   const payloadTableCursors=new Set(program.filter(op=>op.opcode==='OpenRead'&&roots.has(op.p2)).map(op=>op.p1));
+   proof.push({sql,payloadTableColumns:program.filter(op=>op.opcode==='Column'&&payloadTableCursors.has(op.p1)).length,jsonFunctions:program.filter(op=>op.opcode==='Function'&&/json_/i.test(op.p4??'')).length});
+   expect.soft(program.filter(op=>op.opcode==='Column'&&payloadTableCursors.has(op.p1)),sql+' reads a historical payload table').toEqual([]);
+   expect.soft(program.filter(op=>op.opcode==='Function'&&/json_/i.test(op.p4??'')),sql+' reparses lifetime JSON').toEqual([]);
+  }
+  console.info('I1_NATIVE_SQL_COVERAGE '+JSON.stringify(proof));
+ }finally{native.close();}
 });

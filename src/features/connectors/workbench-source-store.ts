@@ -73,6 +73,11 @@ export function createSourceStore({ repository, ownership }: { repository: Workb
     INSERT OR REPLACE INTO wb_sources_attempts SELECT installation_id,json_extract(value_json,'$.request.goalRef.id'),json_extract(value_json,'$.contextKey'),json_extract(value_json,'$.request.sourceRef.id'),capture_id FROM wb_sources_captures ORDER BY rowid;`);
   sql.execMigration('v4-capture-metadata-index',"CREATE INDEX wb_sources_capture_metadata ON wb_sources_captures(installation_id,json_extract(value_json,'$.request.sourceRef.id'),json_extract(value_json,'$.raw.capturedAt') DESC,capture_id) WHERE json_valid(value_json)");
   sql.execMigration('v5-capture-validity-index',"CREATE INDEX wb_sources_capture_validity ON wb_sources_captures(installation_id,json_valid(value_json),capture_id)");
+  // The index stores only diagnostics, not raw/canonical rows or fact payloads.
+  // SQLite maintains it on owner commits and archive restores; queries read the
+  // covering index without parsing historical evidence again.
+  const diagnosticsExpression="CASE WHEN json_valid(value_json) THEN json_extract(value_json,'$.issues') ELSE NULL END";
+  sql.execMigration('v6-capture-diagnostics-index',`CREATE INDEX wb_sources_capture_diagnostics ON wb_sources_captures(installation_id,capture_id,json_valid(value_json),${diagnosticsExpression})`);
   sql.execMigration('v3-original-omissions','CREATE TABLE wb_sources_original_omissions(file_key TEXT PRIMARY KEY,sha256 TEXT NOT NULL,bytes INTEGER NOT NULL)');
   const published = <T extends Header>(value: T | null): T => {
     if (!value || !value.publicationAnchorId) return fail();
@@ -180,12 +185,11 @@ export function createSourceStore({ repository, ownership }: { repository: Workb
     ownCaptureIssuePage(owner,captureId,offset,limit) {
       if(!store.hasOwnCapture(owner,captureId))return [];
       if(!Number.isSafeInteger(offset)||offset<0||!Number.isSafeInteger(limit)||limit<1||limit>200)return fail();
-      const validity=sql.get<{valid:number}>('SELECT json_valid(value_json) AS valid FROM wb_sources_captures WHERE installation_id=? AND capture_id=?',[owner.installationId,captureId]);
-      if(!validity?.valid)return offset===0?[{code:'SOURCE_EVIDENCE_INVALID',message:'Свидетельство выгрузки повреждено; исходные данные требуют проверки'}]:[];
-      const fields=Array.from({length:limit},(_,n)=>[`json_extract(value_json,?) AS code${n}`,`json_extract(value_json,?) AS message${n}`]).flat();
-      const paths=Array.from({length:limit},(_,n)=>[`$.issues[${offset+n}].code`,`$.issues[${offset+n}].message`]).flat();
-      const row=sql.get<Record<string,string|null>>('SELECT '+fields.join(',')+' FROM wb_sources_captures WHERE installation_id=? AND capture_id=?',[...paths,owner.installationId,captureId]);
-      return row?Array.from({length:limit},(_,n)=>({code:row['code'+n],message:row['message'+n]})).flatMap(issue=>issue.code&&issue.message?[{code:issue.code,message:issue.message}]:[]):[];
+      const row=sql.get<{valid:number;issues_json:string|null}>(`SELECT json_valid(value_json) AS valid,${diagnosticsExpression} AS issues_json FROM wb_sources_captures INDEXED BY wb_sources_capture_diagnostics WHERE installation_id=? AND capture_id=?`,[owner.installationId,captureId]);
+      const invalid=()=>offset===0?[{code:'SOURCE_EVIDENCE_INVALID',message:'Свидетельство выгрузки повреждено; исходные данные требуют проверки'}]:[];
+      if(!row?.valid)return invalid();
+      const issues:unknown=JSON.parse(row.issues_json??'null');if(!Array.isArray(issues))return invalid();
+      return issues.slice(offset,offset+limit).flatMap(issue=>issue&&typeof issue.code==='string'&&issue.code&&typeof issue.message==='string'&&issue.message?[{code:issue.code,message:issue.message}]:[]);
     },
     readOwnCapture(owner,captureId) {return store.hasOwnCapture(owner,captureId)?ownCaptureView(owner,captureId):null;},
     ownCaptureMetadata(owner,sourceIds) {

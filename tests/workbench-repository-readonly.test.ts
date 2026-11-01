@@ -15,6 +15,7 @@ it('readonly repository never migrates, creates artifacts or executes a persiste
   try {
     await expect(access(artifactRoot)).rejects.toMatchObject({ code: 'ENOENT' });
     expect(repository.readPublishedHead({ entityType: 'core_goal_definition', id: f.input.goal.id })).toMatchObject({ id: f.input.goal.id });
+    expect(repository.readCaptureMetadata({ entityType: 'capture', id: f.input.captures[0].id, revision: 1 })).toMatchObject({ id: f.input.captures[0].id, sourceId: f.input.goal.sourceId, result: 'accepted' });
     const action = vi.fn(), module = repository.sqlForModule('readonly_probe');
     for (const mutate of [
       () => repository.append('core_goal_definition', f.input.goal, 1),

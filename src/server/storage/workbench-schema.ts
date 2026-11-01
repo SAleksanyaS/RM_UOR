@@ -31,6 +31,8 @@ export function migrateWorkbench(db: DatabaseSync): void {
         CHECK((result_id IS NULL)=(result_revision IS NULL)));
       CREATE INDEX IF NOT EXISTS wb_fact_scope_time ON wb_fact_index(source_id,metric_id,scope_kind,scope_id,business_kind,business_start,business_end);
       CREATE INDEX IF NOT EXISTS wb_capture_time ON wb_capture_index(captured_at,id);
+      CREATE INDEX IF NOT EXISTS wb_capture_metadata_cover ON wb_entity_versions(id,revision,
+        json_extract(payload_json,'$.sourceId'),json_extract(payload_json,'$.capturedAt'),json_extract(payload_json,'$.result')) WHERE entity_type='capture';
       CREATE INDEX IF NOT EXISTS wb_fact_key ON wb_fact_index(fact_key);
       CREATE INDEX IF NOT EXISTS wb_applicability_assignment ON wb_applicability_index(assignment_id,metric_id,start_date);
       CREATE INDEX IF NOT EXISTS wb_correction_fact_key ON wb_correction_index(fact_key);

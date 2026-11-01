@@ -190,7 +190,7 @@ export function createWorkbenchRepository(options: { filename: string; artifactR
     },
     readCaptureMetadata(ref) {
       assertOpen();versionRefSchema.parse(ref);if(ref.entityType!=='capture')return null;
-      return db.prepare("SELECT id,revision,json_extract(payload_json,'$.sourceId') AS sourceId,json_extract(payload_json,'$.capturedAt') AS capturedAt,json_extract(payload_json,'$.result') AS result FROM wb_entity_versions WHERE entity_type='capture' AND id=? AND revision=?").get(ref.id,ref.revision) as CaptureMetadata|undefined??null;
+      return db.prepare("SELECT id,revision,json_extract(payload_json,'$.sourceId') AS sourceId,json_extract(payload_json,'$.capturedAt') AS capturedAt,json_extract(payload_json,'$.result') AS result FROM wb_entity_versions INDEXED BY wb_capture_metadata_cover WHERE entity_type='capture' AND id=? AND revision=?").get(ref.id,ref.revision) as CaptureMetadata|undefined??null;
     },
     append<T extends Header>(type: string, value: T, expectedHead: number | null): VersionRef {
       assertWritable(); if (projecting) throw new WorkbenchError('PROJECTION_ENTITY_WRITE_FORBIDDEN');

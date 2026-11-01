@@ -25,6 +25,7 @@ function install(repository:WorkbenchRepository) {
   `);
   sql.execMigration('capture-metadata-v2',"CREATE INDEX wb_read_capture_metadata ON wb_read_catalog(entity_type,json_extract(payload,'$.sourceId'),json_extract(payload,'$.capturedAt') DESC,id,json_extract(payload,'$.result'))");
   sql.execMigration('capture-facts-v3',"CREATE INDEX wb_read_capture_facts ON wb_read_catalog(entity_type,json_extract(payload,'$.captureId'),id)");
+  sql.execMigration('capture-metadata-cover-v4',"CREATE INDEX wb_read_capture_metadata_cover ON wb_read_catalog(entity_type,json_extract(payload,'$.sourceId'),json_extract(payload,'$.capturedAt') DESC,id,revision,json_extract(payload,'$.result'))");
   const put=(entityType:string,value:Header)=>{
     const named=value as Header & {title?:string;name?:string;request?:string};
     const title=named.title??named.name??(entityType==='decision'?named.request:undefined)??value.id;
@@ -70,7 +71,7 @@ function install(repository:WorkbenchRepository) {
     },
     captureMetadata(sourceIds:string[]) {
       if(!sourceIds.length)return [];
-      return sql.all<{id:string;revision:number;sourceId:string;capturedAt:string;result:Capture['result']}>(`SELECT id,revision,json_extract(payload,'$.sourceId') AS sourceId,json_extract(payload,'$.capturedAt') AS capturedAt,json_extract(payload,'$.result') AS result FROM wb_read_catalog WHERE entity_type='capture' AND json_extract(payload,'$.sourceId') IN (${sourceIds.map(()=>'?').join(',')}) ORDER BY capturedAt DESC,id`,sourceIds);
+      return sql.all<{id:string;revision:number;sourceId:string;capturedAt:string;result:Capture['result']}>(`SELECT id,revision,json_extract(payload,'$.sourceId') AS sourceId,json_extract(payload,'$.capturedAt') AS capturedAt,json_extract(payload,'$.result') AS result FROM wb_read_catalog INDEXED BY wb_read_capture_metadata_cover WHERE entity_type='capture' AND json_extract(payload,'$.sourceId') IN (${sourceIds.map(()=>'?').join(',')}) ORDER BY capturedAt DESC,id`,sourceIds);
     },
     sealCursor(position:unknown,binding:unknown,context:QueryContext):string {
       const body=Buffer.from(JSON.stringify({fingerprint:cursorFingerprint(binding,context),position})).toString('base64url');
