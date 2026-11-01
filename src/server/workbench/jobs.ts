@@ -17,6 +17,7 @@ export interface JobStore extends JobSink {
   recoveryCandidates(installationId?: string): JobRecoveryCandidate[];
   registerStage(stage: string): void;
   registerControl(jobId: string, control: JobControl): void;
+  clearControls(jobId: string): void;
   markIrreversible(jobId: string): void;
   checkpoints(jobId: string, installationId: string): Record<string, unknown>[];
   cancel(jobId: string, installationId: string): Promise<void>;
@@ -72,6 +73,7 @@ export function createJobStore({ repository, clock }: { repository: WorkbenchRep
       return sql.all<{ installation_id: string; name: string; resource_key: string | null; irreversible: number; snapshot_json: string; has_checkpoints: number }>(`SELECT installation_id,name,resource_key,irreversible,snapshot_json,EXISTS(SELECT 1 FROM wb_jobs_checkpoints c WHERE c.job_id=h.job_id) AS has_checkpoints FROM wb_jobs_heads h WHERE json_extract(snapshot_json,'$.status') NOT IN ('succeeded','partial','failed','cancelled')` + (installationId === undefined ? '' : ' AND installation_id=?'), installationId === undefined ? [] : [uuidSchema.parse(installationId)]).map(row => ({ snapshot: jobSnapshotSchema.parse(JSON.parse(row.snapshot_json)), installationId: row.installation_id, name: row.name, resourceKey: row.resource_key, irreversible: !!row.irreversible, hasCheckpoints: !!row.has_checkpoints }));
     },
     registerControl(jobId, control) { const row = raw(jobId); if (!row) throw new WorkbenchHttpError(404, 'JOB_NOT_FOUND', 'Job not found'); const snapshot = jobSnapshotSchema.parse(JSON.parse(row.snapshot_json)); if (!terminal.has(snapshot.status)) { const merged = { ...controls.get(jobId), ...control }; controls.set(jobId, merged); store.update(jobId, { cancelAvailable: !!merged.cancel && !row.irreversible, retryAvailable: !!merged.retry }); } },
+    clearControls(jobId) { const row = raw(jobId); if (!row) throw new WorkbenchHttpError(404, 'JOB_NOT_FOUND', 'Job not found'); const snapshot = jobSnapshotSchema.parse(JSON.parse(row.snapshot_json)); controls.delete(jobId); if (!terminal.has(snapshot.status)) store.update(jobId, { cancelAvailable: false, retryAvailable: false, ...(['job.retry', 'job.openAuth'].includes(snapshot.nextAction?.commandName ?? '') ? { nextAction: null } : {}) }); },
     markIrreversible(jobId) { repository.transaction(() => { if (!raw(jobId)) throw new WorkbenchHttpError(404, 'JOB_NOT_FOUND', 'Job not found'); sql.run('UPDATE wb_jobs_heads SET irreversible=1 WHERE job_id=?', [jobId]); store.update(jobId, { cancelAvailable: false }); }); },
     async cancel(jobId, installationId) { const row = owned(jobId, installationId); const action = controls.get(jobId)?.cancel; if (row.irreversible || !row.snapshot.cancelAvailable || !action) throw new WorkbenchHttpError(409, 'CANCEL_NOT_AVAILABLE', 'Cancellation is unavailable'); await action(); if(store.get(jobId,installationId)?.status==='cancelled') return; store.update(jobId, { status: 'cancelled', stage: 'cancelled', result: null, error: null }); },
     async retry(jobId, installationId, beforeStart) {

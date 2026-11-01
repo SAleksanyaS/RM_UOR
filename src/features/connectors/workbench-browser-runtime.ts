@@ -8,7 +8,7 @@ import type { BrowserScenarioDefinition, RecordedBrowserStep, UUIDv4 } from '../
 import { browserScenarioDefinitionSchema, uuidSchema } from '../../domain/workbench';
 import { WorkbenchHttpError } from '../../server/workbench/protocol';
 import { safeArtifactPath } from '../../server/workspace/paths';
-import { cancelRecording, executeBrowser, finishRecording, readRecordingScreenshot, startRecording, waitForRecordingComplete, type BrowserLauncherPort } from './browser';
+import { cancelRecording, executeBrowser, finishRecording, observeBrowserLogin, readRecordingScreenshot, startRecording, waitForRecordingComplete, type BrowserLauncherPort } from './browser';
 import { type BrowserStep, type PrivateProfile } from './contracts';
 import type { Downloaded } from './transport';
 export type { BrowserLauncherPort } from './browser';
@@ -19,6 +19,8 @@ export type BrowserReplayInput = { owner: BrowserOwner; profile: PrivateProfile;
 export type BrowserSessionHandle = { handleId: UUIDv4; state: 'open'; mode: 'login' | 'record' };
 export type RecordedBrowserScenario = { recordingId: UUIDv4; startUrl: string; authenticatedSelector: string; steps: RecordedBrowserStep[]; parameterNames: string[]; screenshotHandles: UUIDv4[]; hasDownload: boolean };
 export interface BrowserRuntimePort {
+  /** A live owned report-boundary observation, never cookie/window-close evidence. */
+  observeLogin?(input: { handleId: UUIDv4; owner: BrowserOwner }): Promise<boolean>;
   openLogin(input: BrowserLoginInput, signal: AbortSignal): Promise<BrowserSessionHandle>;
   startRecording(input: BrowserRecordInput, signal: AbortSignal): Promise<BrowserSessionHandle>;
   finish(input: { handleId: UUIDv4; owner: BrowserOwner; save: boolean }): Promise<RecordedBrowserScenario>;
@@ -70,6 +72,11 @@ export function createBrowserRuntime({ runtimeRoot, launcher }: { runtimeRoot: s
     } finally { pending.delete(request); settled(); }
   };
   const runtime: BrowserWorkflowRuntimePort = {
+    async observeLogin({ handleId, owner }) {
+      const handle = handles.get(handleId);
+      if (!handle || handle.owner !== browserOwnerKey(owner)) throw new WorkbenchHttpError(404, 'BROWSER_HANDLE_NOT_FOUND', 'Browser session not found');
+      return observeBrowserLogin(handle.owner, handle.recorderId, handle.input.profile, handle.input.authenticatedSelector, handle.input.startUrl);
+    },
     async readRecordingStatus({ handleId, owner }) {
       const key = browserOwnerKey(owner), cached = finished.get(handleId);
       if (cached?.owner === key) return { state: cached.result.hasDownload ? 'completed' : 'idle', problem: null };

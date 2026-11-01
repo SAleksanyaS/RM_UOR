@@ -11,18 +11,25 @@ import { WorkbenchHttpError } from '../../server/workbench/protocol';
 import { reduceRows } from '../evaluation/workbench/reducers';
 import { validateSourceConfiguration, captureInputSchema, captureRequestSchema, captureResultSchema, enrichmentResultSchema, rawBatchSchema, sourceCheckSchema, sourceIssueSchema, sourcePayloadHash, type CaptureResult, type EnricherPort, type NormalizerPort, type SourceAdapter, type SourceIssue } from './workbench-source-contracts';
 import { sourceScopeReachable, type SourceStore } from './workbench-source-store';
+import type { BrowserSourceAdapter } from './workbench-browser-source';
 
-export type SourceJobs = Pick<JobStore, 'findByCommand' | 'getResourceKey' | 'registerControl' | 'registerStage' | 'stage'>;
-export interface SourceService { capture(context: CommandContext, input: { goalId: string }): Promise<CaptureResult>; sourceIdForGoal(goalId: string): string }
+export type SourceJobs = Pick<JobStore, 'findByCommand' | 'getResourceKey' | 'registerControl' | 'registerStage' | 'stage' | 'checkpoint' | 'checkpoints' | 'update'>;
+export interface SourceService { capture(context: CommandContext, input: { goalId: string }): Promise<CaptureResult>; sourceIdForGoal(goalId: string): string; resumeBrowserCapture(jobId: string, context: CommandContext): Promise<CaptureResult> }
 const problem = (code: string, message: string, status = 422): never => { throw new WorkbenchHttpError(status, code, message); };
 const scopeKey = (scope: ScopeRef) => `${scope.kind}/${scope.id}`;
 const issue = (code: string, rowKeys: string[], refs: VersionRef[] = []): SourceIssue => ({ code, stage: 'normalize', retryable: false, message: 'Source rows require a valid published mapping or value', rowKeys, refs: refs.map(({ entityType, id }) => ({ entityType, id })) });
 
-
-export function createSourceService({ repository, store, adapters, normalizer, enricher, jobs, clock, recheckGuard }: { repository: WorkbenchRepository; store: SourceStore; adapters: Map<string, SourceAdapter>; normalizer: NormalizerPort; enricher: EnricherPort; jobs: SourceJobs; clock: Clock; recheckGuard: (context: CommandContext) => Promise<void> }): SourceService {
-  for (const stage of ['source.check', 'source.collect', 'source.normalize', 'source.enrich', 'source.commit']) jobs.registerStage(stage);
-  return {
+export function createSourceService({ repository, store, adapters, browserAdapter, normalizer, enricher, jobs, clock, recheckGuard }: { repository: WorkbenchRepository; store: SourceStore; adapters: Map<string, SourceAdapter>; browserAdapter?: BrowserSourceAdapter; normalizer: NormalizerPort; enricher: EnricherPort; jobs: SourceJobs; clock: Clock; recheckGuard: (context: CommandContext) => Promise<void> }): SourceService {
+  for (const stage of ['source.check', 'source.collect', 'source.normalize', 'source.enrich', 'source.commit', 'browser.auth']) jobs.registerStage(stage);
+  const service: SourceService = {
     sourceIdForGoal: goalId => store.sourceIdForGoal(goalId),
+    async resumeBrowserCapture(jobId, context) {
+      const job = jobs.findByCommand(context.commandId, context.installationId);
+      const saved = jobs.checkpoints(jobId, context.installationId).find(value => value.kind === 'browser.capture');
+      if (!job || job.jobId !== jobId || !saved || typeof saved.goalId !== 'string') return problem('SOURCE_JOB_REQUIRED', 'Original browser capture job is required', 409);
+      if (stableJson(saved.owner) !== stableJson({ installationId: context.installationId, profilePersonId: context.ownAccess.personId })) return problem('SOURCE_CONFIGURATION_CHANGED', 'Original capture ownership changed', 409);
+      return service.capture(context, { goalId: saved.goalId });
+    },
     async capture(context, unvalidated) {
       const input = captureInputSchema.parse(unvalidated);
       if (context.repository !== repository || context.actor.installationId !== context.installationId) return problem('COMMAND_CONTEXT_MISMATCH', 'Source command context does not match this installation', 409);
@@ -32,13 +39,21 @@ export function createSourceService({ repository, store, adapters, normalizer, e
       if (job.status !== 'running') return problem('SOURCE_JOB_NOT_RUNNING', 'Capture job is not running', 409);
       const binding = store.resolveCapture({ installationId: context.installationId, goalId: input.goalId });
       if (store.sourceIdForGoal(input.goalId) !== binding.source.id || jobs.getResourceKey(job.jobId, context.installationId) !== 'source:' + binding.source.id) return problem('SOURCE_CONFIGURATION_CHANGED', 'Queued source identity has changed', 409);
-      validateSourceConfiguration(binding); const adapter = adapters.get(binding.adapterKey); if (!adapter) return problem('SOURCE_UNSUPPORTED', 'Configured adapter is unavailable');
       const request = captureRequestSchema.parse({ operationId: job.jobId, goalRef: binding.goalRef, sourceRef: binding.sourceRef, mappingRef: binding.mappingRef, businessTime: binding.businessTime, context: binding.context, configurationRevision: binding.configurationRevision, profileRef: binding.profileRef });
+      const saved = jobs.checkpoints(job.jobId, context.installationId).find(value => value.kind === 'browser.capture');
+      if (binding.source.browserScenarioRef || saved) {
+        const prepared = { kind: 'browser.capture', goalId: input.goalId, owner: { installationId: context.installationId, profilePersonId: context.ownAccess.personId }, request, scenarioRef: binding.source.browserScenarioRef ?? null };
+        if (saved && stableJson(saved) !== stableJson(prepared)) return problem('SOURCE_CONFIGURATION_CHANGED', 'Start a new capture after the published configuration or owner changes', 409);
+        if (!saved) jobs.checkpoint(job.jobId, prepared);
+      }
+      validateSourceConfiguration(binding); const browser = binding.source.browserScenarioRef ? browserAdapter : undefined;
+      const adapter = binding.source.browserScenarioRef ? browser : adapters.get(binding.adapterKey); if (!adapter) return problem('SOURCE_UNSUPPORTED', 'Configured adapter is unavailable');
       const controller = new AbortController();
       jobs.registerControl(job.jobId, { cancel: async () => { controller.abort(); } });
       const checkAbort = () => { if (controller.signal.aborted) return problem('SOURCE_CANCELLED', 'Capture was cancelled', 409); };
       const stage = (name: string, completed: number) => { checkAbort(); jobs.stage(job.jobId, name, { completed, total: 5, unit: 'steps' }); };
       try {
+        if (browser) { await recheckGuard(context); checkAbort(); browser.prepare(context, request, binding, store); jobs.update(job.jobId, { error: null, warnings: [], nextAction: null }); }
         stage('source.check', 0); const checked = sourceCheckSchema.parse(await adapter.check(request)); checkAbort();
         if (checked.status !== 'ready') return problem(checked.issues[0]?.code ?? 'SOURCE_' + checked.status.toUpperCase(), checked.issues[0]?.message ?? 'Source is not ready');
         stage('source.collect', 1); const raw = rawBatchSchema.parse(await adapter.collect(request, controller.signal)); checkAbort();
@@ -47,7 +62,7 @@ export function createSourceService({ repository, store, adapters, normalizer, e
         if (raw.artifact) { store.assertArtifact(context.installationId, raw.artifact); if (raw.payloadHash !== raw.artifact.hash) return problem('SOURCE_HASH_MISMATCH', 'Artifact payload hash does not match verified bytes'); }
         else if (raw.payloadHash !== sourcePayloadHash(raw.rawRows)) return problem('SOURCE_HASH_MISMATCH', 'Raw payload hash does not match original rows');
         stage('source.normalize', 2);
-        const normalized = z.strictObject({ rows: z.array(canonicalSourceRowSchema), issues: z.array(sourceIssueSchema) }).parse(normalizer.normalize({ raw: structuredClone(raw), mapping: structuredClone(binding.mapping) })); checkAbort();
+        const normalized = z.strictObject({ rows: z.array(canonicalSourceRowSchema), issues: z.array(sourceIssueSchema) }).parse((browser ?? normalizer).normalize({ raw: structuredClone(raw), mapping: structuredClone(binding.mapping) })); checkAbort();
         const rowsByKey = new Map<string, CanonicalSourceRow>(); const rawByKey = new Map(raw.rawRows.map(r => [r.rowKey, r])); const issues: SourceIssue[] = [...checked.issues, ...raw.issues, ...normalized.issues];
         for (const row of normalized.rows) { if (!rawByKey.has(row.rowKey) || rowsByKey.has(row.rowKey)) return problem('SOURCE_ROW_MISMATCH', 'Normalization must preserve unique original row keys'); rowsByKey.set(row.rowKey, row); }
         for (const row of raw.rawRows) if (!rowsByKey.has(row.rowKey)) issues.push(issue('NORMALIZED_ROW_MISSING', [row.rowKey]));
@@ -87,12 +102,17 @@ export function createSourceService({ repository, store, adapters, normalizer, e
         }
         for (const expected of binding.assignment.expectedPopulation!) if (![...scopes.values()].some(s => scopeKey(s) === scopeKey(expected))) issues.push(issue('EXPECTED_SCOPE_MISSING', [], binding.metricRefs));
         const capture: Capture = { ...header(), id: captureId, sourceId: binding.source.id, operationId: job.jobId, obtainedVia: 'direct', capturedAt, sourceUpdatedAt: raw.sourceUpdatedAt, payloadHash: raw.payloadHash, rawArtifactId: raw.artifact?.artifactId ?? null, mappingRef: binding.mappingRef, result: issues.length || rejectedKeys.size || !facts.length ? 'partial' : 'accepted', acceptedRows: raw.rawRows.length - rejectedKeys.size, rejectedRows: rejectedKeys.size, rawRows: raw.rawRows, canonicalRows: normalized.rows };
-        stage('source.commit', 4); await recheckGuard(context); checkAbort(); store.assertUnchanged(binding, context.installationId);
+        stage('source.commit', 4); await recheckGuard(context); checkAbort(); await browser?.verify(request); checkAbort(); store.assertUnchanged(binding, context.installationId);
         return commitCommandEffect(context, () => { checkAbort(); const result = store.commitCapture({ installationId: context.installationId, binding, request, raw, capture, facts, issues }); return { result, changedRefs: [{ entityType: 'capture', id: result.captureRef.id }, ...facts.map(f => ({ entityType: 'observed_fact', id: f.id }))], editToken: null }; }).result;
-      } catch (error) { if (controller.signal.aborted) return problem('SOURCE_CANCELLED', 'Capture was cancelled', 409); throw error; }
+      } catch (error) {
+        if (controller.signal.aborted) return problem('SOURCE_CANCELLED', 'Capture was cancelled', 409);
+        if (browser && error instanceof WorkbenchHttpError && error.code === 'AUTH_REQUIRED') jobs.update(job.jobId, { status: 'waiting_user', stage: 'browser.auth', result: null, error: null, warnings: [{ code: 'AUTH_REQUIRED', message: 'Войдите в источник в личном браузере и повторите получение', retryable: true, details: [], operationId: job.jobId, provider: null }], nextAction: { commandName: 'source.browser.login.open', payload: { sourceRef: binding.sourceRef }, route: null, label: 'Открыть браузер для входа', enabled: true, disabledReason: null } });
+        throw error;
+      } finally { browser?.release(request); }
     },
   };
+  return service;
 }
 export function registerSourceCommands(registry: CommandRegistry, service: SourceService): void {
-  registry.register({ name: 'source.capture', inputSchema: captureInputSchema, outputSchema: captureResultSchema, capability: 'capture.local', effect: 'local', execution: 'async', resourceKey: ({ goalId }) => 'source:' + service.sourceIdForGoal(goalId), handler: async (context, input) => { const result = await service.capture(context, input); return { result, changedRefs: [{ entityType: 'capture', id: result.captureRef.id }], editToken: null }; } });
+  registry.register({ name: 'source.capture', inputSchema: captureInputSchema, outputSchema: captureResultSchema, capability: 'capture.local', effect: 'local', execution: 'async', ownership: 'person-if-present', manualAuthRecovery: true, manualRecovery: 'browser-capture', resourceKey: ({ goalId }) => 'source:' + service.sourceIdForGoal(goalId), handler: async (context, input) => { const result = await service.capture(context, input); return { result, changedRefs: [{ entityType: 'capture', id: result.captureRef.id }], editToken: null }; } });
 }

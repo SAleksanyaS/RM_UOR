@@ -20,7 +20,8 @@ function reportUrl(surface: Surface, profile: PrivateProfile, origin: string) {
 
 async function unique(surface: Surface, locator: StableBrowserLocator): Promise<Locator> {
   const resolved = locate(surface, locator);
-  if (await resolved.count() !== 1) throw new ConnectorError('configuration_required', 'Элемент сценария не найден однозначно. Повторите запись этого действия');
+  const count = await resolved.count();
+  if (count !== 1) throw Object.assign(new ConnectorError('configuration_required', 'Элемент сценария не найден однозначно. Повторите запись этого действия'), { diagnosticCode: count === 0 ? 'SELECTOR_NOT_FOUND' as const : 'SELECTOR_NOT_UNIQUE' as const });
   return resolved;
 }
 
