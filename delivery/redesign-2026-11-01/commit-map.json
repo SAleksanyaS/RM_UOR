@@ -1,0 +1,571 @@
+{
+  "schema_version": 1,
+  "repository": "SAleksanyaS/RM_UOR",
+  "base_commit": "ac299a5508dba60df7d4f5b8152fb7aaf4655223",
+  "source_head": "7453624bb6b3b9e895664573756f527e484b52da",
+  "published_code_head": "4fc808b6fc8aca511f17e97719ecaaa3c3a78b81",
+  "source_tree": "6518e078cf4a898095b35ebffe1878a2bebe47b0",
+  "source_commit_count": 24,
+  "verified_at": "2026-11-01T14:09:01.526Z",
+  "publication_method": "GitHub Git Data API; original author/committer metadata retained as source metadata because the connected create_commit action does not expose author/date inputs",
+  "checks": {
+    "all_commit_trees_equal_source": true,
+    "all_published_parents_match_mapped_sequence": true,
+    "all_messages_include_source_provenance": true,
+    "remote_commits_read_back": true
+  },
+  "commits": [
+    {
+      "index": 1,
+      "source_sha": "32106a9e05b98c8e71f5119153240bd33e2b4222",
+      "published_sha": "6b8b7153aa857a37e726b759defd1684beb55beb",
+      "source_parent": "ac299a5508dba60df7d4f5b8152fb7aaf4655223",
+      "published_parent": "ac299a5508dba60df7d4f5b8152fb7aaf4655223",
+      "tree_sha": "b6d7c7ef98f14e8b3e72d0af8c04790b37482b3b",
+      "source_author": "Codex <codex@local.invalid> 1793532172 +0100",
+      "source_committer": "Codex <codex@local.invalid> 1793532172 +0100",
+      "source_message": "feat: establish approved workbench visual reference\n",
+      "tree_verified": true,
+      "published_author": {
+        "name": "Aleksanya",
+        "email": "105164012+SAleksanyaS@users.noreply.github.com",
+        "date": "2026-11-01T14:04:48Z"
+      },
+      "published_committer": {
+        "name": "Aleksanya",
+        "email": "105164012+SAleksanyaS@users.noreply.github.com",
+        "date": "2026-11-01T14:04:48Z"
+      },
+      "remote_commit_verified": true
+    },
+    {
+      "index": 2,
+      "source_sha": "1d3bc1890d3e4f30ec5f5e415cb446cd56f89449",
+      "published_sha": "0943de6d47698380f3e45642a5a6435e92750351",
+      "source_parent": "32106a9e05b98c8e71f5119153240bd33e2b4222",
+      "published_parent": "6b8b7153aa857a37e726b759defd1684beb55beb",
+      "tree_sha": "5ec23faa6b80225bcd2716b4bea0d99f6693eabf",
+      "source_author": "Codex <codex@local.invalid> 1793533032 +0100",
+      "source_committer": "Codex <codex@local.invalid> 1793533032 +0100",
+      "source_message": "fix(publishing): preserve historical inputs and trusted ownership\n",
+      "tree_verified": true,
+      "published_author": {
+        "name": "Aleksanya",
+        "email": "105164012+SAleksanyaS@users.noreply.github.com",
+        "date": "2026-11-01T14:05:26Z"
+      },
+      "published_committer": {
+        "name": "Aleksanya",
+        "email": "105164012+SAleksanyaS@users.noreply.github.com",
+        "date": "2026-11-01T14:05:26Z"
+      },
+      "remote_commit_verified": true
+    },
+    {
+      "index": 3,
+      "source_sha": "63978a895a1a0d06517fa59837d927127ac7622e",
+      "published_sha": "3ca4806bb1c46cb50f08a84f61aeab970dee1965",
+      "source_parent": "1d3bc1890d3e4f30ec5f5e415cb446cd56f89449",
+      "published_parent": "0943de6d47698380f3e45642a5a6435e92750351",
+      "tree_sha": "9224b73602cd51a8cd60b15eafc1b7c04f85126e",
+      "source_author": "Codex <codex@local.invalid> 1793533445 +0100",
+      "source_committer": "Codex <codex@local.invalid> 1793533445 +0100",
+      "source_message": "feat(ui): complete workbench visual migration and protect editor input\n",
+      "tree_verified": true,
+      "published_author": {
+        "name": "Aleksanya",
+        "email": "105164012+SAleksanyaS@users.noreply.github.com",
+        "date": "2026-11-01T14:05:32Z"
+      },
+      "published_committer": {
+        "name": "Aleksanya",
+        "email": "105164012+SAleksanyaS@users.noreply.github.com",
+        "date": "2026-11-01T14:05:32Z"
+      },
+      "remote_commit_verified": true
+    },
+    {
+      "index": 4,
+      "source_sha": "a59ece273ac127300505adc8b77433fb472d07ec",
+      "published_sha": "217f7a053809b2ad130fde5f0c358a584c42f082",
+      "source_parent": "63978a895a1a0d06517fa59837d927127ac7622e",
+      "published_parent": "3ca4806bb1c46cb50f08a84f61aeab970dee1965",
+      "tree_sha": "db06e672592f4de38e9b394b5ef8a385e336cfa0",
+      "source_author": "Codex <codex@local.invalid> 1793533532 +0100",
+      "source_committer": "Codex <codex@local.invalid> 1793533532 +0100",
+      "source_message": "fix: recover confirmed form saves and protect unsaved input\n",
+      "tree_verified": true,
+      "published_author": {
+        "name": "Aleksanya",
+        "email": "105164012+SAleksanyaS@users.noreply.github.com",
+        "date": "2026-11-01T14:05:40Z"
+      },
+      "published_committer": {
+        "name": "Aleksanya",
+        "email": "105164012+SAleksanyaS@users.noreply.github.com",
+        "date": "2026-11-01T14:05:40Z"
+      },
+      "remote_commit_verified": true
+    },
+    {
+      "index": 5,
+      "source_sha": "b5ea9868274d38fbe7b39a53c8bf8b21365610da",
+      "published_sha": "aad59f72c965677b40c46f6e73e7adbb49cf9648",
+      "source_parent": "a59ece273ac127300505adc8b77433fb472d07ec",
+      "published_parent": "217f7a053809b2ad130fde5f0c358a584c42f082",
+      "tree_sha": "f6d97d475778b2416e91e5ccf7ff529f637e6c1e",
+      "source_author": "Codex <codex@local.invalid> 1793533643 +0100",
+      "source_committer": "Codex <codex@local.invalid> 1793533643 +0100",
+      "source_message": "Enable personal reader OKO workflows and bounded browser recovery\n",
+      "tree_verified": true,
+      "published_author": {
+        "name": "Aleksanya",
+        "email": "105164012+SAleksanyaS@users.noreply.github.com",
+        "date": "2026-11-01T14:05:46Z"
+      },
+      "published_committer": {
+        "name": "Aleksanya",
+        "email": "105164012+SAleksanyaS@users.noreply.github.com",
+        "date": "2026-11-01T14:05:46Z"
+      },
+      "remote_commit_verified": true
+    },
+    {
+      "index": 6,
+      "source_sha": "737cbc1e74e6929e7e50d222cbc6234d8dd7a082",
+      "published_sha": "f7186a11f5f003e3b1c34113fea0390c8853f6cc",
+      "source_parent": "b5ea9868274d38fbe7b39a53c8bf8b21365610da",
+      "published_parent": "aad59f72c965677b40c46f6e73e7adbb49cf9648",
+      "tree_sha": "bba043a91f26d410536d7385326be918fbf9db24",
+      "source_author": "Codex <codex@local.invalid> 1793533879 +0100",
+      "source_committer": "Codex <codex@local.invalid> 1793533879 +0100",
+      "source_message": "build: update verified dependencies on the pinned Node runtime\n",
+      "tree_verified": true,
+      "published_author": {
+        "name": "Aleksanya",
+        "email": "105164012+SAleksanyaS@users.noreply.github.com",
+        "date": "2026-11-01T14:05:53Z"
+      },
+      "published_committer": {
+        "name": "Aleksanya",
+        "email": "105164012+SAleksanyaS@users.noreply.github.com",
+        "date": "2026-11-01T14:05:53Z"
+      },
+      "remote_commit_verified": true
+    },
+    {
+      "index": 7,
+      "source_sha": "a3030842e6b3f5f7113ef05dcffe2c5fe3a955a9",
+      "published_sha": "7a3ce3f8c460e3a6e5cb64a793554622e1f16b6f",
+      "source_parent": "737cbc1e74e6929e7e50d222cbc6234d8dd7a082",
+      "published_parent": "f7186a11f5f003e3b1c34113fea0390c8853f6cc",
+      "tree_sha": "c41ed6f4ebc2c54ff53de8f8238fdadd5d7783f7",
+      "source_author": "Codex <codex@local.invalid> 1793534211 +0100",
+      "source_committer": "Codex <codex@local.invalid> 1793534211 +0100",
+      "source_message": "fix(workbench): explain saved numeric results with exact metric revisions\n",
+      "tree_verified": true,
+      "published_author": {
+        "name": "Aleksanya",
+        "email": "105164012+SAleksanyaS@users.noreply.github.com",
+        "date": "2026-11-01T14:06:15Z"
+      },
+      "published_committer": {
+        "name": "Aleksanya",
+        "email": "105164012+SAleksanyaS@users.noreply.github.com",
+        "date": "2026-11-01T14:06:15Z"
+      },
+      "remote_commit_verified": true
+    },
+    {
+      "index": 8,
+      "source_sha": "0be2969f8b90d40ea7d162e2f297e334d589ef5e",
+      "published_sha": "47fd4fb4645f7be70f7c3fc277ce71ea9893f7ae",
+      "source_parent": "a3030842e6b3f5f7113ef05dcffe2c5fe3a955a9",
+      "published_parent": "7a3ce3f8c460e3a6e5cb64a793554622e1f16b6f",
+      "tree_sha": "de97ccf96be1546fe664013c7801bcd95a0dccc0",
+      "source_author": "Codex <codex@local.invalid> 1793534346 +0100",
+      "source_committer": "Codex <codex@local.invalid> 1793534346 +0100",
+      "source_message": "fix(publishing): validate full candidates and continue existing proposals\n",
+      "tree_verified": true,
+      "published_author": {
+        "name": "Aleksanya",
+        "email": "105164012+SAleksanyaS@users.noreply.github.com",
+        "date": "2026-11-01T14:06:21Z"
+      },
+      "published_committer": {
+        "name": "Aleksanya",
+        "email": "105164012+SAleksanyaS@users.noreply.github.com",
+        "date": "2026-11-01T14:06:21Z"
+      },
+      "remote_commit_verified": true
+    },
+    {
+      "index": 9,
+      "source_sha": "706b5a72b24b23bfe7abdfecff27c4fdfe9a986b",
+      "published_sha": "539719e04c0b472c23fb4e83fba513c2ab2253ad",
+      "source_parent": "0be2969f8b90d40ea7d162e2f297e334d589ef5e",
+      "published_parent": "47fd4fb4645f7be70f7c3fc277ce71ea9893f7ae",
+      "tree_sha": "b2cd79ea2eead87125841ee450e2fcd4d6a5ada7",
+      "source_author": "Codex <codex@local.invalid> 1793534521 +0100",
+      "source_committer": "Codex <codex@local.invalid> 1793534521 +0100",
+      "source_message": "docs(workbench): align guides and clean delivery with redesign behavior\n",
+      "tree_verified": true,
+      "published_author": {
+        "name": "Aleksanya",
+        "email": "105164012+SAleksanyaS@users.noreply.github.com",
+        "date": "2026-11-01T14:06:27Z"
+      },
+      "published_committer": {
+        "name": "Aleksanya",
+        "email": "105164012+SAleksanyaS@users.noreply.github.com",
+        "date": "2026-11-01T14:06:27Z"
+      },
+      "remote_commit_verified": true
+    },
+    {
+      "index": 10,
+      "source_sha": "8a883c30eb236b8a4bde1e92a34a9c3a6e3a348a",
+      "published_sha": "7f6f5af1f913a06ab85d4c8b6955135964dc01ca",
+      "source_parent": "706b5a72b24b23bfe7abdfecff27c4fdfe9a986b",
+      "published_parent": "539719e04c0b472c23fb4e83fba513c2ab2253ad",
+      "tree_sha": "cb95a44406681e19d9f6b9543b8489d796033090",
+      "source_author": "Codex <codex@local.invalid> 1793534837 +0100",
+      "source_committer": "Codex <codex@local.invalid> 1793534837 +0100",
+      "source_message": "Bound personal directory uploads and recorder completion to explicit ownership\n",
+      "tree_verified": true,
+      "published_author": {
+        "name": "Aleksanya",
+        "email": "105164012+SAleksanyaS@users.noreply.github.com",
+        "date": "2026-11-01T14:06:33Z"
+      },
+      "published_committer": {
+        "name": "Aleksanya",
+        "email": "105164012+SAleksanyaS@users.noreply.github.com",
+        "date": "2026-11-01T14:06:33Z"
+      },
+      "remote_commit_verified": true
+    },
+    {
+      "index": 11,
+      "source_sha": "ccb274505e6e196a064c68d0a17876edc3e92604",
+      "published_sha": "03cfedcacb2c6109c95245090d0325efed4c4bf6",
+      "source_parent": "8a883c30eb236b8a4bde1e92a34a9c3a6e3a348a",
+      "published_parent": "7f6f5af1f913a06ab85d4c8b6955135964dc01ca",
+      "tree_sha": "c42ba4bdc20be521470f49e24bd83df817fce4ca",
+      "source_author": "Codex <codex@local.invalid> 1793534859 +0100",
+      "source_committer": "Codex <codex@local.invalid> 1793534859 +0100",
+      "source_message": "fix(workbench): guard role changes and use one goal navigation decision\n",
+      "tree_verified": true,
+      "published_author": {
+        "name": "Aleksanya",
+        "email": "105164012+SAleksanyaS@users.noreply.github.com",
+        "date": "2026-11-01T14:06:38Z"
+      },
+      "published_committer": {
+        "name": "Aleksanya",
+        "email": "105164012+SAleksanyaS@users.noreply.github.com",
+        "date": "2026-11-01T14:06:38Z"
+      },
+      "remote_commit_verified": true
+    },
+    {
+      "index": 12,
+      "source_sha": "c22895512a89f090460a667ad7d8af10f1d71f84",
+      "published_sha": "9d53e41718a1d24c6f857ad9197ac82e05c437c1",
+      "source_parent": "ccb274505e6e196a064c68d0a17876edc3e92604",
+      "published_parent": "03cfedcacb2c6109c95245090d0325efed4c4bf6",
+      "tree_sha": "c65a894ca343754c773744270f87268459460b88",
+      "source_author": "Codex <codex@local.invalid> 1793535666 +0100",
+      "source_committer": "Codex <codex@local.invalid> 1793535666 +0100",
+      "source_message": "docs(delivery): preserve full feature map and clarify native setup\n",
+      "tree_verified": true,
+      "published_author": {
+        "name": "Aleksanya",
+        "email": "105164012+SAleksanyaS@users.noreply.github.com",
+        "date": "2026-11-01T14:06:44Z"
+      },
+      "published_committer": {
+        "name": "Aleksanya",
+        "email": "105164012+SAleksanyaS@users.noreply.github.com",
+        "date": "2026-11-01T14:06:44Z"
+      },
+      "remote_commit_verified": true
+    },
+    {
+      "index": 13,
+      "source_sha": "5ccefb3cd177ebf948e2de893f277a83363d9a5d",
+      "published_sha": "03a09ae63f8b52e17f1ab8d34f5f654e16a68621",
+      "source_parent": "c22895512a89f090460a667ad7d8af10f1d71f84",
+      "published_parent": "9d53e41718a1d24c6f857ad9197ac82e05c437c1",
+      "tree_sha": "c28ed8f234708e4cb41bb443a09c9f97ae82b665",
+      "source_author": "Codex <codex@local.invalid> 1793535738 +0100",
+      "source_committer": "Codex <codex@local.invalid> 1793535738 +0100",
+      "source_message": "Continue session-only authentication inside the original owned browser context\n",
+      "tree_verified": true,
+      "published_author": {
+        "name": "Aleksanya",
+        "email": "105164012+SAleksanyaS@users.noreply.github.com",
+        "date": "2026-11-01T14:07:03Z"
+      },
+      "published_committer": {
+        "name": "Aleksanya",
+        "email": "105164012+SAleksanyaS@users.noreply.github.com",
+        "date": "2026-11-01T14:07:03Z"
+      },
+      "remote_commit_verified": true
+    },
+    {
+      "index": 14,
+      "source_sha": "9fcced461e0b41da181cb7104fe66fe294a96d4c",
+      "published_sha": "efc7eb6ed1e9040502f69c97308dd65f9d816c61",
+      "source_parent": "5ccefb3cd177ebf948e2de893f277a83363d9a5d",
+      "published_parent": "03a09ae63f8b52e17f1ab8d34f5f654e16a68621",
+      "tree_sha": "deca19de66aa515dd780ecd8e76dde473fef892e",
+      "source_author": "Codex <codex@local.invalid> 1793535829 +0100",
+      "source_committer": "Codex <codex@local.invalid> 1793535829 +0100",
+      "source_message": "fix(ui): clarify package references and prepare verified final captures\n",
+      "tree_verified": true,
+      "published_author": {
+        "name": "Aleksanya",
+        "email": "105164012+SAleksanyaS@users.noreply.github.com",
+        "date": "2026-11-01T14:07:09Z"
+      },
+      "published_committer": {
+        "name": "Aleksanya",
+        "email": "105164012+SAleksanyaS@users.noreply.github.com",
+        "date": "2026-11-01T14:07:09Z"
+      },
+      "remote_commit_verified": true
+    },
+    {
+      "index": 15,
+      "source_sha": "7ef5f9d06f1ed40a0ac3bd780743bf53d9cdbceb",
+      "published_sha": "1dbdd7c02d2525b28b75d6df0bf61ff8439f8ce4",
+      "source_parent": "9fcced461e0b41da181cb7104fe66fe294a96d4c",
+      "published_parent": "efc7eb6ed1e9040502f69c97308dd65f9d816c61",
+      "tree_sha": "e076d81cd00cf11a21f227b062548f2d2cfc4b5d",
+      "source_author": "Codex <codex@local.invalid> 1793535878 +0100",
+      "source_committer": "Codex <codex@local.invalid> 1793535878 +0100",
+      "source_message": "Distinguish downloaded recordings from accepted scenario steps\n",
+      "tree_verified": true,
+      "published_author": {
+        "name": "Aleksanya",
+        "email": "105164012+SAleksanyaS@users.noreply.github.com",
+        "date": "2026-11-01T14:07:14Z"
+      },
+      "published_committer": {
+        "name": "Aleksanya",
+        "email": "105164012+SAleksanyaS@users.noreply.github.com",
+        "date": "2026-11-01T14:07:14Z"
+      },
+      "remote_commit_verified": true
+    },
+    {
+      "index": 16,
+      "source_sha": "e27de692f4ace62a874c30353c7ba8f8113ba8bd",
+      "published_sha": "965e66f3b039a017654b49093634f90f24c9e8f4",
+      "source_parent": "7ef5f9d06f1ed40a0ac3bd780743bf53d9cdbceb",
+      "published_parent": "1dbdd7c02d2525b28b75d6df0bf61ff8439f8ce4",
+      "tree_sha": "0990efa3f5579d889fba22763aa0197ca453dd9a",
+      "source_author": "Codex <codex@local.invalid> 1793536307 +0100",
+      "source_committer": "Codex <codex@local.invalid> 1793536307 +0100",
+      "source_message": "Record the verified synthetic OKO workflow and its evidence\n",
+      "tree_verified": true,
+      "published_author": {
+        "name": "Aleksanya",
+        "email": "105164012+SAleksanyaS@users.noreply.github.com",
+        "date": "2026-11-01T14:07:20Z"
+      },
+      "published_committer": {
+        "name": "Aleksanya",
+        "email": "105164012+SAleksanyaS@users.noreply.github.com",
+        "date": "2026-11-01T14:07:20Z"
+      },
+      "remote_commit_verified": true
+    },
+    {
+      "index": 17,
+      "source_sha": "41824e8337c0d7a24902c260da851b7b43c6d446",
+      "published_sha": "5b9ed1830c61f5084b6c8cff07e8a4440bda3ff1",
+      "source_parent": "e27de692f4ace62a874c30353c7ba8f8113ba8bd",
+      "published_parent": "965e66f3b039a017654b49093634f90f24c9e8f4",
+      "tree_sha": "4b315a627cfd038aff1f37b6d4e5afd32e3f1eca",
+      "source_author": "Codex <codex@local.invalid> 1793536797 +0100",
+      "source_committer": "Codex <codex@local.invalid> 1793536797 +0100",
+      "source_message": "fix(publishing): reconcile native races and update regression fixtures\n",
+      "tree_verified": true,
+      "published_author": {
+        "name": "Aleksanya",
+        "email": "105164012+SAleksanyaS@users.noreply.github.com",
+        "date": "2026-11-01T14:07:25Z"
+      },
+      "published_committer": {
+        "name": "Aleksanya",
+        "email": "105164012+SAleksanyaS@users.noreply.github.com",
+        "date": "2026-11-01T14:07:25Z"
+      },
+      "remote_commit_verified": true
+    },
+    {
+      "index": 18,
+      "source_sha": "3a817619ee3c1bbcf0a44680b1a6ced16ed12849",
+      "published_sha": "876834165d52945bedfc8194c8f83ba07dbff061",
+      "source_parent": "41824e8337c0d7a24902c260da851b7b43c6d446",
+      "published_parent": "5b9ed1830c61f5084b6c8cff07e8a4440bda3ff1",
+      "tree_sha": "8658c695ea9ff932d7ad3f52d75feb18bfdf93c6",
+      "source_author": "Codex <codex@local.invalid> 1793536906 +0100",
+      "source_committer": "Codex <codex@local.invalid> 1793536906 +0100",
+      "source_message": "fix(ui): distinguish operation states and record focused visual checks\n",
+      "tree_verified": true,
+      "published_author": {
+        "name": "Aleksanya",
+        "email": "105164012+SAleksanyaS@users.noreply.github.com",
+        "date": "2026-11-01T14:07:32Z"
+      },
+      "published_committer": {
+        "name": "Aleksanya",
+        "email": "105164012+SAleksanyaS@users.noreply.github.com",
+        "date": "2026-11-01T14:07:32Z"
+      },
+      "remote_commit_verified": true
+    },
+    {
+      "index": 19,
+      "source_sha": "dda5f21ff5b890872ea48fb7909fbea980383be2",
+      "published_sha": "7bf32cfa66df5138be6aaed416c8d1260de5cc22",
+      "source_parent": "3a817619ee3c1bbcf0a44680b1a6ced16ed12849",
+      "published_parent": "876834165d52945bedfc8194c8f83ba07dbff061",
+      "tree_sha": "b7eae4b92fd5e9ca810a37df4ec92ce71fa3afc2",
+      "source_author": "Codex <codex@local.invalid> 1793536939 +0100",
+      "source_committer": "Codex <codex@local.invalid> 1793536939 +0100",
+      "source_message": "fix(workbench): retain restore focus and align cross-platform UI regressions\n",
+      "tree_verified": true,
+      "published_author": {
+        "name": "Aleksanya",
+        "email": "105164012+SAleksanyaS@users.noreply.github.com",
+        "date": "2026-11-01T14:07:49Z"
+      },
+      "published_committer": {
+        "name": "Aleksanya",
+        "email": "105164012+SAleksanyaS@users.noreply.github.com",
+        "date": "2026-11-01T14:07:49Z"
+      },
+      "remote_commit_verified": true
+    },
+    {
+      "index": 20,
+      "source_sha": "79679318f7b50b225df9b330f033a1397fa602dd",
+      "published_sha": "4d728b33faaac246b2d8212872811a708fd3c990",
+      "source_parent": "dda5f21ff5b890872ea48fb7909fbea980383be2",
+      "published_parent": "7bf32cfa66df5138be6aaed416c8d1260de5cc22",
+      "tree_sha": "ae6eb0d0dcb58fe6c8c1c3ce75a27fde4bf2649a",
+      "source_author": "Codex <codex@local.invalid> 1793536973 +0100",
+      "source_committer": "Codex <codex@local.invalid> 1793536973 +0100",
+      "source_message": "test(browser): honor installed executables and isolate headless native fixtures\n",
+      "tree_verified": true,
+      "published_author": {
+        "name": "Aleksanya",
+        "email": "105164012+SAleksanyaS@users.noreply.github.com",
+        "date": "2026-11-01T14:07:55Z"
+      },
+      "published_committer": {
+        "name": "Aleksanya",
+        "email": "105164012+SAleksanyaS@users.noreply.github.com",
+        "date": "2026-11-01T14:07:55Z"
+      },
+      "remote_commit_verified": true
+    },
+    {
+      "index": 21,
+      "source_sha": "88349fbb823597d818c4792c052b13a46011c54d",
+      "published_sha": "1af8f7a810b763f620ef89550da1bcbd2a63c087",
+      "source_parent": "79679318f7b50b225df9b330f033a1397fa602dd",
+      "published_parent": "4d728b33faaac246b2d8212872811a708fd3c990",
+      "tree_sha": "2415327a11e8cf841c8f3746d74fe573a16d6b27",
+      "source_author": "Codex <codex@local.invalid> 1793537133 +0100",
+      "source_committer": "Codex <codex@local.invalid> 1793537133 +0100",
+      "source_message": "test(browser): preserve native legacy entrypoints in display-free runners\n",
+      "tree_verified": true,
+      "published_author": {
+        "name": "Aleksanya",
+        "email": "105164012+SAleksanyaS@users.noreply.github.com",
+        "date": "2026-11-01T14:08:01Z"
+      },
+      "published_committer": {
+        "name": "Aleksanya",
+        "email": "105164012+SAleksanyaS@users.noreply.github.com",
+        "date": "2026-11-01T14:08:01Z"
+      },
+      "remote_commit_verified": true
+    },
+    {
+      "index": 22,
+      "source_sha": "93b15e8266a0119d89c36e7c2afad0a3a623d053",
+      "published_sha": "4894c91a8119426763ea190bf63d4b502a772cb9",
+      "source_parent": "88349fbb823597d818c4792c052b13a46011c54d",
+      "published_parent": "1af8f7a810b763f620ef89550da1bcbd2a63c087",
+      "tree_sha": "2713e1b8badf8710b48e9d1b66f7f90077d2401a",
+      "source_author": "Codex <codex@local.invalid> 1793537239 +0100",
+      "source_committer": "Codex <codex@local.invalid> 1793537239 +0100",
+      "source_message": "fix(ui): preserve brand bounds with enlarged text\n",
+      "tree_verified": true,
+      "published_author": {
+        "name": "Aleksanya",
+        "email": "105164012+SAleksanyaS@users.noreply.github.com",
+        "date": "2026-11-01T14:08:07Z"
+      },
+      "published_committer": {
+        "name": "Aleksanya",
+        "email": "105164012+SAleksanyaS@users.noreply.github.com",
+        "date": "2026-11-01T14:08:07Z"
+      },
+      "remote_commit_verified": true
+    },
+    {
+      "index": 23,
+      "source_sha": "398b09c3e8aa07b36b0f8433189bafd76965d4b0",
+      "published_sha": "87117c246ddc09bfc1e303391867323d16b18a1f",
+      "source_parent": "93b15e8266a0119d89c36e7c2afad0a3a623d053",
+      "published_parent": "4894c91a8119426763ea190bf63d4b502a772cb9",
+      "tree_sha": "b535d1763456d0a17fe2717e7931b5ca2cddacef",
+      "source_author": "Codex <codex@local.invalid> 1793537777 +0100",
+      "source_committer": "Codex <codex@local.invalid> 1793537777 +0100",
+      "source_message": "docs: record final redesign verification and delivery boundaries\n",
+      "tree_verified": true,
+      "published_author": {
+        "name": "Aleksanya",
+        "email": "105164012+SAleksanyaS@users.noreply.github.com",
+        "date": "2026-11-01T14:08:12Z"
+      },
+      "published_committer": {
+        "name": "Aleksanya",
+        "email": "105164012+SAleksanyaS@users.noreply.github.com",
+        "date": "2026-11-01T14:08:12Z"
+      },
+      "remote_commit_verified": true
+    },
+    {
+      "index": 24,
+      "source_sha": "7453624bb6b3b9e895664573756f527e484b52da",
+      "published_sha": "4fc808b6fc8aca511f17e97719ecaaa3c3a78b81",
+      "source_parent": "398b09c3e8aa07b36b0f8433189bafd76965d4b0",
+      "published_parent": "87117c246ddc09bfc1e303391867323d16b18a1f",
+      "tree_sha": "6518e078cf4a898095b35ebffe1878a2bebe47b0",
+      "source_author": "Codex <codex@local.invalid> 1793540432 +0100",
+      "source_committer": "Codex <codex@local.invalid> 1793540432 +0100",
+      "source_message": "chore: add reviewed Windows local launcher\n",
+      "tree_verified": true,
+      "published_author": {
+        "name": "Aleksanya",
+        "email": "105164012+SAleksanyaS@users.noreply.github.com",
+        "date": "2026-11-01T14:08:17Z"
+      },
+      "published_committer": {
+        "name": "Aleksanya",
+        "email": "105164012+SAleksanyaS@users.noreply.github.com",
+        "date": "2026-11-01T14:08:17Z"
+      },
+      "remote_commit_verified": true
+    }
+  ]
+}
