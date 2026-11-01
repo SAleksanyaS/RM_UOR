@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "profileId": "registry-example",
+  "environmentLabel": "not-configured",
+  "credentialProfileRef": null,
+  "approvedOrigins": [],
+  "evidenceDirectory": ".runtime/probe-reports",
+  "probe": "BP-02",
+  "origin": null,
+  "repositoryId": null,
+  "acceptedBranch": null,
+  "registryPath": null,
+  "curatorProfileRef": null,
+  "chiefProfileRef": null,
+  "unknownHostname": null,
+  "revokedHostname": null
+}

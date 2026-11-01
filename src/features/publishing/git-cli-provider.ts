@@ -237,7 +237,7 @@ export class GitCliProvider {
           return { remoteCommit, branch: this.options.releaseBranch, appliedObjectIds };
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
-          if (/non-fast-forward|fetch first|cannot lock ref|failed to update ref/i.test(message)) {
+          if (/non-fast-forward|fetch first|cannot lock ref|failed to update ref|reference already exists/i.test(message)) {
             if (input.expectedCommit !== undefined) throw new PublicationPreviewStaleError();
             if (attempt < 2) continue;
             throw new Error('Другие кураторы продолжают отправлять изменения. Три автоматические попытки исчерпаны; черновик сохранён, повторите публикацию.');

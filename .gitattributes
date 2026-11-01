@@ -1,0 +1,2 @@
+# Keep the approved document checksums reproducible on Windows/Linux/macOS.
+docs/superpowers/** text eol=lf

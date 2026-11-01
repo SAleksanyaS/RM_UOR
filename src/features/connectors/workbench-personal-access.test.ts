@@ -1,0 +1,47 @@
+import { randomUUID } from 'node:crypto';
+import { mkdtemp, mkdir, realpath, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { afterEach, expect, it } from 'vitest';
+import { createWorkbenchRuntime } from '../../server/workbench/bootstrap';
+import { createWorkbenchApp } from '../../server/workbench/app';
+
+const closes: Array<() => Promise<void>> = [];
+afterEach(async () => { for (const close of closes.splice(0).reverse()) await close(); });
+
+it('production reader has personal OKO commands without gaining shared setup or submission rights', async () => {
+  const temp = await realpath(tmpdir()), root = await mkdtemp(path.join(temp, 'uor-personal-access-'));
+  closes.push(() => rm(root, { recursive: true, force: true }));
+  await mkdir(path.join(root, 'config'));
+  await writeFile(path.join(root, 'config/site.local.json'), JSON.stringify({ port: 53961, clientPort: 53962, allowedWorkspaceRoots: [root], roleMode: 'local-preview' }));
+  const runtime = await createWorkbenchRuntime({ projectRoot: root, codeRoot: process.cwd() }); closes.push(runtime.close);
+  const app = await createWorkbenchApp(runtime.deps); closes.push(() => app.close());
+  const initial = await app.inject({ method: 'GET', url: '/api/v1/session', headers: { host: 'localhost' } });
+  const personId = initial.json().data.personId;
+  const headers = { host: 'localhost', origin: 'http://localhost:53962', cookie: String(initial.headers['set-cookie']).split(';')[0], 'x-csrf-token': initial.json().data.csrfToken };
+  const command = (name: string, payload: unknown) => app.inject({ method: 'POST', url: '/api/v1/commands', headers, payload: { commandId: randomUUID(), name, baseRevision: null, payload } });
+  expect((await command('workbench.role.set', { role: 'viewer' })).statusCode).toBe(200);
+  const session = (await app.inject({ method: 'GET', url: '/api/v1/session', headers })).json().data;
+  expect(session).toMatchObject({ role: 'viewer', personId, policyState: 'local_preview' });
+  expect(session.allowedCommands).toEqual(expect.arrayContaining(['oko.workflow.open', 'oko.workflow.profile.set', 'oko.workflow.marker.select', 'oko.workflow.record.start', 'oko.workflow.record.finish', 'oko.workflow.mapping.save', 'oko.workflow.directory.apply', 'oko.workflow.record.test']));
+  expect(session.allowedCommands).not.toContain('source.browser.record.start');
+  expect(session.allowedCommands).not.toContain('source.browserScenario.draft.save');
+  expect(session.allowedCommands).not.toContain('package.preview');
+  expect(session.allowedCommands).not.toContain('package.submit');
+  const commonStart = await command('source.browser.record.start', { sourceRef: { entityType: 'source_definition', id: randomUUID(), revision: 1 }, startUrl: 'https://report.example.invalid/report', authenticatedSelector: '#ready' });
+  expect(commonStart.statusCode, commonStart.body).toBe(403);
+  const sharedDraft = await command('source.browserScenario.draft.save', { draftId: randomUUID(), definition: {} });
+  expect(sharedDraft.statusCode, sharedDraft.body).toBe(403);
+  const submission = await command('package.submit', { packageId: randomUUID(), previewToken: 'synthetic-preview' });
+  expect(submission.statusCode, submission.body).toBe(403);
+  const opened = await command('oko.workflow.open', { title: 'Личная выгрузка читателя' });
+  expect(opened.statusCode, opened.body).toBe(200);
+  const view = opened.json().data.result;
+  const configured = await command('oko.workflow.profile.set', { workflowId: view.workflowId, expectedRevision: view.revision, reportUrl: 'https://report.example.invalid/report', profile: { allowedOrigins: ['https://report.example.invalid'], browser: { channel: 'msedge', profileDirectory: 'own-synthetic' } } });
+  expect(configured.statusCode, configured.body).toBe(200);
+  expect(configured.json().data.result.profile.configured).toBe(true);
+  expect((await command('workbench.role.set', { role: 'curator' })).statusCode).toBe(200);
+  const editor = (await app.inject({ method: 'GET', url: '/api/v1/session', headers })).json().data;
+  expect(editor.personId).toBe(personId); expect(editor.allowedCommands).toContain('source.browser.record.start');
+  expect(editor.allowedCommands).not.toContain('package.submit');
+});

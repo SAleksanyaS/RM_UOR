@@ -12,8 +12,53 @@ const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 const MAX_ARCHIVE_BYTES = 128 * 1024 * 1024;
 const MAX_FILE_BYTES = 16 * 1024 * 1024;
 const MAX_CONTENT_BYTES = 96 * 1024 * 1024;
-const topFiles = new Set(['.gitignore', '.nvmrc', '.node-version', 'AGENTS.md', 'GIGACODE.md', 'README.md', 'LICENSE', 'LICENSE.md', 'index.html', 'package.json', 'package-lock.json', 'tsconfig.json', 'vite.config.ts', 'vitest.config.ts']);
-const currentDocs = new Set(['docs/MASTER_SPEC.md', 'docs/USER_GUIDE.md', 'docs/AI_PDLC_HANDOFF.md', 'docs/BANK_CONNECTORS_RUNBOOK.md', 'docs/ARCHIVE.md', 'docs/VALIDATION.md', 'docs/remaining-work.md', 'docs/remaining-by-environment.md']);
+const topFiles = new Set(['.gitignore', '.nvmrc', '.node-version', 'AGENTS.md', 'GIGACODE.md', 'README.md', 'LICENSE', 'LICENSE.md', 'index.html', 'oko.html', 'package.json', 'package-lock.json', 'tsconfig.json', 'vite.config.ts', 'vitest.config.ts']);
+const currentDocs = new Set(['docs/MASTER_SPEC.md', 'docs/USER_GUIDE.md', 'docs/AI_PDLC_HANDOFF.md', 'docs/BANK_CONNECTORS_RUNBOOK.md', 'docs/ARCHIVE.md', 'docs/VALIDATION.md', 'docs/remaining-work.md', 'docs/remaining-by-environment.md', 'docs/OKO_WORKFLOW.md', 'docs/validation/workbench-acceptance.md', 'docs/releases/workbench-candidate.md']);
+// Exact public approved contracts and linked current plans only; no evidence/history glob.
+const approvedWorkbenchDocs = new Set([
+  "docs/superpowers/specs/2026-11-01-product-redesign.txt",
+  "docs/superpowers/plans/2026-11-01-product-redesign-completion.md",
+  "docs/releases/redesign-candidate.md",
+  "docs/validation/redesign-completion.md",
+  "docs/validation/redesign-completion-forms.md",
+  "docs/validation/redesign-completion-ui.md",
+  "docs/validation/redesign-completion-publishing.md",
+  "docs/validation/redesign-completion-oko.md",
+  "docs/validation/redesign-dependencies.md",
+  "docs/validation/redesign-reuse-map.md",
+  "docs/superpowers/plans/2026-10-28-uor-workbench-rebuild.md",
+  "docs/superpowers/specs/2026-10-28-uor-workbench/README.md",
+  "docs/superpowers/specs/2026-10-28-uor-workbench/APPROVAL.md",
+  "docs/superpowers/specs/2026-10-28-uor-workbench/MANIFEST.sha256",
+  "docs/superpowers/specs/2026-10-28-uor-workbench/03-benchmarks.md",
+  "docs/superpowers/specs/2026-10-28-uor-workbench/04-specification-standard.md",
+  "docs/superpowers/specs/2026-10-28-uor-workbench/05-decisions.md",
+  "docs/superpowers/specs/2026-10-28-uor-workbench/06-user-journeys.md",
+  "docs/superpowers/specs/2026-10-28-uor-workbench/07-data-sources.md",
+  "docs/superpowers/specs/2026-10-28-uor-workbench/08-data-enrichment.md",
+  "docs/superpowers/specs/2026-10-28-uor-workbench/09-ux-recommendation.md",
+  "docs/superpowers/specs/2026-10-28-uor-workbench/11-platform-architecture.md",
+  "docs/superpowers/specs/2026-10-28-uor-workbench/12-specification-readiness.md",
+  "docs/superpowers/specs/2026-10-28-uor-workbench/13-domain-model.md",
+  "docs/superpowers/specs/2026-10-28-uor-workbench/14-acceptance-examples.md",
+  "docs/superpowers/specs/2026-10-28-uor-workbench/15-access-policy.md",
+  "docs/superpowers/specs/2026-10-28-uor-workbench/16-data-calculation-contract.md",
+  "docs/superpowers/specs/2026-10-28-uor-workbench/17-interface-api-contract.md",
+  "docs/superpowers/specs/2026-10-28-uor-workbench/18-integration-operations-contract.md",
+  "docs/superpowers/specs/2026-10-28-uor-workbench/19-acceptance-delivery-contract.md",
+  "docs/superpowers/specs/2026-10-28-uor-workbench/20-builder-review.md",
+  "docs/superpowers/specs/2026-10-28-uor-workbench/21-oko-browser-scenarios.md",
+  "docs/superpowers/plans/2026-10-28-uor-workbench/01-core-and-calculation.md",
+  "docs/superpowers/plans/2026-10-28-uor-workbench/02-platform-data-and-api.md",
+  "docs/superpowers/plans/2026-10-28-uor-workbench/03-publication-and-recovery.md",
+  "docs/superpowers/plans/2026-10-28-uor-workbench/04-interface-and-release.md",
+  "docs/superpowers/plans/2026-10-28-uor-workbench/05-bank-probes.md",
+  "docs/superpowers/plans/2026-10-28-uor-workbench/06-oko-browser-scenarios.md",
+  "docs/superpowers/plans/2026-10-28-uor-workbench/AC-COVERAGE.md",
+  "docs/superpowers/plans/2026-10-28-uor-workbench/CONTRACTS.md",
+  "docs/superpowers/plans/2026-10-28-uor-workbench/PROGRESS.md",
+  "docs/superpowers/plans/2026-10-28-uor-workbench/CORE_CHECKPOINT_REVIEW.md"
+]);
 const protectedFolders = new Set(['.git', 'src', 'scripts', 'tests', 'public', 'docs', 'config', 'catalog', 'node_modules', 'dist', 'coverage', 'playwright', 'test-results', 'playwright-report']);
 const registrySchema = z.array(z.object({ id: z.string().min(1).max(300), name: z.string().trim().min(1).max(200), salt: z.string().min(1).max(200), hash: z.string().regex(/^[a-f0-9]{128}$/) }).strict()).min(1).max(100);
 const emptyList = z.array(z.never()).length(0);
@@ -54,7 +99,7 @@ function included(name) {
   if (parts.some(part => ['.git', '.runtime', 'node_modules', 'dist', 'coverage', '.venv', '.aws', 'playwright-report', 'test-results'].includes(part.toLowerCase()) || /^\.env(?:\.|$)/i.test(part))
     || /\.local(?:\.|$)/i.test(name) || /\.(?:key|pem|pfx|p12|sqlite|db|zip|pptx|xlsx|xls|docx|pdf|log)$/i.test(name)
     || /^(?:curators|credentials|secrets)(?:[._-]|$)/i.test(parts.at(-1))) return false;
-  if (topFiles.has(name) || currentDocs.has(name) || ['config/site.example.json', 'config/update-protocol.json', 'catalog/catalog.json', 'catalog/demo.json', 'catalog/demo-snapshots.json'].includes(name)) return true;
+  if (topFiles.has(name) || currentDocs.has(name) || approvedWorkbenchDocs.has(name) || ['config/site.example.json', 'config/update-protocol.json', 'catalog/catalog.json', 'catalog/demo.json', 'catalog/demo-snapshots.json'].includes(name)) return true;
   if (/^docs\/(?:guides|architecture|agents)\/[a-zA-Z0-9_./-]+\.md$/.test(name)) return true;
   return /^(?:src|scripts|tests|public)\//.test(name) && /\.(?:ts|tsx|js|jsx|mjs|cjs|mts|cts|css|json|html|svg|png|jpe?g|webp|ico|woff2?|ttf)$/.test(name);
 }
@@ -112,7 +157,7 @@ export async function exportCleanDistribution({ projectRoot, outputPath, include
   const destination = await unusedOutput(root, outputPath ?? `.runtime/exports/RM_UOR-clean-${applicationVersion}-${commit.slice(0, 12)}.zip`);
   const privateDestination = includeLocalAccounts ? await unusedOutput(root, destination.replace(/\.zip$/i, '.private-local-accounts.zip')) : undefined;
   const registry = includeLocalAccounts ? await localAccounts(root) : undefined;
-  const instructions = Buffer.from(`# Чистая поставка РМ УОР\n\nВерсия ${applicationVersion}. Ревизия кода: ${commit}.\n\nРаспакуйте ZIP в разрешённую отдельную папку. Прочитайте docs/USER_GUIDE.md и docs/agents/START_HERE.md. Установите согласованные Node/npm/Git, выполните npm ci и npm run setup:workspace -- --mode empty. Проверьте локальную конфигурацию и учётные записи по руководству, затем запустите npm run dev. Для подключения внутреннего Git используйте утверждённый порядок настройки организации.\n\nВ архиве нет истории Git, рабочей SQLite-базы, локальных конфигураций, паролей/хешей учётных записей, сессий, браузерных профилей, cookies, сертификатов, зависимостей и личных артефактов. manifest содержит SHA-256 каждого файла, кроме самого manifest. Пустой каталог первого запуска включён всегда; generatedBaseline в manifest показывает, создан ли он экспортом взамен отсутствующего/заполненного. Это поставка программы, не перенос рабочего набора; для рабочих данных используйте проверяемый перенос из обслуживания.\n\nЕсли отдельно создан PRIVATE ZIP учётных записей, храните и передавайте его по разрешённому приватному каналу. Он не входит в этот архив. Банковские источники, ОС, авторизация и Office требуют целевой приёмки.\n`);
+  const instructions = Buffer.from(`# Чистая поставка РМ УОР\n\nВерсия ${applicationVersion}. Ревизия кода: ${commit}.\n\nРаспакуйте ZIP в разрешённую отдельную папку. Начните с README.md: текущие маршруты Workbench 0.5, затем docs/OKO_WORKFLOW.md и docs/agents/START_HERE.md. docs/USER_GUIDE.md — только историческое руководство 0.4.1. Установите согласованные Node/npm/Git, выполните npm ci и npm run build, затем создайте config/site.local.json по текущему README с существующей разрешённой папкой. Проверьте локальную конфигурацию; штатный первый запуск использует local-preview и локальный переключатель читатель/редактор. Запустите npm run dev. Для режима реестра hostname настройка выполняется только по утверждённым данным организации. Для подключения внутреннего Git используйте утверждённый порядок настройки организации.\n\nВ архиве нет истории Git, рабочей SQLite-базы, локальных конфигураций, паролей/хешей учётных записей, сессий, браузерных профилей, cookies, сертификатов, зависимостей и личных артефактов. manifest содержит SHA-256 каждого файла, кроме самого manifest. Пустой каталог первого запуска включён всегда; generatedBaseline в manifest показывает, создан ли он экспортом взамен отсутствующего/заполненного. Это поставка программы, не перенос рабочего набора; для рабочих данных используйте проверяемый перенос из обслуживания.\n\nЕсли отдельно создан PRIVATE ZIP учётных записей, храните и передавайте его по разрешённому приватному каналу. Он не входит в этот архив. Банковские источники, ОС, авторизация и Office требуют целевой приёмки.\n`);
   zip.file('TRANSFER_README.md', instructions); files.push(hashEntry('TRANSFER_README.md', instructions));
   zip.file('DISTRIBUTION_MANIFEST.json', jsonBytes({ format: 'uor-clean-distribution-v1', commit, applicationVersion, createdAt: new Date().toISOString(), includesLocalAccounts: false, generatedBaseline, files }));
   const publicBytes = await zipBytes(zip), outputs = [{ path: destination, bytes: publicBytes }];

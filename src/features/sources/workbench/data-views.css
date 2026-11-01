@@ -1,0 +1,39 @@
+.wb-data { min-width:0; }
+.wb-data .wb-panel { margin-block:20px; padding:22px; border:1px solid var(--wb-border); border-radius:8px; background:var(--wb-surface); }
+.wb-data .wb-panel > h2 { margin-bottom:14px; }
+.wb-data .wb-panel > .wb-section-header { padding:0 0 16px; flex-wrap:wrap; align-items:flex-start; }
+.wb-data .wb-panel > .wb-section-header > div { flex:1 1 240px; min-width:0; }
+.wb-data .wb-panel > .wb-section-header > button { flex-shrink:0; }
+.wb-data [aria-pressed=true] { background:var(--wb-accent-soft); border-color:var(--wb-accent); color:var(--wb-accent); }
+.wb-data table { border-collapse:collapse; width:100%; min-width:42rem; font-size:14px; }
+.wb-data th,.wb-data td { min-width:6rem; padding:12px 14px; border-bottom:1px solid var(--wb-border); vertical-align:top; text-align:left; }
+.wb-data th { color:var(--wb-muted); background:var(--wb-surface-subtle); font-size:13px; }
+.wb-data .wb-data-table button { white-space:nowrap; }
+.wb-data [role=region] { max-width:100%; overflow-x:auto; }
+.wb-data-dialog { width:min(100%,880px); max-height:100%; overflow-y:auto; border-radius:10px; padding:24px; background:var(--wb-surface); color:var(--wb-text); border:1px solid var(--wb-border); overscroll-behavior:contain; }
+.wb-data-dialog > header { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; padding-bottom:18px; margin-bottom:18px; border-bottom:1px solid var(--wb-border); }
+.wb-data-dialog > header > button { flex-shrink:0; }
+.wb-data-dialog fieldset { min-width:0; margin-block:20px; padding:18px; border:1px solid var(--wb-border); border-radius:7px; }
+.wb-data-dialog legend { padding-inline:8px; font-weight:650; font-size:16px; }
+.wb-data-dialog label { display:flex; flex-direction:column; gap:6px; margin-block:12px; }
+.wb-data-dialog input:not([type=checkbox]),.wb-data-dialog select,.wb-data-dialog textarea { display:block; width:100%; min-width:0; min-height:40px; }
+.wb-data-dialog input[type=checkbox] { display:inline-block; }
+.wb-data-dialog .oko-form-grid { display:grid; gap:16px; grid-template-columns:repeat(auto-fit,minmax(min(100%,15rem),1fr)); }
+.wb-capture-list { padding:0; margin:14px 0; list-style:none; display:grid; gap:10px; }
+.wb-capture-list > li { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; padding:14px 16px; border:1px solid var(--wb-border); border-radius:7px; background:var(--wb-surface-subtle); }
+.wb-capture-list > li > div { min-width:0; flex:1 1 250px; }
+.wb-capture-list p { color:var(--wb-muted); margin-top:5px; }
+.wb-data-layer-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-block:18px; }
+.wb-data-layer-toolbar label { display:flex; align-items:center; gap:8px; margin-left:auto; }
+.wb-lineage-chain { display:grid; gap:12px; margin-block:18px; }
+.wb-lineage-chain > section { padding:16px; border:1px solid var(--wb-border); border-left:3px solid var(--wb-accent); border-radius:6px; background:var(--wb-surface-subtle); }
+.wb-lineage-chain h3 { margin-bottom:8px; }
+.wb-lineage-chain p { margin-top:6px; }
+.wb-mapping-row { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto; align-items:end; gap:12px; margin-block:10px; }
+.wb-mapping-row label { margin:0; }
+.wb-mapping-row button { margin-bottom:1px; }
+.wb-import-metrics { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:16px; margin-block:20px; }
+.wb-import-metrics > div { padding:12px; background:var(--wb-surface-subtle); border:1px solid var(--wb-border); border-radius:6px; }
+.wb-import-metrics dt { color:var(--wb-muted); font-size:13px; }
+.wb-import-metrics dd { margin:4px 0 0; font-size:24px; font-weight:650; font-variant-numeric:tabular-nums; }
+@media(max-width:767px) { .wb-data .wb-panel { padding:16px; } .wb-data-dialog { padding:16px; } .wb-data-dialog > header { flex-wrap:wrap; } .wb-data-dialog > header > button { margin-left:auto; } .wb-data-dialog fieldset { padding:12px; } .wb-mapping-row { grid-template-columns:1fr; gap:9px; padding-bottom:14px; border-bottom:1px solid var(--wb-border); } .wb-mapping-row button { justify-self:start; } .wb-import-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; } .wb-data-layer-toolbar label { margin-left:0; width:100%; } }

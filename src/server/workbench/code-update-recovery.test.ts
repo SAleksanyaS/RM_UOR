@@ -1,0 +1,38 @@
+import { afterEach, expect, it } from 'vitest';
+import { randomUUID } from 'node:crypto';
+import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { realpathSync } from 'node:fs';
+import path from 'node:path';
+import { tmpdir } from 'node:os';
+import { createWorkbenchRuntime } from './bootstrap';
+import { createCommandStore } from './command-store';
+import { createCodeUpdateRecovery } from './code-update-recovery';
+import { createCodeUpdateLauncherPort } from '../../features/system/code-update';
+const cleanups: Array<() => Promise<void>> = [];
+afterEach(async () => { for (const close of cleanups.splice(0).reverse())
+    await close(); });
+it('reconciles only durable terminal code update result into the exact local receipt without redispatch', async () => {
+    const root = await mkdtemp(path.join(realpathSync.native(tmpdir()), 't39-update-receipt-'));
+    cleanups.push(() => rm(root, { recursive: true, force: true }));
+    await mkdir(path.join(root, 'config'));
+    await writeFile(path.join(root, 'config/site.local.json'), JSON.stringify({ allowedWorkspaceRoots: [root] }));
+    const runtime = await createWorkbenchRuntime({ projectRoot: root });
+    cleanups.push(runtime.close);
+    const { repository, jobs, installationId, accessPolicy } = runtime.deps, own = await accessPolicy.resolveOwnAccess(), store = createCommandStore(repository), commandId = randomUUID(), request = { commandId, name: 'code.update.apply', baseRevision: null, payload: { expectedCommit: 'a'.repeat(40), targetCommit: 'b'.repeat(40) } };
+    store.begin(request, installationId, { scope: 'person', personId: own.personId });
+    const job = jobs.create(commandId, installationId, request.name);
+    store.accept(installationId, commandId, job, { effect: 'local', queuedRecovery: null });
+    jobs.update(job.jobId, { status: 'running' });
+    jobs.recoverInterrupted(installationId);
+    const directory = path.join(root, '.runtime/code-update/transactions', randomUUID());
+    await mkdir(directory, { recursive: true });
+    const journal = { schemaVersion: 3, root, requestId: job.jobId, phase: 'committed', expectedCommit: request.payload.expectedCommit, targetCommit: request.payload.targetCommit, branch: 'main', committed: true };
+    await writeFile(path.join(directory, 'journal.json'), JSON.stringify(journal));
+    const recovery = createCodeUpdateRecovery({ repository, jobs, installationId, accessPolicy, launcher: createCodeUpdateLauncherPort(root, { repositoryUrl: '', publishedBranch: 'main' }) });
+    await recovery.reconcile();
+    expect(jobs.get(job.jobId, installationId)?.status).toBe('interrupted');
+    await writeFile(path.join(directory, 'journal.json'), JSON.stringify({ ...journal, phase: 'completed' }));
+    await recovery.reconcile();
+    expect(jobs.get(job.jobId, installationId)).toMatchObject({ status: 'succeeded', result: { currentCommit: request.payload.targetCommit, rolledBack: false } });
+    expect(JSON.parse(store.get(installationId, commandId)!.receipt_json!)).toMatchObject({ result: { currentCommit: request.payload.targetCommit } });
+});

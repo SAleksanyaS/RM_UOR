@@ -1,0 +1,394 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import path from 'node:path';
+import { tmpdir } from 'node:os';
+import { afterEach, expect, it, vi } from 'vitest';
+import { DatabaseSync } from 'node:sqlite';
+import { z } from 'zod';
+import { fixtureId, makeEntityGraph, makeHeader, makeNumericFixture } from '../../../tests/fixtures/workbench/factories';
+import { seedGraph } from '../../../tests/fixtures/workbench/repository';
+import { createWorkbenchRepository } from '../../server/storage/workbench-repository';
+import { createJobStore } from '../../server/workbench/jobs';
+import { createCommandStore, withCommandExecution } from '../../server/workbench/command-store';
+import { createCommandRegistry, type CommandContext } from '../../server/workbench/command-registry';
+import { WorkbenchHttpError } from '../../server/workbench/protocol';
+import { installHistoryIndex } from '../history/workbench-history-index';
+import { resolveEvaluationInput } from '../evaluation/workbench/resolve-input';
+import { selectEvaluationFacts } from '../evaluation/workbench/select-facts';
+import type { Capture, DirectoryEntity, DirectoryLink } from '../../domain/workbench/entities';
+import { captureResultSchema, captureRequestSchema, rawBatchSchema, sourcePayloadHash, type SourceAdapter, type NormalizerPort, type EnricherPort } from './workbench-source-contracts';
+import { createSourceStore } from './workbench-source-store';
+import { createWorkbenchReadIndex } from '../catalog/workbench-read-index';
+import { queryWorkbench, type WorkbenchReadPorts } from '../catalog/workbench-read-models';
+import { createSourceService, registerSourceCommands } from './workbench-source-service';
+import { createSyntheticDemoSource, syntheticDemoNormalizer } from './workbench-demo-source';
+import { createHash,randomUUID } from 'node:crypto';
+import { createSourceArchiveOwners } from '../workspace-maintenance/workbench/source-archive-owners';
+import { createWorkspaceOwnership } from '../../server/storage/workbench-ownership';
+
+const cleanups: Array<() => void> = [];
+afterEach(() => { while (cleanups.length) cleanups.pop()!(); });
+function fixture() {
+  const root = mkdtempSync(path.join(tmpdir(), 'uor-source-'));
+  const config = { filename: path.join(root, 'db.sqlite'), artifactRoot: path.join(root, 'artifacts') };
+  const repository = createWorkbenchRepository(config); installHistoryIndex(repository);
+  cleanups.push(() => { repository.close(); if (!path.basename(root).startsWith('uor-source-')) throw Error('Invalid root'); rmSync(root, { recursive: true, force: true }); });
+  const input = makeNumericFixture({ scope: { kind: 'dit', id: fixtureId(100) }, expectedPopulation: [{ kind: 'product', id: fixtureId(101) }, { kind: 'product', id: fixtureId(102) }] });
+  const graph = makeEntityGraph(input); graph.entries = graph.entries.filter(e => !['capture', 'observed_fact'].includes(e.entityType));
+  const directory = graph.entries.filter(e => e.entityType === 'directory_entity').map(e => e.value as DirectoryEntity);
+  const cluster: DirectoryEntity = { ...makeHeader(103, { publicationAnchorId: fixtureId(2) }), kind: 'cluster', name: 'Synthetic cluster', externalKeys: [] };
+  directory.push(cluster); graph.entries.push({ entityType: 'directory_entity', value: cluster });
+  for (const entity of directory.filter(e => e.kind === 'product')) entity.externalKeys = [{ sourceId: input.goal.sourceId, key: entity.id === fixtureId(101) ? 'demo-product-a' : 'demo-product-b' }];
+  const links: DirectoryLink[] = [
+    { ...makeHeader(110, { publicationAnchorId: fixtureId(2) }), kind: 'dit_cluster', from: { entityType: 'directory_entity', id: fixtureId(100) }, to: { entityType: 'directory_entity', id: cluster.id } },
+    ...[101, 102].map((id, i) => ({ ...makeHeader(111 + i, { publicationAnchorId: fixtureId(2) }), kind: 'cluster_product' as const, from: { entityType: 'directory_entity', id: cluster.id }, to: { entityType: 'directory_entity', id: fixtureId(id) } })),
+  ];
+  links.forEach(value => graph.entries.push({ entityType: 'directory_link', value })); seedGraph(repository, graph);
+  const ref = (entityType: string, value: { id: string; revision: number }) => ({ entityType, id: value.id, revision: value.revision });
+  const binding = { goalRef: ref('core_goal_definition', input.goal), sourceRef: ref('source_definition', graph.entries.find(e => e.entityType === 'source_definition')!.value), mappingRef: input.captures[0].mappingRef, assignmentRef: ref('goal_assignment', input.assignment), templateRef: null, methodRef: ref('method_version', input.method), metricRefs: input.metrics.map(m => ref('metric_definition', m)), directoryEntityRefs: directory.map(d => ref('directory_entity', d)), directoryLinkRefs: links.map(d => ref('directory_link', d)), directoryRevision: 'demo-directory-1' };
+  const store = createSourceStore({ repository }); store.installPublished([binding]); store.bindAdapter({ sourceId: input.goal.sourceId, adapterKey: 'synthetic-demo', profileRef: null, revision: 'demo-1' });
+  const saved = { installationId: fixtureId(1), goalId: input.goal.id, revision: 'selection-1', context: { scopePath: { ditId: fixtureId(100), clusterId: null, productId: null, teamId: null }, goalId: input.goal.id, time: { kind: 'as_of' as const, date: '2026-10-27' }, resultMode: 'current' as const, snapshotId: null } };
+  store.saveAllowedContext(saved, null);
+  const clock = { now: () => '2026-10-28T07:00:00Z' }; const jobs = createJobStore({ repository, clock });
+  const ownAccess = { role: 'viewer' as const, displayName: null, personId: null, policyState: 'verified' as const, checkedAt: clock.now() };
+  const context: CommandContext = { repository, clock, ownAccess, actor: makeHeader(1).actor, installationId: fixtureId(1), requestId: fixtureId(400), commandId: fixtureId(401) };
+  const adapter = createSyntheticDemoSource({ clock });
+  const adapters = new Map<string, SourceAdapter>([['synthetic-demo', adapter]]);
+  const normalizer: NormalizerPort = { normalize: v => syntheticDemoNormalizer.normalize(v) };
+  const enricher: EnricherPort = { enrich: ({ rows }) => ({ rows: rows.map(row => ({ ...row, scope: directory.find(d => d.externalKeys.some(k => k.sourceId === input.goal.sourceId && k.key === row.dimensions.demo_scope_id)) ? { kind: 'product' as const, id: directory.find(d => d.externalKeys.some(k => k.sourceId === input.goal.sourceId && k.key === row.dimensions.demo_scope_id))!.id } : null, directoryEntityRefs: [] })), issues: [], directoryLinkRefs: links.map(d => ref('directory_link', d)) }) };
+  let guard: () => Promise<void> = async () => {};
+  const service = createSourceService({ repository, store, adapters, normalizer, enricher, jobs, clock, recheckGuard: async () => guard() });
+  const appendedTypes: string[] = []; repository.registerProjection('test-source-observer', type => { appendedTypes.push(type); });
+  let command = 500;
+  const begin = () => { const ctx = { ...context, commandId: fixtureId(command++) }; createCommandStore(repository).begin({ commandId: ctx.commandId, name: 'source.capture', payload: { goalId: input.goal.id }, baseRevision: null }, ctx.installationId); const job = jobs.create(ctx.commandId, ctx.installationId, 'source.capture'); jobs.setResourceKey(job.jobId, 'source:' + store.sourceIdForGoal(input.goal.id)); jobs.update(job.jobId, { status: 'running' }); return { ctx, job }; };
+  const execute = (ctx: CommandContext) => withCommandExecution(ctx, captureResultSchema, () => service.capture(ctx, { goalId: input.goal.id }));
+  const capture = () => execute(begin().ctx);
+  const fallback = () => store.readFallback({ installationId: context.installationId, goalId: input.goal.id });
+  return { root, config, repository, input, graph, binding, store, saved, context, clock, jobs, adapter, adapters, normalizer, enricher, service, begin, execute, capture, fallback, appendedTypes, setGuard: (next: typeof guard) => { guard = next; } };
+}
+
+it('viewer_capture_preserves_raw_and_does_not_confirm', async () => {
+  const f = fixture(); const result = await f.capture(); expect(result).toMatchObject({ acceptedRows: 2, rejectedRows: 0, duplicate: false });
+  const capture = f.repository.readVersion<Capture>(result.captureRef)!;
+  expect(capture.operationId).not.toBe(f.context.commandId); expect(capture.rawRows[0].cells.demo_value.original).toBe('92.00'); expect(capture.canonicalRows[0].numbers.demo_value).toBe('92');
+  const evidence = f.store.readCapture(result.captureRef, f.context.installationId)!; expect(evidence.facts).toHaveLength(2); expect(evidence.facts[0]).toMatchObject({ value: '92', origin: 'source_value', publicationAnchorId: null });
+  expect(evidence.facts[0].lineage.sourceRowKeys).toEqual(['demo-a']);
+  expect(f.repository.sqlForModule('history').all('SELECT id FROM wb_history_observations')).toHaveLength(2);
+  expect(f.fallback()).toMatchObject({ obtainedVia: 'local-cache', sourceDate: '2026-10-27' });
+  expect(f.repository.getHead({ entityType: 'attestation', id: result.captureRef.id })).toBeNull();
+  expect(f.appendedTypes).toEqual(['capture', 'observed_fact', 'observed_fact']);
+});
+it('passes exact immutable capture mapping and directory to a stateless enrichment owner',async()=>{
+ const f=fixture(),legacy=f.enricher.enrich;let exact=false;
+ f.enricher.enrichExact=input=>{exact=true;expect(input.capture.sourceId).toBe(f.binding.sourceRef.id);expect(input.capture.rawRows).toHaveLength(2);expect(input.mapping.id).toBe(f.binding.mappingRef.id);expect(input.directoryEntities.map(e=>e.id)).toEqual(f.binding.directoryEntityRefs.map(r=>r.id));return legacy({rows:input.capture.canonicalRows,directoryRevision:f.binding.directoryRevision});};
+ f.enricher.enrich=()=>{throw Error('Ambient binding enrichment must not run');};
+ await f.capture();expect(exact).toBe(true);
+});
+it('classifies an exact own capture by indexed metadata without parsing selected or unrelated historical payloads',async()=>{
+ const f=fixture(),captured=await f.capture(),owner={installationId:f.context.installationId,profilePersonId:f.context.ownAccess.personId},sql=f.repository.sqlForModule('sources');
+ sql.run('INSERT INTO wb_sources_captures VALUES(?,?,?,?)',[owner.installationId,randomUUID(),randomUUID(),'unrelated damaged historical payload']);sql.run('UPDATE wb_sources_captures SET value_json=? WHERE capture_id=?',['selected payload is deliberately not parsed',captured.captureRef.id]);
+ expect(f.store.hasOwnCapture(owner,captured.captureRef.id)).toBe(true);
+ expect(f.store.ownCaptureMetadata(owner,[f.input.goal.sourceId])).toEqual([expect.objectContaining({id:captured.captureRef.id,result:'accepted'})]);
+ expect(f.store.ownCaptureIssuePage(owner,captured.captureRef.id,0,32)).toEqual([{code:'SOURCE_EVIDENCE_INVALID',message:expect.any(String)}]);expect(f.store.hasOwnCapture({...owner,profilePersonId:randomUUID()},captured.captureRef.id)).toBe(false);expect(f.store.hasOwnCapture(owner,randomUUID())).toBe(false);
+ f.repository.sqlForModule('ownership').run('DELETE FROM wb_ownership_bindings WHERE module_id=? AND object_key=?',['sources','capture:'+captured.captureRef.id]);expect(f.store.hasOwnCapture(owner,captured.captureRef.id)).toBe(false);
+});
+it('archives complete source history and rebinds downloads without changing historical actor',async()=>{
+ const f=fixture(),personId=fixtureId(17);f.context.actor.profilePersonId=personId;f.context.ownAccess.personId=personId as never;
+ f.store.saveAllowedContext(f.saved,f.saved.revision,personId);
+ const collect=f.adapter.collect.bind(f.adapter);
+ f.adapter.collect=async(request,signal)=>{const raw=await collect(request,signal),bytes=Buffer.from('source original '+request.operationId);const artifact=f.store.saveArtifact({installationId:f.context.installationId,personId,artifactId:randomUUID(),mimeType:'text/csv',bytesValue:bytes});return {...raw,artifact,payloadHash:artifact.hash};};
+ const first=await f.capture(),normalize=f.normalizer.normalize;f.normalizer.normalize=input=>{const v=normalize(input);return {...v,rows:v.rows.map((r,i)=>i===0?{...r,numbers:{demo_value:null}}:r)};};
+ const second=await f.capture();expect(f.fallback().latestAttempt!.captureRef).toEqual(second.captureRef);expect(f.fallback().captureRef).toEqual(first.captureRef);
+ const environment={installationId:f.context.installationId,personId:()=>personId,localPreview:false,subjectRoot:()=>f.root};
+ const codec=createSourceArchiveOwners(f.repository,environment)[0],records=codec.exportRecords(f.repository),files=await codec.files(f.repository,records);
+ expect(records.filter(r=>r.schemaId==='capture')).toHaveLength(2);expect(records.filter(r=>r.schemaId==='artifact')).toHaveLength(2);expect(JSON.stringify(records)).not.toContain('profileRef');
+ const target=createWorkbenchRepository({filename:':memory:',artifactRoot:path.join(f.root,'target')});cleanups.push(()=>target.close());
+ const installationId=randomUUID();createSourceArchiveOwners(target,{...environment,installationId});target.restoreWorkspaceCore(f.repository.exportWorkspaceCore());
+ const context={installationId,personId,files:new Map(files.map(file=>[file.path,file.bytesValue])),stagedRoot:f.root,subjectPath:(namespace:string,id:string)=>path.join(f.root,namespace,id)};
+ codec.restoreRecords(target,records,context);expect(codec.exportRecords(target)).toEqual(records);
+ const restored=createSourceStore({repository:target});expect(restored.listOwnCaptures({installationId,profilePersonId:personId})).toHaveLength(2);
+ expect(restored.ownCaptureMetadata({installationId,profilePersonId:personId},[f.input.goal.sourceId]).map(c=>c.id).sort()).toEqual([first.captureRef.id,second.captureRef.id].sort());
+ expect(restored.ownCaptureIssuePage({installationId,profilePersonId:personId},second.captureRef.id,0,32)).toEqual(f.store.readCapture(second.captureRef,f.context.installationId)!.issues.map(({code,message})=>({code,message})));
+ expect(target.readCaptureMetadata(first.captureRef)).toMatchObject({id:first.captureRef.id,sourceId:f.input.goal.sourceId,result:'accepted'});
+ const original=restored.readOwnCaptureArtifact({installationId,profilePersonId:personId},first.captureRef.id)!;expect(original.view.capture.actor.installationId).toBe(f.context.installationId);expect(createHash('sha256').update(original.bytes).digest('hex')).toBe(original.view.artifact!.hash.slice(7));
+ expect(restored.readOwnCaptureArtifact({installationId,profilePersonId:randomUUID()},first.captureRef.id)).toBeNull();
+ expect(()=>codec.authorize(records,randomUUID(),installationId)).toThrow();
+ const ledger=target.sqlForModule('ownership');ledger.run('DELETE FROM wb_ownership_bindings WHERE module_id=? AND object_key=?',['sources','capture:'+first.captureRef.id]);expect(()=>codec.exportRecords(target)).toThrow();
+ expect(createWorkspaceOwnership(f.repository).read('sources','capture:'+first.captureRef.id)?.personId).toBe(personId);
+});
+it('adopts legacy source linkage only in explicitly trusted exact local preview installation',async()=>{
+ const f=fixture(),personId=fixtureId(17);f.context.actor.profilePersonId=personId;f.context.ownAccess.personId=personId as never;
+ const captured=await f.capture();f.repository.sqlForModule('ownership').run('DELETE FROM wb_ownership_bindings WHERE module_id=?',['sources']);
+ const environment={installationId:f.context.installationId,personId:()=>personId,localPreview:false,subjectRoot:()=>f.root};
+ expect(()=>createSourceArchiveOwners(f.repository,environment)[0].exportRecords(f.repository)).toThrow();
+ expect(()=>createSourceArchiveOwners(f.repository,{...environment,localPreview:true,installationId:randomUUID()})[0].exportRecords(f.repository)).toThrow();
+ const owners=createSourceArchiveOwners(f.repository,{...environment,localPreview:true});expect(owners[0].exportRecords(f.repository).filter(r=>r.schemaId==='capture')).toHaveLength(1);
+ expect(createWorkspaceOwnership(f.repository).read('sources','capture:'+captured.captureRef.id)?.provenance).toBe('local-preview-adoption');
+});
+it('failed_collection_coverage_cancel_and_guard_keep_last_success', async () => {
+  const f = fixture(); const first = await f.capture(); const original = f.adapter.collect;
+  f.adapter.collect = async () => { throw new WorkbenchHttpError(422, 'SOURCE_SCHEMA_CHANGED', 'Synthetic change'); };
+  await expect(f.capture()).rejects.toMatchObject({ code: 'SOURCE_SCHEMA_CHANGED' });
+  f.adapter.collect = async (r, s) => ({ ...await original(r, s), coverage: { complete: false, expectedRows: 3, receivedRows: 2, evidence: ['truncated'] } });
+  await expect(f.capture()).rejects.toMatchObject({ code: 'SOURCE_INCOMPLETE' });
+  f.adapter.collect = original;
+  f.setGuard(async () => { throw new WorkbenchHttpError(403, 'ACCESS_DENIED', 'Revoked'); }); await expect(f.capture()).rejects.toMatchObject({ code: 'ACCESS_DENIED' });
+  f.setGuard(async () => {});
+  const run = f.begin(); f.adapter.collect = async (r, s) => { await f.jobs.cancel(run.job.jobId, run.ctx.installationId); s.throwIfAborted(); return original(r, s); };
+  await expect(f.execute(run.ctx)).rejects.toMatchObject({ code: 'SOURCE_CANCELLED' });
+  expect(f.fallback().captureRef).toEqual(first.captureRef);
+});
+it('revalidates_saved_context_and_atomic_receipt_rolls_back_projection_failure', async () => {
+  const f = fixture(); const first = await f.capture(); const collect = f.adapter.collect;
+  f.adapter.collect = async (r, s) => { f.store.saveAllowedContext({ ...f.saved, revision: 'selection-2' }, f.saved.revision); return collect(r, s); };
+  await expect(f.capture()).rejects.toMatchObject({ code: 'SOURCE_CONFIGURATION_CHANGED' }); expect(f.fallback().captureRef).toEqual(first.captureRef);
+  f.adapter.collect = collect; const run = f.begin();
+  f.repository.registerProjection('test-failure', type => { if (type === 'observed_fact') throw Error('projection failure'); });
+  await expect(f.execute(run.ctx)).rejects.toThrow('projection failure');
+  expect(createCommandStore(f.repository).get(run.ctx.installationId, run.ctx.commandId)?.receipt_json).toBeNull();
+  expect(f.store.findOperation(run.ctx.installationId, run.job.jobId)).toBeNull(); expect(f.fallback().captureRef).toEqual(first.captureRef);
+});
+it('deduplicates_operation_with_receipt_after_restart_and_new_operation_same_value_is_new_capture', async () => {
+  const f = fixture(); const run = f.begin(); const one = await f.execute(run.ctx); const two = await f.execute(run.ctx); expect(two.captureRef).toEqual(one.captureRef); expect(two.duplicate).toBe(true);
+  expect(JSON.parse(createCommandStore(f.repository).get(run.ctx.installationId, run.ctx.commandId)!.receipt_json!).result.captureRef).toEqual(one.captureRef);
+  const freshStore = createSourceStore({ repository: f.repository }); expect(freshStore.findOperation(run.ctx.installationId, run.job.jobId)?.captureRef).toEqual(one.captureRef);
+  expect(freshStore.readCapture(one.captureRef, fixtureId(999))).toBeNull();
+  const next = await f.capture(); expect(next.captureRef.id).not.toBe(one.captureRef.id); expect(f.fallback().sourceDate).toBe('2026-10-27');
+  await expect(withCommandExecution(run.ctx, captureResultSchema, () => f.service.capture(run.ctx, { goalId: fixtureId(999) }))).rejects.toMatchObject({ code: 'IDEMPOTENCY_CONFLICT' });
+});
+it('requires_published_configuration_saved_context_and_qlik_kind', async () => {
+  const f = fixture(); f.store.bindAdapter({ sourceId: f.input.goal.sourceId, adapterKey: 'missing', profileRef: null, revision: '2' }); await expect(f.capture()).rejects.toMatchObject({ code: 'SOURCE_UNSUPPORTED' });
+  const source = f.repository.readVersion<any>(f.binding.sourceRef)!; f.repository.append('source_definition', { ...source, revision: 2, kind: 'file' }, 1);
+  await expect(f.capture()).rejects.toMatchObject({ code: 'SOURCE_UNSUPPORTED' });
+  expect(() => f.store.resolveCapture({ installationId: fixtureId(999), goalId: f.input.goal.id })).toThrowError(expect.objectContaining({ code: 'SOURCE_CONTEXT_REQUIRED' }));
+});
+it('missing_mapping_remains_diagnostic_partial_and_unknown_date_stays_unknown', async () => {
+  const f = fixture(); const normal = f.normalizer.normalize;
+  f.normalizer.normalize = v => { const out = normal(v); out.rows[0].numbers.demo_value = null; out.rows.forEach(r => { r.businessTime = { kind: 'unknown' }; }); return out; };
+  const result = await f.capture(); const data = f.store.readCapture(result.captureRef, f.context.installationId)!;
+  expect(data.capture.result).toBe('partial'); expect(data.facts[0]).toMatchObject({ state: 'missing', value: null, businessTime: { kind: 'unknown' } }); expect(data.issues.length).toBeGreaterThan(0); expect(f.fallback().obtainedVia).toBe('no-data');
+});
+it('registers_real_async_viewer_command_and_strict_payload', async () => {
+  const f = fixture(); const policy = { resolveOwnAccess: async () => f.context.ownAccess, assertCommandAllowed: async () => f.context.ownAccess, assertFreshPublishAllowed: async () => f.context.ownAccess };
+  const registry = createCommandRegistry({ repository: f.repository, jobs: f.jobs, accessPolicy: policy }); registerSourceCommands(registry, f.service);
+  expect(registry.getCapability('source.capture')).toBe('capture.local');
+  await expect(registry.execute({ commandId: f.context.commandId, name: 'source.capture', baseRevision: null, payload: { goalId: f.input.goal.id, context: f.saved.context } }, f.context)).rejects.toMatchObject({ statusCode: 422 });
+  const accepted = await registry.execute({ commandId: f.context.commandId, name: 'source.capture', baseRevision: null, payload: { goalId: f.input.goal.id } }, f.context); await registry.idle();
+  expect(f.jobs.get((accepted as { jobId: string }).jobId, f.context.installationId)).toMatchObject({ status: 'succeeded', result: { acceptedRows: 2 } });
+});
+
+it('persists_immutable_raw_coverage_issues_and_verified_artifacts_across_repository_reopen', async () => {
+  const f = fixture(); const bytes = new TextEncoder().encode('synthetic private raw bytes');
+  const artifact = f.store.saveArtifact({ installationId: f.context.installationId, artifactId: fixtureId(800), mimeType: 'text/csv', bytesValue: bytes });
+  expect(() => f.store.assertArtifact(fixtureId(999), artifact)).toThrowError(expect.objectContaining({ code: 'SOURCE_ARTIFACT_INVALID' }));
+  expect(() => f.store.saveArtifact({ installationId: f.context.installationId, artifactId: artifact.artifactId, mimeType: 'text/csv', bytesValue: new Uint8Array([0]) })).toThrowError(expect.objectContaining({ code: 'SOURCE_ARTIFACT_CONFLICT' }));
+  const collect = f.adapter.collect; f.adapter.collect = async (r, s) => ({ ...await collect(r, s), artifact, payloadHash: artifact.hash });
+  const run = f.begin(); const result = await f.execute(run.ctx); const raw = f.store.readCapture(result.captureRef, f.context.installationId)!;
+  raw.capture.rawRows[0].cells.demo_value.original = 'mutated'; expect(f.store.readCapture(result.captureRef, f.context.installationId)!.capture.rawRows[0].cells.demo_value.original).toBe('92.00');
+  f.repository.close(); const reopened = createWorkbenchRepository(f.config); cleanups.push(() => reopened.close()); const store = createSourceStore({ repository: reopened });
+  expect(store.findOperation(run.ctx.installationId, run.job.jobId)).toEqual(result); expect(store.readCapture(result.captureRef, f.context.installationId)?.coverage.evidence).toEqual(['synthetic-demo:complete-two-product-inventory']);
+  expect(store.readLatestAttempt({ installationId: f.context.installationId, goalId: f.input.goal.id })).toMatchObject({ complete: true, captureRef: result.captureRef });
+  expect(store.readFallback({ installationId: f.context.installationId, goalId: f.input.goal.id })).toMatchObject({ obtainedVia: 'local-cache', sourceDate: '2026-10-27' });
+  expect(() => store.assertArtifact(f.context.installationId, artifact)).not.toThrow();
+  expect(JSON.parse(createCommandStore(reopened).get(run.ctx.installationId, run.ctx.commandId)!.receipt_json!).result.captureRef).toEqual(result.captureRef);
+});
+it('uses_verified_git_without_writes_preserves_original_dates_and_never_uses_file_for_qlik', async () => {
+  const f = fixture(); const legacy = f.input.captures[0]; const capture = { ...legacy, id: fixtureId(850), acceptedRows: 2 };
+  const facts = f.input.facts.map((fact, i) => ({ ...fact, id: fixtureId(851 + i), captureId: capture.id, businessTime: { kind: 'as_of' as const, date: '2026-10-21' }, lineage: { ...fact.lineage, captureId: capture.id } }));
+  f.repository.transaction(() => { f.repository.append('capture', capture, null); facts.forEach(fact => f.repository.append('observed_fact', fact, null)); });
+  f.store.installVerifiedGit({ goalId: f.input.goal.id, captureRef: { entityType: 'capture', id: capture.id, revision: 1 }, factRefs: facts.map(fact => ({ entityType: 'observed_fact', id: fact.id, revision: 1 })), context: f.saved.context, coverage: { complete: true, expectedRows: 2, receivedRows: 2, evidence: ['verified-manifest-coverage'] } });
+  const before = f.repository.getStateRevision(); expect(f.fallback()).toMatchObject({ obtainedVia: 'git', sourceDate: '2026-10-21', capturedAt: legacy.capturedAt }); expect(f.repository.getStateRevision()).toBe(before);
+  await f.capture(); expect(f.fallback().obtainedVia).toBe('local-cache');
+  const unknown = f.normalizer.normalize; f.normalizer.normalize = v => { const out = unknown(v); out.rows.forEach(r => { r.businessTime = { kind: 'unknown' }; }); return out; };
+  await f.capture(); expect(f.fallback()).toMatchObject({ obtainedVia: 'local-cache', sourceDate: null, businessTimes: [{ kind: 'unknown' }] });
+  const fileCapture = { ...capture, id: fixtureId(860), obtainedVia: 'file_import' as const }; f.repository.append('capture', fileCapture, null);
+  f.store.installVerifiedGit({ goalId: f.input.goal.id, captureRef: { entityType: 'capture', id: fileCapture.id, revision: 1 }, factRefs: [], context: f.saved.context, coverage: { complete: true, expectedRows: 2, receivedRows: 2, evidence: ['verified'] } });
+  // A separate installation with the same allowed selection has no local cache and cannot use the file delivery.
+  f.store.saveAllowedContext({ ...f.saved, installationId: fixtureId(888) }, null);
+  expect(f.store.readFallback({ installationId: fixtureId(888), goalId: f.input.goal.id })).toMatchObject({ obtainedVia: 'no-data', captureRef: null });
+});
+it('rejects_exact_batch_corruption_and_enricher_invented_or_multiplied_rows', async () => {
+  const f = fixture(); const collect = f.adapter.collect;
+  for (const modify of [
+    (r: any) => { r.payloadHash = `sha256:${'0'.repeat(64)}`; },
+    (r: any) => { r.operationId = fixtureId(777); },
+    (r: any) => { r.coverage.expectedRows = 3; },
+    (r: any) => { r.coverage.evidence = []; },
+  ]) { f.adapter.collect = async (r, s) => { const raw = await collect(r, s); modify(raw); return raw; }; await expect(f.capture()).rejects.toMatchObject({ statusCode: 422 }); }
+  f.adapter.collect = collect; const enrich = f.enricher.enrich;
+  f.enricher.enrich = v => { const out = enrich(v); out.rows.push(out.rows[0]); return out; }; await expect(f.capture()).rejects.toMatchObject({ code: 'SOURCE_ROW_MISMATCH' });
+  f.enricher.enrich = v => { const out = enrich(v); out.rows[0].scope = { kind: 'product', id: fixtureId(999) }; return out; };
+  const result = await f.capture(); const evidence = f.store.readCapture(result.captureRef, f.context.installationId)!; expect(evidence.capture).toMatchObject({ result: 'partial', acceptedRows: 1, rejectedRows: 1 }); expect(evidence.issues.some(i => i.code === 'REQUIRED_SCOPE_UNRESOLVED')).toBe(true); expect(f.fallback().obtainedVia).toBe('no-data');
+});
+it('uses_exact_decimal_and_shared_reducers_without_per_row_competing_facts', async () => {
+  const f = fixture(); const method = f.repository.readVersion<any>(f.binding.methodRef)!;
+  f.repository.append('method_version', { ...method, revision: 2, rules: [{ ...method.rules[0], reducer: { kind: 'sum', valueField: 'demo_value' } }] }, 1);
+  const assignment = f.repository.readVersion<any>(f.binding.assignmentRef)!;
+  f.repository.append('goal_assignment', { ...assignment, revision: 2, methodBinding: { kind: 'standalone', methodRef: { ...f.binding.methodRef, revision: 2 } } }, 1);
+  const collect = f.adapter.collect; f.adapter.collect = async (r, s) => { const raw = await collect(r, s); raw.rawRows[0].cells.demo_value.original = '900719925474099312345.50'; raw.rawRows[1].cells.demo_value.original = '0.50'; raw.rawRows[1].cells.demo_scope_id.original = 'demo-product-a'; raw.payloadHash = sourcePayloadHash(raw.rawRows); return raw; };
+  const result = await f.capture(); const evidence = f.store.readCapture(result.captureRef, f.context.installationId)!;
+  expect(evidence.facts).toHaveLength(1); expect(evidence.facts[0]).toMatchObject({ origin: 'reducer', value: { numerator: '900719925474099312346', denominator: '1' }, lineage: { sourceRowKeys: ['demo-a', 'demo-b'], reducerMethodRef: { ...f.binding.methodRef, revision: 2 } } });
+  expect(evidence.capture.result).toBe('partial'); // Published expected product B remains explicitly missing.
+});
+it('rejects_flat_field_collisions_and_multi_unit_profiles_and_accepts_same_unit_multi_metric_rows', async () => {
+  const f = fixture(); const metric2 = { ...f.input.metrics[0], id: fixtureId(900), name: 'Synthetic metric two' }; f.repository.append('metric_definition', metric2, null);
+  const method = f.repository.readVersion<any>(f.binding.methodRef)!; const method2 = { ...method, revision: 2, rules: [...method.rules, { ...method.rules[0], metricRef: { entityType: 'metric_definition', id: metric2.id, revision: 1 }, reducer: { kind: 'source_provided_value', valueField: 'second' } }] }; f.repository.append('method_version', method2, 1);
+  const assignment = f.repository.readVersion<any>(f.binding.assignmentRef)!; f.repository.append('goal_assignment', { ...assignment, revision: 2, methodBinding: { kind: 'standalone', methodRef: { ...f.binding.methodRef, revision: 2 } } }, 1);
+  const mapping = f.repository.readVersion<any>(f.binding.mappingRef)!; f.repository.append('source_field_mapping', { ...mapping, revision: 2, metricFields: [...mapping.metricFields, { metricId: metric2.id, fields: { second: 'demo_value' } }] }, 1);
+  const source = f.repository.readVersion<any>(f.binding.sourceRef)!; f.repository.append('source_definition', { ...source, revision: 2, mappingRef: { ...f.binding.mappingRef, revision: 2 } }, 1);
+  const result = await f.capture(); const view = f.store.readCapture(result.captureRef, f.context.installationId)!; expect(view.capture.canonicalRows).toHaveLength(2); expect(view.facts).toHaveLength(4); expect(view.facts.every(fact => fact.value === '92')).toBe(true);
+  f.repository.append('source_field_mapping', { ...mapping, revision: 3, metricFields: [...mapping.metricFields, { metricId: metric2.id, fields: { demo_value: 'other', second: 'demo_value' } }] }, 2);
+  f.repository.append('source_definition', { ...source, revision: 3, mappingRef: { ...f.binding.mappingRef, revision: 3 } }, 2);
+  await expect(f.capture()).rejects.toMatchObject({ code: 'SOURCE_INVALID_CONFIGURATION' });
+  f.repository.append('metric_definition', { ...metric2, revision: 2, unit: { code: 'incompatible-unit', label: 'Other' } }, 1);
+  f.repository.append('method_version', { ...method2, revision: 3, rules: [method2.rules[0], { ...method2.rules[1], metricRef: { entityType: 'metric_definition', id: metric2.id, revision: 2 } }] }, 2);
+  f.repository.append('goal_assignment', { ...assignment, revision: 3, methodBinding: { kind: 'standalone', methodRef: { ...f.binding.methodRef, revision: 3 } } }, 2);
+  await expect(f.capture()).rejects.toMatchObject({ code: 'UNSUPPORTED_REDUCER' });
+});
+
+it('rejects_source_identity_changed_while_queued_before_collection', async () => {
+  const f = fixture(); let release!: () => void; const parked = new Promise<void>(resolve => { release = resolve; });
+  const policy = { resolveOwnAccess: async () => f.context.ownAccess, assertCommandAllowed: async () => f.context.ownAccess, assertFreshPublishAllowed: async () => f.context.ownAccess };
+  const registry = createCommandRegistry({ repository: f.repository, jobs: f.jobs, accessPolicy: policy });
+  registry.register({ name: 'demo.park', inputSchema: z.strictObject({}), outputSchema: z.strictObject({ done: z.boolean() }), capability: 'personal.write', effect: 'local', execution: 'async', resourceKey: () => 'source:' + f.input.goal.sourceId, handler: async () => { await parked; return { result: { done: true }, changedRefs: [], editToken: null }; } });
+  registerSourceCommands(registry, f.service);
+  const blockContext = { ...f.context, commandId: fixtureId(950) }; await registry.execute({ commandId: blockContext.commandId, name: 'demo.park', baseRevision: null, payload: {} }, blockContext);
+  let collections = 0; const collect = f.adapter.collect; f.adapter.collect = async (r, s) => { collections++; return collect(r, s); };
+  const accepted = await registry.execute({ commandId: f.context.commandId, name: 'source.capture', baseRevision: null, payload: { goalId: f.input.goal.id } }, f.context);
+  const source = f.repository.readVersion<any>(f.binding.sourceRef)!; const mapping = f.repository.readVersion<any>(f.binding.mappingRef)!;
+  const sourceRef = { entityType: 'source_definition', id: fixtureId(960), revision: 1 }; const mappingRef = { entityType: 'source_field_mapping', id: fixtureId(961), revision: 1 };
+  f.repository.transaction(() => { f.repository.append('source_definition', { ...source, id: sourceRef.id, mappingRef }, null); f.repository.append('source_field_mapping', { ...mapping, id: mappingRef.id, sourceId: sourceRef.id }, null); f.repository.append('core_goal_definition', { ...f.input.goal, revision: 2, sourceId: sourceRef.id }, 1); });
+  f.store.installPublished([{ ...f.binding, goalRef: { ...f.binding.goalRef, revision: 2 }, sourceRef, mappingRef }]);
+  f.store.bindAdapter({ sourceId: sourceRef.id, adapterKey: 'synthetic-demo', profileRef: null, revision: 'replacement-source' });
+  release(); await registry.idle();
+  expect(f.jobs.get((accepted as { jobId: string }).jobId, f.context.installationId)).toMatchObject({ status: 'failed', error: { code: 'SOURCE_CONFIGURATION_CHANGED' } }); expect(collections).toBe(0);
+});
+
+it('directory_and_adapter_revisions_and_late_cancel_abort_before_atomic_commit', async () => {
+  const f = fixture(); const first = await f.capture(); const collect = f.adapter.collect;
+  f.adapter.collect = async (r, s) => { const entity = f.repository.readVersion<DirectoryEntity>(f.binding.directoryEntityRefs[0])!; f.repository.append('directory_entity', { ...entity, revision: entity.revision + 1, name: 'Published directory changed' }, entity.revision); return collect(r, s); };
+  await expect(f.capture()).rejects.toMatchObject({ code: 'SOURCE_CONFIGURATION_CHANGED' });
+  f.adapter.collect = async (r, s) => { f.store.bindAdapter({ sourceId: f.input.goal.sourceId, adapterKey: 'synthetic-demo', profileRef: null, revision: 'changed-during-collect' }); return collect(r, s); };
+  await expect(f.capture()).rejects.toMatchObject({ code: 'SOURCE_CONFIGURATION_CHANGED' });
+  f.adapter.collect = collect; const run = f.begin(); f.setGuard(async () => { await f.jobs.cancel(run.job.jobId, run.ctx.installationId); });
+  await expect(f.execute(run.ctx)).rejects.toMatchObject({ code: 'SOURCE_CANCELLED' }); expect(f.fallback().captureRef).toEqual(first.captureRef);
+});
+it('strict_source_dtos_and_explicit_adapter_readiness_do_not_create_facts', async () => {
+  const f = fixture(); const binding = f.store.resolveCapture({ installationId: f.context.installationId, goalId: f.input.goal.id });
+  const request = { operationId: fixtureId(990), goalRef: binding.goalRef, sourceRef: binding.sourceRef, mappingRef: binding.mappingRef, businessTime: binding.businessTime, context: binding.context, configurationRevision: binding.configurationRevision, profileRef: null };
+  expect(captureRequestSchema.safeParse({ ...request, password: 'forbidden' }).success).toBe(false);
+  const raw = await f.adapter.collect(request, new AbortController().signal); expect(rawBatchSchema.safeParse({ ...raw, clientPath: 'C:/private.xlsx' }).success).toBe(false);
+  for (const status of ['auth_required', 'unavailable', 'unsupported', 'invalid_configuration'] as const) { f.adapter.check = async () => ({ status, issues: [] }); await expect(f.capture()).rejects.toMatchObject({ code: 'SOURCE_' + status.toUpperCase() }); }
+  expect(f.appendedTypes).toEqual([]);
+  const noSelection = { ...f.context, installationId: fixtureId(994), actor: { ...f.context.actor, installationId: fixtureId(994) } };
+  await expect(f.service.capture(noSelection, { goalId: f.input.goal.id })).rejects.toMatchObject({ code: 'SOURCE_JOB_REQUIRED' });
+});
+
+it('exposes_latest_partial_attempt_beside_retained_complete_data_for_required_T17_T21_gate', async () => {
+  const f = fixture(); const method = f.repository.readVersion<any>(f.binding.methodRef)!;
+  const saved = { ...f.saved, revision: 'current-day', context: { ...f.saved.context, time: { kind: 'as_of' as const, date: '2026-10-28' } } }; f.store.saveAllowedContext(saved, f.saved.revision);
+  f.repository.append('method_version', { ...method, revision: 2, rules: [{ ...method.rules[0], reducer: { kind: 'sum', valueField: 'demo_value' } }] }, 1);
+  const assignment = f.repository.readVersion<any>(f.binding.assignmentRef)!; const assignmentRef = { ...f.binding.assignmentRef, revision: 2 };
+  f.repository.append('goal_assignment', { ...assignment, revision: 2, methodBinding: { kind: 'standalone', methodRef: { ...f.binding.methodRef, revision: 2 } } }, 1);
+  const complete = await f.capture(); const enrich = f.enricher.enrich;
+  f.clock.now = () => '2026-10-28T08:00:00Z';
+  f.enricher.enrich = input => { const result = enrich(input); result.rows[1].scope = null; return result; };
+  const partial = await f.capture();
+  const calculationInput = resolveEvaluationInput({ assignmentRef, businessTime: saved.context.time }, f.repository, f.clock, f.context.actor);
+  // The existing pure selector intentionally retains valid historical B; future consumers must ALSO read the current ingestion gate.
+  expect(selectEvaluationFacts(calculationInput)).toMatchObject({ complete: true, qualityFlags: [], metrics: [expect.objectContaining({ value: { numerator: '184', denominator: '1' } })] });
+  const before = f.repository.getStateRevision(); const view = f.fallback();
+  expect(view).toMatchObject({ captureRef: complete.captureRef, coverage: { complete: true }, latestAttempt: { captureRef: partial.captureRef, complete: false, acceptedRows: 1, rejectedRows: 1 }, warnings: expect.arrayContaining([expect.objectContaining({ code: 'LATEST_SOURCE_ATTEMPT_INCOMPLETE' })]) });
+  expect(view.latestAttempt!.issues.map(issue => issue.code)).toEqual(expect.arrayContaining(['REQUIRED_SCOPE_UNRESOLVED', 'EXPECTED_SCOPE_MISSING'])); expect(f.repository.getStateRevision()).toBe(before);
+  f.clock.now = () => '2026-10-28T09:00:00Z'; f.enricher.enrich = input => { const result = enrich(input); result.rows.forEach(row => { row.scope = null; }); return result; };
+  const empty = await f.capture(); expect(f.store.readCapture(empty.captureRef, f.context.installationId)?.facts).toEqual([]);
+  const reloaded = createSourceStore({ repository: f.repository }); expect(reloaded.readLatestAttempt({ installationId: f.context.installationId, goalId: f.input.goal.id })).toMatchObject({ captureRef: empty.captureRef, complete: false, acceptedRows: 0, rejectedRows: 2 });
+  f.store.saveAllowedContext({ ...saved, installationId: fixtureId(997) }, null); expect(f.store.readLatestAttempt({ installationId: fixtureId(997), goalId: f.input.goal.id })).toBeNull();
+  f.store.saveAllowedContext({ ...saved, revision: 'other-context', context: { ...saved.context, time: { kind: 'as_of', date: '2026-10-26' } } }, saved.revision); expect(f.store.readLatestAttempt({ installationId: f.context.installationId, goalId: f.input.goal.id })).toBeNull();
+  f.store.saveAllowedContext({ ...saved, revision: 'restored-context' }, 'other-context');
+  f.clock.now = () => '2026-10-28T10:00:00Z'; f.enricher.enrich = enrich; const corrected = await f.capture();
+  expect(f.fallback()).toMatchObject({ captureRef: corrected.captureRef, latestAttempt: { complete: true, captureRef: corrected.captureRef }, warnings: [] });
+  expect(f.store.readCapture(complete.captureRef, f.context.installationId)?.capture.result).toBe('accepted'); expect(f.store.readCapture(partial.captureRef, f.context.installationId)?.capture.result).toBe('partial');
+});
+
+it('inapplicable_old_source_local_pointer_continues_to_valid_replacement_source_git_without_writes', async () => {
+  const f = fixture(); const local = await f.capture(); const original = f.store.readCapture(local.captureRef, f.context.installationId)!;
+  const source = f.repository.readVersion<any>(f.binding.sourceRef)!; const mapping = f.repository.readVersion<any>(f.binding.mappingRef)!;
+  const sourceRef = { entityType: 'source_definition', id: fixtureId(970), revision: 1 }; const mappingRef = { entityType: 'source_field_mapping', id: fixtureId(971), revision: 1 };
+  f.repository.transaction(() => { f.repository.append('source_definition', { ...source, id: sourceRef.id, mappingRef }, null); f.repository.append('source_field_mapping', { ...mapping, id: mappingRef.id, sourceId: sourceRef.id }, null); f.repository.append('core_goal_definition', { ...f.input.goal, revision: 2, sourceId: sourceRef.id }, 1); });
+  f.store.installPublished([{ ...f.binding, goalRef: { ...f.binding.goalRef, revision: 2 }, sourceRef, mappingRef }]); f.store.bindAdapter({ sourceId: sourceRef.id, adapterKey: 'synthetic-demo', profileRef: null, revision: 'replacement' });
+  const capture: Capture = { ...original.capture, id: fixtureId(972), operationId: fixtureId(973), sourceId: sourceRef.id, mappingRef, publicationAnchorId: fixtureId(2), capturedAt: '2026-10-26T08:00:00Z' };
+  const facts = original.facts.map((fact, i) => ({ ...fact, id: fixtureId(974 + i), sourceId: sourceRef.id, captureId: capture.id, publicationAnchorId: fixtureId(2), businessTime: { kind: 'as_of' as const, date: '2026-10-25' }, lineage: { ...fact.lineage, captureId: capture.id, mappingRef } }));
+  f.repository.transaction(() => { f.repository.append('capture', capture, null); facts.forEach(fact => f.repository.append('observed_fact', fact, null)); });
+  const captureRef = { entityType: 'capture', id: capture.id, revision: 1 };
+  f.store.installVerifiedGit({ goalId: f.input.goal.id, captureRef, factRefs: facts.map(fact => ({ entityType: 'observed_fact', id: fact.id, revision: 1 })), context: f.saved.context, coverage: { complete: true, expectedRows: 2, receivedRows: 2, evidence: ['replacement-verified-main'] } });
+  const before = f.repository.getStateRevision(); expect(f.fallback()).toMatchObject({ obtainedVia: 'git', sourceId: sourceRef.id, captureRef, sourceDate: '2026-10-25', capturedAt: '2026-10-26T08:00:00Z' }); expect(f.repository.getStateRevision()).toBe(before);
+});
+
+it('final_I1_private_multicapture_query_pages_before_evidence_hydration_and_keeps_history',async()=>{
+ const f=fixture(),refs=[];
+ for(let n=0;n<12;n++){f.clock.now=()=>new Date(Date.UTC(2026,9,28,7,n)).toISOString();refs.push((await f.capture()).captureRef);}
+ const selected=refs.at(-1)!,index=createWorkbenchReadIndex(f.repository);
+ const ports={repository:f.repository,index,sources:f.store} as WorkbenchReadPorts;
+ const request={context:f.saved.context,filter:{},sort:[],page:{limit:1,cursor:null as string|null}};
+ const before=f.repository.getStateRevision(),read=f.store.readCapture;let evidenceReads=0,allowedId=selected.id;
+ f.store.readCapture=(reference,installationId)=>{evidenceReads++;if(reference.id!==allowedId)throw Error('unrelated historical evidence');return read(reference,installationId);};
+ f.store.listOwnCaptures=()=>{throw Error('lifetime evidence enumeration');};
+ const first=await queryWorkbench('data.captures',request,f.context,ports);
+ expect(first.items[0].ref).toEqual(selected);expect(first.page.hasMore).toBe(true);expect(evidenceReads).toBe(1);
+ allowedId=refs.at(-2)!.id;evidenceReads=0;
+ const second=await queryWorkbench('data.captures',{...request,page:{limit:1,cursor:first.page.nextCursor}},f.context,ports);
+ expect(second.items[0].ref).toEqual(refs.at(-2));expect(evidenceReads).toBe(1);allowedId=selected.id;
+ evidenceReads=0;const rows=await queryWorkbench('data.rows',{...request,filter:{captureRef:selected,layer:'raw',issuesOnly:false}},f.context,ports);expect(rows.items).toHaveLength(1);expect(evidenceReads).toBe(1);
+ const other={...f.context,ownAccess:{...f.context.ownAccess,personId:fixtureId(998001)}};
+ expect((await queryWorkbench('data.captures',request,other,ports)).items).toEqual([]);
+ await expect(queryWorkbench('data.rows',{...request,filter:{captureRef:selected,layer:'raw'}},other,ports)).rejects.toMatchObject({code:'REFERENCE_NOT_FOUND'});
+ expect(f.repository.getStateRevision()).toBe(before);
+ expect(f.store.ownCaptureMetadata({installationId:f.context.installationId,profilePersonId:null},[f.input.goal.sourceId])).toHaveLength(12);
+ f.store.readCapture=read;for(const reference of refs)expect(f.store.readCapture(reference,f.context.installationId)?.capture.rawRows).toHaveLength(2);
+ expect(f.repository.sqlForModule('sources').all("EXPLAIN QUERY PLAN SELECT capture_id FROM wb_sources_captures WHERE installation_id=? AND json_valid(value_json) AND json_extract(value_json,'$.request.sourceRef.id')=? ORDER BY json_extract(value_json,'$.raw.capturedAt') DESC,capture_id",[f.context.installationId,f.input.goal.sourceId]).map((r:any)=>r.detail).join(' ')).toContain('wb_sources_capture_metadata');
+});
+
+it('final_I1_dashboard_issue_summary_reads_no_raw_history_and_retains_diagnostics',async()=>{
+ const f=fixture(),enrich=f.enricher.enrich;f.enricher.enrich=input=>{const result=enrich(input);result.rows[0].scope=null;return result;};
+ const captured=await f.capture(),own={installationId:f.context.installationId,profilePersonId:null};
+ const expected=f.store.readCapture(captured.captureRef,f.context.installationId)!.issues.map(({code,message})=>({code,message}));
+ f.store.readCapture=()=>{throw Error('dashboard must not hydrate raw evidence');};
+ expect(f.store.ownCaptureIssuePage(own,captured.captureRef.id,0,32)).toEqual(expected);
+ expect(f.store.ownCaptureIssuePage({...own,profilePersonId:fixtureId(998002)},captured.captureRef.id,0,32)).toEqual([]);
+ const dashboard={...makeHeader(998003,{publicationAnchorId:fixtureId(2)}),title:'Synthetic issues',filters:[],blocks:[{id:fixtureId(998004),typeId:'uor.dashboard.data-issues.v1',settings:{schemaId:'uor.dashboard.data-issues.v1',schemaVersion:1,value:{layout:{w:6,h:2},kinds:['unmapped'],limit:1}}}]};
+ f.repository.append('dashboard_def',dashboard,null);
+ const index=createWorkbenchReadIndex(f.repository),ports={repository:f.repository,index,sources:f.store} as WorkbenchReadPorts;
+ const output=await queryWorkbench('dashboards.view',{context:f.saved.context,filter:{ref:{entityType:'dashboard_def',id:dashboard.id}},sort:[],page:{limit:1,cursor:null}},f.context,ports);
+ expect(output.blocks[0]).toMatchObject({type:'data-issues',items:[{kind:'unmapped',code:expect.stringMatching(/SCOPE/),ref:{entityType:'capture',id:captured.captureRef.id}}]});
+});
+
+it('final_I1_native_SQL_metadata_and_diagnostics_never_read_lifetime_payload_columns',async()=>{
+ const f=fixture(),first=await f.capture(),second=await f.capture();
+ const published={...f.input.captures[0],id:fixtureId(999001),operationId:fixtureId(999002)};f.repository.append('capture',published,null);
+ const index=createWorkbenchReadIndex(f.repository),owner={installationId:f.context.installationId,profilePersonId:null};
+ const queries:string[]=[],prepare=DatabaseSync.prototype.prepare;
+ const spy=vi.spyOn(DatabaseSync.prototype,'prepare').mockImplementation(function(this:DatabaseSync,sql:string){if(/^SELECT\b/i.test(sql)&&/json_(?:extract|valid)\(/i.test(sql))queries.push(sql);return prepare.call(this,sql);});
+ try{
+  expect(f.repository.readCaptureMetadata(first.captureRef)).toMatchObject({id:first.captureRef.id,result:'accepted',sourceId:f.input.goal.sourceId});
+  expect(index.captureMetadata([f.input.goal.sourceId]).map(c=>c.id)).toEqual([published.id]);
+  expect(f.store.ownCaptureMetadata(owner,[f.input.goal.sourceId])).toHaveLength(2);
+  expect(f.store.ownCaptureIssuePage(owner,first.captureRef.id,0,32)).toEqual([]);
+  f.repository.sqlForModule('sources').run('UPDATE wb_sources_captures SET value_json=? WHERE capture_id=?',['deliberately damaged evidence',second.captureRef.id]);
+  expect(f.store.ownCaptureMetadata(owner,[f.input.goal.sourceId])).toHaveLength(2);
+  expect(f.store.ownCaptureIssuePage(owner,second.captureRef.id,0,32)).toEqual([{code:'SOURCE_EVIDENCE_INVALID',message:expect.any(String)}]);
+ }finally{spy.mockRestore();}
+ const sqlPrograms=[...new Set(queries)];expect(sqlPrograms.length).toBeGreaterThanOrEqual(5);
+ const native=new DatabaseSync(f.config.filename);
+ try{
+  const roots=new Set((native.prepare("SELECT rootpage FROM sqlite_master WHERE type='table' AND name IN ('wb_entity_versions','wb_read_catalog','wb_sources_captures')").all() as Array<{rootpage:number}>).map(row=>row.rootpage));
+  const proof:Array<{sql:string;payloadTableColumns:number;jsonFunctions:number}>=[];
+  for(const sql of sqlPrograms){
+   const program=native.prepare('EXPLAIN '+sql).all(...Array((sql.match(/\?/g)??[]).length).fill(null)) as Array<{opcode:string;p1:number;p2:number;p4:string|null}>;
+   const payloadTableCursors=new Set(program.filter(op=>op.opcode==='OpenRead'&&roots.has(op.p2)).map(op=>op.p1));
+   proof.push({sql,payloadTableColumns:program.filter(op=>op.opcode==='Column'&&payloadTableCursors.has(op.p1)).length,jsonFunctions:program.filter(op=>op.opcode==='Function'&&/json_/i.test(op.p4??'')).length});
+   expect.soft(program.filter(op=>op.opcode==='Column'&&payloadTableCursors.has(op.p1)),sql+' reads a historical payload table').toEqual([]);
+   expect.soft(program.filter(op=>op.opcode==='Function'&&/json_/i.test(op.p4??'')),sql+' reparses lifetime JSON').toEqual([]);
+  }
+  console.info('I1_NATIVE_SQL_COVERAGE '+JSON.stringify(proof));
+ }finally{native.close();}
+});

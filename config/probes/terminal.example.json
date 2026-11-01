@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "profileId": "terminal-example",
+  "environmentLabel": "not-configured",
+  "credentialProfileRef": null,
+  "approvedOrigins": [],
+  "evidenceDirectory": ".runtime/probe-reports",
+  "probe": "BP-06",
+  "gitExecutable": null,
+  "transport": null,
+  "nativeTerminalDescription": null,
+  "helperDescription": null,
+  "repositoryId": null,
+  "origin": null,
+  "approvedTestBranch": null,
+  "corporateHooksDescription": null,
+  "corporateHooksFingerprint": null
+}

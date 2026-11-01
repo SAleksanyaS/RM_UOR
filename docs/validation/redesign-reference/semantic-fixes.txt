@@ -1,0 +1,30 @@
+R3/R4 + UNMAPPED_PRODUCT — результат узкого fix pass
+Дата: 2026-11-01. Рабочая копия: /workspace/scratch/ab925b2abe56/work/RM_UOR-redesign.
+
+Изменённые owning файлы:
+1. src/features/connectors/workbench/PersonalOkoWorkspace.tsx
+   Сокращённая таблица использует точные сохранённые заголовки вне служебных пространств имён. Удалено угадывание «Кластер»/«Руководитель продукта» по именам directory.*; без сохранённого provenance такие ключи не интерпретируются. Все поля доступны через прежний PreviewTable с точными заголовками и значениями. Текущий recipe не используется для прошлого result.
+   Штатный UNMAPPED_PRODUCT сообщает: продукт не найден в справочнике; нужно проверить ключ продукта в исходном файле и добавить/исправить его в справочнике. Code/path остаются в disclosure. Неизвестные сообщения сохраняются; для пустого message остаётся code.
+2. src/features/overview/workbench/OverviewPage.tsx
+   Ручные состояния разделены: null — «Ручной статус не задан»; not_started — «Работа не начата»; in_progress — «Работа продолжается»; completed — завершение работы и отдельное ожидание подтверждения. Для точного подтверждённого среза повторное ожидание не создаётся.
+
+Добавленные регрессии:
+• src/features/connectors/workbench/personal-result-presentation.test.tsx — 3 теста: исходный reserved header; старый result после смены recipe; отдельные raw/escaped derived значения и длинный decimal; понятный UNMAPPED_PRODUCT, неизвестное сообщение и доступ к исправлению. Используются реальные OkoClient/provider/components; HTTP boundary выдаёт полные schema-validated synthetic workspace snapshots.
+• src/features/overview/workbench/overview-attention.test.tsx — 5 тестов: четыре ручных состояния через настоящий application/read model и точный опубликованный manual snapshot с attestation.
+
+Все команды ниже выполнены из указанной рабочей копии, отдельным Node22.16.0, без установки зависимостей. Указано maxWorkers=2 и minWorkers=1; полный suite не запускался. HTTP harness требует разрешённого выхода из sandbox и работает только с синтетической тестовой базой. Runtime36349 не перезапускался.
+
+RED — после добавления тестов, до production fix:
+/workspace/scratch/ab925b2abe56/redesign/runtime/node-v22.16.0-linux-x64/bin/node node_modules/vitest/vitest.mjs run src/features/connectors/workbench/personal-result-presentation.test.tsx src/features/overview/workbench/overview-attention.test.tsx --maxWorkers=2 --minWorkers=1 > /workspace/scratch/ab925b2abe56/redesign/semantic-fixes-red-pinned.log 2>&1
+Результат: exit 1; 2 files failed; 5 tests failed / 3 passed, всего 8; 4.72s.
+Ожидаемые падения: ложный заголовок руководителя; literal UNMAPPED_PRODUCT; manual null/not_started и завершение, ошибочно описанное как числовое выполненное условие.
+
+GREEN — ровно те же 2 owning файла тестов после минимального fix:
+/workspace/scratch/ab925b2abe56/redesign/runtime/node-v22.16.0-linux-x64/bin/node node_modules/vitest/vitest.mjs run src/features/connectors/workbench/personal-result-presentation.test.tsx src/features/overview/workbench/overview-attention.test.tsx --maxWorkers=2 --minWorkers=1 > /workspace/scratch/ab925b2abe56/redesign/semantic-fixes-green-pinned.log 2>&1
+Результат: exit 0; 2 files passed; 8/8 tests passed; 4.22s.
+
+Уже начатый узкий guard ближайших существующих сценариев:
+/workspace/scratch/ab925b2abe56/redesign/runtime/node-v22.16.0-linux-x64/bin/node node_modules/vitest/vitest.mjs run src/features/connectors/workbench/personal-result-presentation.test.tsx src/features/overview/workbench/overview-attention.test.tsx src/features/overview/workbench/goal-views.test.tsx src/features/connectors/workbench/BrowserScenarioWizard.test.tsx src/features/connectors/workbench/WorkbenchProvider.recovery-ui.test.tsx --maxWorkers=2 --minWorkers=1 > /workspace/scratch/ab925b2abe56/redesign/semantic-fixes-targeted-pinned.log 2>&1
+Результат: exit 0; 5 files passed; 31/31 tests passed; 10.97s. Включает 15 goal-views, 3 recovery-ui и 5 BrowserScenarioWizard, плюс 8 новых тестов. После него новые owner-прогоны не запускались; общий итоговый gate выполняет главный исполнитель.
+
+Диагностика: Node22 выдаёт стандартное ExperimentalWarning для SQLite; ошибок/unhandled rejection в успешных прогонах нет. Самый первый запуск без escalation был остановлен Ctrl-C (exit130) из-за ограничений sandbox; его неполный лог semantic-fixes-red.log не используется как итог RED. До корректного RED исправлен один test-only selector таблицы (caption содержит суффикс). Нового code review после фикса не выполнялось.

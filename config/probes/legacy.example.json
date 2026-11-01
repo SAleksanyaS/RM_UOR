@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "profileId": "legacy-example",
+  "environmentLabel": "not-configured",
+  "credentialProfileRef": null,
+  "approvedOrigins": [],
+  "evidenceDirectory": ".runtime/probe-reports",
+  "probe": "BP-04",
+  "sourceArchivePath": null,
+  "attachmentsRoot": null,
+  "expectedCounts": null,
+  "curatorReviewReference": null,
+  "sourceFormatDescription": null
+}

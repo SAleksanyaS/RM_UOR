@@ -1,0 +1,21 @@
+import { afterEach, expect, it } from 'vitest';
+import { createWorkbenchApiHarness } from '../../app/workbench/testing/api-harness';
+import { registerPreferencesQueries } from './workbench-preferences-query';
+import { createPreferencesService } from './workbench-preferences';
+import { QueryRegistry } from '../../server/workbench/query-registry';
+import { fixtureId } from '../../../tests/fixtures/workbench/factories';
+const cleanups: Array<() => Promise<void>> = [];
+afterEach(async () => { for (const close of cleanups.splice(0)) await close(); });
+it('reads_owned_preferences_without_saving_or_accepting_identity_selectors', async () => {
+  expect(registerPreferencesQueries).toBeTypeOf('function');
+  const h = await createWorkbenchApiHarness({ role: 'viewer', scenario: 'empty' }); cleanups.push(h.close);
+  await h.client.session(); const revision = h.repository.getStateRevision();
+  const request = { context: null, filter: {}, sort: [], page: { limit: 50, cursor: null } };
+  expect((await h.client.query('preferences.get', request)).data).toEqual({ values: { context: null, sorts: {}, visual: { theme: 'system', density: 'comfortable' }, notificationPersonId: null }, editToken: null });
+  expect(h.repository.getStateRevision()).toBe(revision);
+  await expect(h.client.query('preferences.get', { ...request, filter: { installationId: 'foreign', role: 'chief' } })).rejects.toMatchObject({ status: 422 });
+  const registry = new QueryRegistry();
+  const clock = { now: () => '2026-10-28T09:00:00Z' };
+  registerPreferencesQueries(registry, createPreferencesService({ repository: h.repository, installationId: fixtureId(1), clock }));
+  await expect(registry.execute('preferences.get', request, { requestId: fixtureId(900), installationId: fixtureId(999), repository: h.repository, clock, ownAccess: { role: 'viewer', personId: null, displayName: null, policyState: 'unavailable', checkedAt: null } })).rejects.toMatchObject({ statusCode: 404, code: 'PREFERENCES_NOT_FOUND' });
+});

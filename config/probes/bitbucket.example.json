@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "profileId": "bitbucket-example",
+  "environmentLabel": "not-configured",
+  "credentialProfileRef": null,
+  "approvedOrigins": [],
+  "evidenceDirectory": ".runtime/probe-reports",
+  "probe": "BP-01",
+  "repositoryId": null,
+  "origin": null,
+  "edition": null,
+  "version": null,
+  "testBranch": null,
+  "existingTestPrId": null,
+  "allowedAuthenticationDescription": null,
+  "mergeExamples": []
+}

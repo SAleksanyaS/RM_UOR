@@ -1,0 +1,51 @@
+import { randomUUID } from 'node:crypto';
+import { existsSync,mkdirSync,mkdtempSync,readFileSync,rmSync,writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
+import { afterEach,expect,it } from 'vitest';
+import { createWorkbenchRepository } from '../storage/workbench-repository';
+import { createOkoWorkflowStore } from '../../features/connectors/workbench-workflow-store';
+import { createSourceStore } from '../../features/connectors/workbench-source-store';
+import { createJobStore } from './jobs';
+import { archiveHash } from '../../features/workspace-maintenance/workbench/workspace-archive';
+import { adoptLegacyRuntimeLayout,inspectLegacyRuntimeLayout } from './runtime-layout-adoption';
+import { createOkoApplication } from './oko-application';
+import { loadPortableZip } from '../../features/workspace-maintenance/zip';
+const cleanup:Array<()=>void>=[];afterEach(()=>cleanup.splice(0).reverse().forEach(f=>f()));
+function fixture(){const root=mkdtempSync(path.join(tmpdir(),'uor-layout-adoption-')),runtimeRoot=path.join(root,'.runtime','workbench'),installationId=randomUUID();mkdirSync(runtimeRoot,{recursive:true});cleanup.push(()=>{if(!path.basename(root).startsWith('uor-layout-adoption-'))throw Error('Unsafe cleanup');rmSync(root,{recursive:true,force:true});});return{root,runtimeRoot,installationId,options:{runtimeRoot,managedRoot:path.join(runtimeRoot,'subject'),rescueRoot:path.join(runtimeRoot,'maintenance','layout-rescue'),installationId,personId:installationId,repositoryId:'synthetic-main',clock:{now:()=> '2026-11-01T10:00:00Z'},applicationVersion:'0.5.0',localPreview:true}};}
+function originals(runtimeRoot:string){return Object.fromEntries(['workbench.sqlite','workbench.sqlite-wal','workbench.sqlite-shm','installation.json'].map(name=>{const filename=path.join(runtimeRoot,name);return[name,existsSync(filename)?readFileSync(filename).toString('hex'):null];}));}
+it('refuses unknown pre-pointer databases before writing any new identity or subject state',async()=>{
+ const f=fixture(),filename=path.join(f.runtimeRoot,'workbench.sqlite'),db=new DatabaseSync(filename);db.exec('CREATE TABLE unrecognized(value TEXT)');db.close();const original=originals(f.runtimeRoot);
+ await expect(inspectLegacyRuntimeLayout(f.runtimeRoot)).rejects.toMatchObject({code:'WORKSPACE_LAYOUT_MIGRATION_REQUIRED'});await expect(adoptLegacyRuntimeLayout(f.options)).rejects.toThrow();expect(originals(f.runtimeRoot)).toEqual(original);for(const name of['identity.json','active.json','subject','maintenance'])expect(existsSync(path.join(f.runtimeRoot,name))).toBe(false);
+});
+it('creates verified typed rescue and a clean subject while preserving exact live old DB and sidecars',async()=>{
+ const f=fixture();writeFileSync(path.join(f.runtimeRoot,'installation.json'),JSON.stringify({installationId:f.installationId}));const old=createWorkbenchRepository({filename:path.join(f.runtimeRoot,'workbench.sqlite'),artifactRoot:path.join(f.runtimeRoot,'artifacts')});cleanup.push(()=>old.close());
+ const id=randomUUID(),owner=`${f.installationId}/${f.installationId}`,artifact=(text:string)=>({name:'synthetic.csv',mimeType:'text/csv',base64:Buffer.from(text).toString('base64'),hash:archiveHash(text)}),result={original:artifact('raw subject'),enriched:artifact('enriched subject')};createOkoWorkflowStore(old).putResult(owner,id,result);
+ createSourceStore({repository:old});old.sqlForModule('sources').run('INSERT INTO wb_sources_adapters VALUES(?,?)',[randomUUID(),JSON.stringify({profileRef:'private-local-config-marker'})]);createJobStore({repository:old,clock:f.options.clock});mkdirSync(path.join(f.runtimeRoot,'browser-profiles'));writeFileSync(path.join(f.runtimeRoot,'browser-profiles','cookies'),'private-cookie-marker');
+ const original=originals(f.runtimeRoot);expect(original['workbench.sqlite-wal']).not.toBeNull();const adopted=await adoptLegacyRuntimeLayout(f.options);expect(originals(f.runtimeRoot)).toEqual(original);expect(adopted.newRoot).toMatch(/restore-[a-f0-9-]{36}$/);expect(existsSync(path.join(f.runtimeRoot,'identity.json'))).toBe(false);expect(existsSync(path.join(f.runtimeRoot,'active.json'))).toBe(false);
+ const rescue=readFileSync(adopted.rescue.archivePath);expect(archiveHash(rescue)).toBe(adopted.rescue.archiveSha256);expect(rescue.toString()).not.toContain('private-local-config-marker');expect(rescue.toString()).not.toContain('private-cookie-marker');
+ const restored=createWorkbenchRepository({filename:path.join(adopted.newRoot,'workbench.sqlite'),artifactRoot:path.join(adopted.newRoot,'files')});try{expect(createOkoWorkflowStore(restored).getResult(owner,id)).toEqual(result);expect(restored.sqlForModule('sources').all('SELECT source_id FROM wb_sources_adapters')).toEqual([]);expect(()=>restored.sqlForModule('jobs').all('SELECT job_id FROM wb_jobs_heads')).toThrow();}finally{restored.close();}
+});
+it('rejects a foreign owner and unexpected table without changing originals or creating a pointer',async()=>{
+ const f=fixture();writeFileSync(path.join(f.runtimeRoot,'installation.json'),JSON.stringify({installationId:f.installationId}));const repository=createWorkbenchRepository({filename:path.join(f.runtimeRoot,'workbench.sqlite'),artifactRoot:path.join(f.runtimeRoot,'artifacts')});const artifact={name:'synthetic.csv',mimeType:'text/csv',base64:Buffer.from('private').toString('base64'),hash:archiveHash('private')};createOkoWorkflowStore(repository).putResult(`${f.installationId}/${randomUUID()}`,randomUUID(),{original:artifact,enriched:artifact});repository.close();const before=originals(f.runtimeRoot);await expect(adoptLegacyRuntimeLayout(f.options)).rejects.toMatchObject({code:'ACCESS_DENIED'});expect(originals(f.runtimeRoot)).toEqual(before);expect(existsSync(path.join(f.runtimeRoot,'active.json'))).toBe(false);
+ const db=new DatabaseSync(path.join(f.runtimeRoot,'workbench.sqlite'));db.exec('CREATE TABLE wb_unregistered_private_rows(value TEXT)');db.close();await expect(adoptLegacyRuntimeLayout(f.options)).rejects.toMatchObject({code:'WORKSPACE_LAYOUT_MIGRATION_REQUIRED'});
+});
+it('adopts an actual old personal recipe while excluding its embedded configured browser profile',async()=>{
+ const f=fixture();writeFileSync(path.join(f.runtimeRoot,'installation.json'),JSON.stringify({installationId:f.installationId}));const app=await createOkoApplication({projectRoot:f.root});
+ try{
+  const session=await app.app.inject({url:'/api/v1/session',headers:{host:'localhost'}}),headers={host:'localhost',origin:'http://127.0.0.1:5175',cookie:String(session.headers['set-cookie']).split(';')[0],'x-csrf-token':session.json().data.csrfToken};
+  const opened=await app.app.inject({method:'POST',url:'/api/v1/commands',headers,payload:{commandId:randomUUID(),name:'source.browser.workflow.open',baseRevision:null,payload:{title:'Synthetic retained recipe'}}});expect(opened.statusCode).toBe(200);const view=opened.json().data.result;
+  const configured=await app.app.inject({method:'POST',url:'/api/v1/commands',headers,payload:{commandId:randomUUID(),name:'source.browser.profile.set',baseRevision:null,payload:{workflowId:view.workflowId,expectedRevision:view.revision,reportUrl:'https://synthetic.example/report',profile:{allowedOrigins:['https://synthetic.example'],maxBytes:100000,timeoutMs:10000,retries:0,browser:{channel:'msedge',profileDirectory:'private-profile-marker',headless:false}}}}});expect(configured.statusCode).toBe(200);
+  const before=originals(f.runtimeRoot),adopted=await adoptLegacyRuntimeLayout(f.options);expect(originals(f.runtimeRoot)).toEqual(before);const zip=await loadPortableZip(readFileSync(adopted.rescue.archivePath)),text=await zip.file('records.json')!.async('text');expect(text).toContain('Synthetic retained recipe');expect(text).not.toContain('private-profile-marker');expect(text).not.toContain('allowedOrigins');expect(text).not.toContain('wb_commands');
+ }finally{await app.close();}
+});
+it('rejects extra columns on known tables before writing workspace migration state',async()=>{
+ const f=fixture();writeFileSync(path.join(f.runtimeRoot,'installation.json'),JSON.stringify({installationId:f.installationId}));const repository=createWorkbenchRepository({filename:path.join(f.runtimeRoot,'workbench.sqlite'),artifactRoot:path.join(f.runtimeRoot,'artifacts')});createOkoWorkflowStore(repository);repository.close();const database=new DatabaseSync(path.join(f.runtimeRoot,'workbench.sqlite'));database.exec('ALTER TABLE wb_oko_workflow_results ADD COLUMN unknown_private_payload TEXT');database.close();const before=originals(f.runtimeRoot);
+ await expect(adoptLegacyRuntimeLayout(f.options)).rejects.toMatchObject({code:'WORKSPACE_LAYOUT_MIGRATION_REQUIRED'});expect(originals(f.runtimeRoot)).toEqual(before);for(const name of['identity.json','active.json','subject','maintenance'])expect(existsSync(path.join(f.runtimeRoot,name))).toBe(false);
+});
+it('preserves a newer original write when the source changes during independent rescue creation',async()=>{
+ const f=fixture();writeFileSync(path.join(f.runtimeRoot,'installation.json'),JSON.stringify({installationId:f.installationId}));const repository=createWorkbenchRepository({filename:path.join(f.runtimeRoot,'workbench.sqlite'),artifactRoot:path.join(f.runtimeRoot,'artifacts')});try{const store=createOkoWorkflowStore(repository),owner=`${f.installationId}/${f.installationId}`,id=randomUUID(),artifact=(text:string)=>({name:'synthetic.csv',mimeType:'text/csv',base64:Buffer.from(text).toString('base64'),hash:archiveHash(text)});store.putResult(owner,id,{original:artifact('old'),enriched:artifact('old')});let changed=false;const newerId=randomUUID(),newer={original:artifact('newer'),enriched:artifact('newer')};
+  await expect(adoptLegacyRuntimeLayout({...f.options,clock:{now:()=>{if(!changed){changed=true;store.putResult(owner,newerId,newer);}return f.options.clock.now();}}})).rejects.toMatchObject({code:'INTEGRITY_MISMATCH'});expect(store.getResult(owner,newerId)).toEqual(newer);expect(existsSync(path.join(f.runtimeRoot,'active.json'))).toBe(false);expect(existsSync(path.join(f.runtimeRoot,'identity.json'))).toBe(false);
+ }finally{repository.close();}
+});

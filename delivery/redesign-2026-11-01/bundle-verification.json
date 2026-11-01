@@ -1,0 +1,64 @@
+{
+  "status": "passed",
+  "verifiedAt": "2026-11-01T13:43:53.257671+00:00",
+  "sourceBase": "ac299a5508dba60df7d4f5b8152fb7aaf4655223",
+  "sourceHead": "7453624bb6b3b9e895664573756f527e484b52da",
+  "sourceTree": "6518e078cf4a898095b35ebffe1878a2bebe47b0",
+  "sourceCommitCount": 24,
+  "sourceCommits": [
+    "32106a9e05b98c8e71f5119153240bd33e2b4222",
+    "1d3bc1890d3e4f30ec5f5e415cb446cd56f89449",
+    "63978a895a1a0d06517fa59837d927127ac7622e",
+    "a59ece273ac127300505adc8b77433fb472d07ec",
+    "b5ea9868274d38fbe7b39a53c8bf8b21365610da",
+    "737cbc1e74e6929e7e50d222cbc6234d8dd7a082",
+    "a3030842e6b3f5f7113ef05dcffe2c5fe3a955a9",
+    "0be2969f8b90d40ea7d162e2f297e334d589ef5e",
+    "706b5a72b24b23bfe7abdfecff27c4fdfe9a986b",
+    "8a883c30eb236b8a4bde1e92a34a9c3a6e3a348a",
+    "ccb274505e6e196a064c68d0a17876edc3e92604",
+    "c22895512a89f090460a667ad7d8af10f1d71f84",
+    "5ccefb3cd177ebf948e2de893f277a83363d9a5d",
+    "9fcced461e0b41da181cb7104fe66fe294a96d4c",
+    "7ef5f9d06f1ed40a0ac3bd780743bf53d9cdbceb",
+    "e27de692f4ace62a874c30353c7ba8f8113ba8bd",
+    "41824e8337c0d7a24902c260da851b7b43c6d446",
+    "3a817619ee3c1bbcf0a44680b1a6ced16ed12849",
+    "dda5f21ff5b890872ea48fb7909fbea980383be2",
+    "79679318f7b50b225df9b330f033a1397fa602dd",
+    "88349fbb823597d818c4792c052b13a46011c54d",
+    "93b15e8266a0119d89c36e7c2afad0a3a623d053",
+    "398b09c3e8aa07b36b0f8433189bafd76965d4b0",
+    "7453624bb6b3b9e895664573756f527e484b52da"
+  ],
+  "bundle": {
+    "file": "RM_UOR_SourceHistory.bundle",
+    "bytes": 380404,
+    "sha256": "1d6a5fa414341d0e45cab6b185bb6173fff89f29efbbbbaf63b3e50df6467797",
+    "prerequisites": [
+      "ac299a5508dba60df7d4f5b8152fb7aaf4655223"
+    ],
+    "ref": "refs/heads/source-history-7453624"
+  },
+  "verification": {
+    "baseOnlyRefsBeforeFetch": [
+      "ac299a5508dba60df7d4f5b8152fb7aaf4655223 refs/heads/base-only"
+    ],
+    "candidateAbsentBeforeFetch": true,
+    "noObjectAlternates": true,
+    "bundleVerifyExitCode": 0,
+    "bundleVerifyOutput": "The bundle contains this ref:\n7453624bb6b3b9e895664573756f527e484b52da refs/heads/source-history-7453624\nThe bundle requires this ref:\nac299a5508dba60df7d4f5b8152fb7aaf4655223 \nThe bundle uses this hash algorithm: sha1\n/workspace/scratch/ab925b2abe56/completion/github-publication/source-history-verification-hkjgm67i/RM_UOR_SourceHistory.bundle is okay",
+    "restoredHead": "7453624bb6b3b9e895664573756f527e484b52da",
+    "restoredTree": "6518e078cf4a898095b35ebffe1878a2bebe47b0",
+    "allOriginalCommitObjectsByteIdentical": true,
+    "detachedCheckoutClean": true,
+    "checkoutIndexTreeMatches": true
+  },
+  "verificationDirectory": "source-history-verification-hkjgm67i",
+  "remoteWritesPerformed": false,
+  "apiPublication": {
+    "status": "not_asserted",
+    "mapping": "To be supplied separately by the publication coordinator"
+  },
+  "applicationTestsBuildOrInstall": "not_run"
+}

@@ -1,8 +1,5 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import { App } from './App';
-import '@salutejs/sdds-themes/css/sdds_serv_malachite__light.css';
-import './styles.css';
-import './workspace-shell.css';
+import { WorkbenchApp } from './workbench/WorkbenchApp';
 
-createRoot(document.getElementById('root')!).render(<React.StrictMode><App/></React.StrictMode>);
+createRoot(document.getElementById('root')!).render(<React.StrictMode><WorkbenchApp/></React.StrictMode>);

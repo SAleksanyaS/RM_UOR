@@ -1,0 +1,100 @@
+ЛИЧНЫЙ ОКО: ПЕРЕИСПОЛЬЗОВАНИЕ ДЛЯ ВИЗУАЛЬНОГО ЭТАЛОНА
+Снимок: ac299a5508dba60df7d4f5b8152fb7aaf4655223, 2026-11-01.
+Корень: /workspace/scratch/ab925b2abe56/work/RM_UOR-redesign.
+Прочитаны приложенная новая спецификация, AGENTS, действующие MASTER_SPEC/module-map/release candidate и назначенные модули. Это read-only разбор; код, зависимости, пользовательские данные не менялись, проверки не запускались. Старый аудит 3490 здесь не используется как основание состояния.
+
+1. ЧТО СОХРАНИТЬ
+
+Действующая композиция — WorkbenchApp, не отдельный Oko runtime. src/app/workbench/WorkbenchApp.tsx:22,38–45 создаёт стабильный OkoClient с prefix:'oko.workflow', но в Data пока вставляет весь OkoApp embedded. Заменять надо именно эту композицию, а не backend.
+
+• src/features/connectors/workbench/client.ts: OkoClient, OkoClientError; session, workspace, command, job, reconcileCommand, upload. Команды идут в /api/v1/commands с commandId и CSRF. Client с prefix:'oko.workflow' переводит привычные UI-имена source.browser.* в приватный namespace; source.browser.workflow.open → oko.workflow.open, source.browser.workspace → oko.workflow.workspace. source.browser.role.set → workbench.role.set. Не использовать в интегрированном Data клиент с default prefix: он относится к другому маршруту.
+• workbench/WorkbenchProvider.tsx:23–129: сохранить Provider/useWorkbench и recovered command/job semantics. Контекст уже даёт client/session/workspace/current/loading/busy/error/job/refresh/open/run/select/clearError. Command ID, отдельная cancellation lane, неизвестный ответ и poll не должны заново реализовываться в карточке. Recovery keys имеют suffix :oko.workflow; общие source.browser.* и личные задания не смешиваются.
+• workbench-workflow-service.ts + module.ts: реальные ownership/CAS/roles, recording, replay, parser, enrichment, сохранение файлов и результатов. bootstrap.ts:200 регистрирует модуль с prefix:'oko.workflow'.
+• workbench-workflow-store.ts: приватные таблицы wb_oko_workflow_drafts и wb_oko_workflow_results; owner = installationId/personId. Сохранение draft проверяет expected revision; result insert создаёт новый ID, не перезаписывает старый результат.
+• workbench-workflow-persistence.ts: persistedOkoWorkflowSchema, portableOkoWorkflowSchema (без профиля), okoStoredResultSchema. Не seed SQL/JSON вручную в обход этих владельцев.
+• workbench-browser-runtime.ts, workbench-browser-recorder.ts, browser.ts: личный persistent context, marker, запись, завершённое скачивание, replay. workbench-browser-profile.ts и private-profile-schema.ts — личные настройки и безопасные разрешённые origins.
+• workbench-parser.ts → workbench-source-normalizer.ts → workbench-workflow-enrichment.ts: уже единый конвейер, второй CSV parser для нового экрана не нужен.
+
+2. ЧТО ИМЕННО ИЗВЛЕЧЬ ИЗ UI
+
+OkoApp.tsx содержит второй header/sidebar/branding/footer — их не переносить. Полезная логика OkoWorkspace: список workspace.workflows, выбор select(workflowId), создание open(undefined,title), загрузка/ошибка/пустой список. Из неё сделать вложенный список «Личные выгрузки» общего Data, без второго глобального sidebar.
+
+BrowserScenarioWizard.tsx уже экспортирует чистые ColumnSelect (:13–15) и PreviewTable (:16–20). Их можно переоформить общими controls/table tokens. PairEditor (:21–23) приватный, но легко извлекается для числовых/дополнительных колонок. Default dispatcher (:100) различает shared sourceRef и personal; редизайн не должен случайно переключить личный workflow на SharedBrowserScenarioWizard.
+
+Предлагаемые границы извлечения (новые названия — рекомендации, не существующие экспорты):
+• PersonalWorkflowRunPanel: название, готовность, главная «Получить данные», «Настроить», last result; command record.test из :93.
+• PersonalWorkflowResult: :96; фактические счётчики, даты, две ссылки, замечания, PreviewTable. Это личный результат, не официальный ResultSummary цели.
+• PersonalWorkflowSetup: блоки :63–92, открываемые отдельно. Внутри BrowserProfileForm (имеет PersonalBrowserProfileForm export), ParsingProfileForm, marker/record controls, mapping и dictionary mapping. Настройки после успешной подготовки не занимают основную область.
+• PersonalWorkflowOperationNotice: job controls из :94, устойчивые error/warnings и nextAction. Сохранить серверные cancel/retry/openAuth, не рисовать фиктивный успех после закрытия окна.
+• Recorder controller: auto-finish из :40 необходимо сохранить вне условно размонтируемого setup. Runtime сам завершает запись после полного download, но получение columns/sample и сохранение completed recipe выполняет record.finish. Если effect останется только в закрытом setup, пользователь не получит сохранённый результат записи автоматически.
+
+Формы должны сохранять введённое при background refresh. Current expectedRevision для изменённой формы нельзя незаметно заменять новой серверной revision. В эталоне достаточно честно показать сценарий; закрепление формы/CAS остаётся отдельной реализацией после утверждения.
+
+3. ЕЖЕДНЕВНЫЙ И ПЕРВОНАЧАЛЬНЫЙ ПУТИ
+
+Ежедневно: выбрать сохранённый workflow → «Получить данные» → при истёкшем входе job.nextAction «Войти в ОКО» → после ручного входа «Вход выполнен — продолжить»/job.retry → результат, замечания, исходный/обогащённый файл. «Настроить» — второстепенное действие. Старый успешный результат остаётся доступным во время нового запуска и при отказе; обозначить его временем последнего получения.
+
+Настройка: адрес/свой browser profile → ручной вход без записи секретов → выбрать однозначный marker → записать действия до полного скачивания → автоматически получить steps и sample → явно подтвердить значения фильтров → сопоставить ключ/числа/дату/единицу → загрузить и сопоставить справочник → сохранить → пробный настоящий replay. Само создание workflow не означает получение файла.
+
+Ограничение действующего сервиса: личный record.test требует uor.prepare, то есть curator/chief; viewer может читать свой результат, работать с личным профилем/входом, но не создавать/перезаписывать личный recipe и не выполнять этот replay. Общий source.capture — другой контракт. Не расширять права ради кнопки в эталоне.
+
+4. ЧЕСТНЫЕ ДАННЫЕ И СОСТОЯНИЯ
+
+workbench-workflow-contracts.ts задаёт OkoWorkflowView:
+• workflowId/sourceId/revision/title/reportUrl; marker; parsingProfile;
+• profile.configured и sessionState closed/open/authentication_required/authenticated;
+• recording.state idle/recording/completed/failed/interrupted, recordingId, steps, parameterNames, problem;
+• columns/sampleRows, parameters, mapping;
+• dictionary.columns/sampleRows/mapping/origin none|local-preview|published/issues;
+• result|null: resultId, rowCount, unresolvedRows, issues, previewRows, originalDownload, enrichedDownload, capturedAt, sourceDate;
+• warnings. SampleRows и previewRows ограничены 50 строками; rowCount относится ко всему обработанному файлу, не только видимому preview.
+
+ВАЖНО: unresolvedRows — не только отсутствие продукта в справочнике. enrichment.ts:49–79 включает ошибки нормализации/чисел/дат, проблемный directory graph и null scope. Надпись «Строк требуют проверки» точнее текущего «требуют сопоставления». rowCount−unresolvedRows можно назвать «Строк без выявленных замечаний», но нельзя «Принято»: официальный fact acceptance в личном пути не выполняется. Отдельных accepted/rejected counters нет. Число issues — число диагностик, не количество строк. Нельзя выводить принятые/отклонённые из длины issues.
+
+Источник даты: sourceDate становится датой только если строки имеют одну известную дату; иначе null. capturedAt — момент получения, не дата источника. Derived поля включают product/cluster/dit/leader/team names/IDs, number.*, unitCode/sourceDate; исходные колонки сохранены. При совпадении имён используется derived. Превью нужно делить на «Обогащённые», «Исходные», «Замечания», не переименовывать оригиналы.
+
+JobSnapshot даёт status, stage, progress, warnings/error, cancelAvailable, retryAvailable, nextAction. Для текущего personal service отдельные гарантированные стадии parse/enrich не публикуются: service.test выполняет replay → parse → normalize/enrich → serialize → atomic save последовательно (:249–280), но jobs явно выставляются лишь для auth/recovery. Для эталона честное running «Получаем и проверяем файл»; «разбор/обогащение» как отдельный progress потребуют будущего backend instrumentation. Не придумывать проценты и не показывать raw completed/steps на основном экране.
+
+Неизвестный исход — OkoClientError.uncertain и сохранённый commandId/reconciliation, не просто красный toast. completed recording ≠ успешный result. Готовый результат с issues — показывать как «Получено, есть замечания», даже если job.status=succeeded. Смена mapping/dictionary не перерабатывает старые bytes автоматически: новый result появляется только после replay. Для постоянного «результат устарел относительно рецепта» сейчас нет отдельного result.recipeRevision, поэтому не выдумывать устойчивый серверный флаг.
+
+5. НАСТОЯЩЕЕ ЗАПОЛНЕНИЕ СИНТЕТИЧЕСКОГО РЕЗУЛЬТАТА
+
+Предпочтительно использовать действующую production composition в отдельном собственном runtimeRoot, локальный loopback report и реальный Chromium. Ни endpoint success, ни SQL result не подменять. Уже есть подходящие helpers:
+• tests/workbench/helpers/runtime.ts: createLocalRuntime(providers), createHttpDriver(origin), session/query/command/settle; cookie jar, Origin и CSRF настоящие. createWorkbenchRuntime + createWorkbenchApp + runtime.activate. Никакой подмены HTTP ответа.
+• tests/workbench/helpers/browser.ts: createLocalBrowserRun, chromeExecutable, downloadedBytes. Browser executable берётся из UOR_TEST_BROWSER_EXECUTABLE; default Windows path не подходит автоматически Linux. Helper пишет screenshot evidence в codeRoot/.runtime; для изолированного эталона перенаправить артефакты в redesign, не использовать пользовательский runtime.
+• WorkbenchRuntimeProviders (server/workbench/runtime-contracts.ts) позволяет browserLauncher, НЕ полный fake workflow runtime. Для production composition нужен настоящий BrowserContext. Допустима fixture-настройка headless Chromium в launcher; корпоративные credentials/SSO здесь не нужны.
+• tests/fixtures/workbench/oko-ui-harness.ts и tests/oko-ui-end-to-end.test.ts показывают настоящий loopback CSV download, marker picker, recording, mapping, dictionary и проверки обоих файлов. Старый harness поднимает standalone OkoApplication и делает build, поэтому не запускать его целиком ради seed; переиспользовать последовательность и локальный report вместе с новым runtime.
+
+Минимальная последовательность HTTP и реального браузера:
+1) GET /api/v1/session; при local_preview POST workbench.role.set {role:'curator'}. Не менять реестр/внешние права. Все POST через существующий driver с Origin/cookie/CSRF.
+2) command oko.workflow.open {title:'… · синтетический пример'}; сохранить workflowId и revision из действительного result.
+3) oko.workflow.profile.set {workflowId,expectedRevision,reportUrl,profile:{allowedOrigins:[reportOrigin],maxBytes,timeoutMs,retries,browser:{executablePath:actualInstalledBrowser,profileDirectory:'redesign-demo',headless:false}}}. Test launcher может делать реальный context headless. Только loopback synthetic origin.
+4) oko.workflow.marker.select {workflowId,reportUrl}; дождаться реального управляемого окна и кликнуть уникальный заголовок report. Команда async: получить jobId и дождаться outcome, не считать accepted успехом.
+5) oko.workflow.record.start {workflowId,expectedRevision,reportUrl,parsingProfile}; в настоящем report нажать download (фильтры при необходимости). Сервер отдаёт конкретные безопасные CSV bytes с attachment headers. Poll workspace до recording.completed; затем oko.workflow.record.finish {workflowId,recordingId}. Это реальные recorder, parser и durable recipe.
+6) oko.workflow.mapping.save {workflowId,expectedRevision,parsingProfile,parameters:{},mapping:{rowKeyColumns:['Key'],productKeyColumn:'Key',dimensionColumns:{},numberColumns:{value:'Amount'},dateColumn:'Date',unitColumn:null,fixedUnitCode:'units'}} — фактические названия должны соответствовать скачанному файлу. Если записаны fill/select, parameters содержит ровно все recording.parameterNames с явно выбранными безопасными значениями.
+7) multipart POST /api/v1/files с purpose='goal-import' и синтетическим dictionary.csv; взять fileHandle. oko.workflow.directory.preview {workflowId,fileHandle,parsingProfile}; затем directory.apply с fresh expectedRevision и OkoDictionaryMapping. Обязательные поля: key, productId, productName, clusterId, clusterName, ditId, ditName, clusterLeaderId, clusterLeaderName, productLeaderId, productLeaderName; teamId/teamName могут быть null. IDs — настоящие синтетические UUID, а не имена вместо ID.
+8) oko.workflow.record.test {workflowId,expectedRevision}; настоящий replay скачает новый файл, service.test построит и сохранит result. Await terminal job; читать командный result или JobSnapshot.result корректно, а не jobId как готовый workflow. Следующий запрос oko.workflow.workspace {filter:{workflowId},context:null,sort:[],page:{limit:50,cursor:null}} вернёт фактическое состояние.
+9) Скачать URLs из result.originalDownload/enrichedDownload. Проверить original равен отданным CSV bytes, enriched содержит ожидаемые имена и точные значения; результат приходит из readResult с hash verification (:283–286), route routes.ts:162–171 выставляет attachment MIME/имя. Потом UI читает тот же workspace и показывает реальные вычисленные счётчики.
+10) Повторить record.test с новой revision только при необходимости демонстрации daily flow. Старые resultId/downloads остаются; новый успешный результат имеет новый ID. Не удалять прошлый результат для чистоты картинки.
+
+Есть более лёгкий service-level образец в workbench-workflow-service.test.ts:24–58: реальная Fastify/registry/SQLite/parser/enrichment + synthetic BrowserWorkflowRuntimePort, отдающий известные bytes. Это честная проверка сервисов, если обозначить внешний recorder/replay синтетическим, но НЕ доказательство работы настоящего браузера. Fixture локальная, не экспортируется и не подключается в production providers. Для заявленного визуального эталона на действующем runtime предпочтительна последовательность выше; не внедрять mock API или новый production bypass.
+
+6. ТОЧЕЧНЫЕ СУЩЕСТВУЮЩИЕ ПРИМЕРЫ ДЛЯ ПОСЛЕДУЮЩЕЙ РЕАЛИЗАЦИИ
+
+workbench-workflow-service.test.ts — результат, bytes/hash, restart, failed replay сохраняет прежний, auth retry, CAS/ownership/cancel.
+workbench-workflow-enrichment.test.ts — источник даты, явные UUID/связи, точные числа, конфликты и CSV.
+workbench/WorkbenchProvider.recovery-ui.test.tsx — восстановление job/command и освобождение профиля.
+src/app/workbench/personal-recovery.test.tsx — раздельные namespace keys и integrated oko.workflow recovery.
+workbench/BrowserScenarioWizard.test.tsx — auto-finish/формы/результат.
+tests/oko-ui-end-to-end.test.ts — полный UI с настоящими downloads, но standalone fixture.
+tests/workbench/helpers/goal-browser.ts — действующая production composition с управляемым реальным Chromium и loopback export; полезен способ наблюдать открытые native pages, не общий сценарий целей для личного seed.
+
+Не запускать полный suite/build/установку зависимостей ради этой записки. Root на текущем этапе готовит визуальный эталон; широкая функциональная декомпозиция и instrumentation следуют после требуемого утверждения.
+
+7. ПОСЛЕДУЮЩЕЕ УЗКОЕ РАЗРЕШЕНИЕ: ВОСПРОИЗВОДИМЫЙ ЛИЧНЫЙ РЕЗУЛЬТАТ
+
+После завершения read-only разбора root отдельно разрешил ровно один test utility: scripts/design-reference/personal-fixture.ts. App/provider/core и зависимости этим агентом не менялись. Экспорт createPersonalReferenceEnvironment(executablePath) возвращает {providers, prepare({runtime,request}), close}; providers заменяет только внешний launcher настоящим headless Chromium с сохранением production launch/network/download options. prepare допускает только отдельный local-preview runtime, устанавливает curator через разрешённую команду, делает настоящие marker click → recording download → mapping/dictionary upload → replay → persistent result и проверяет оба HTTP download. Показателем успеха служит сохранённое состояние и bytes/hash, не 202 Accepted.
+
+Проверено 2026-11-01 одним узким запуском createLocalRuntime + fixture.prepare на Node 22.16.0 и Chrome 156.0.8078.79; exit 0. Первый обычный sandbox отказал listen(127.0.0.1) с EPERM до выполнения сценария; тот же локальный запуск с разрешённой escalation прошёл. Фактические доказательства: 3 native browser launches, 2 HTTP скачивания отчёта (record/replay), rowCount=8, unresolvedRows=1, sourceDate=2026-10-30. Original oko-operations-2026-10-30.csv: 565 bytes, SHA256 9cb5a16423c80914a039d30b1f487d6ec370251a9c744abb38303fe0fd41aea2. Enriched oko-enriched.csv: 4538 bytes, SHA256 860a864d1fae1e081df8ae802838b95f82063982c7d4d2d6f78e31ead7a7a908 (derived IDs нового запуска могут менять hash). Исходные bytes совпали побайтно; enriched содержит вычисленные имена/точное число, одна строка относится к продукту без записи в личном справочнике. Временный runtime закрыт и очищен штатным helper. Отдельный focused tsc --noEmit с entrypoint personal-fixture.ts также exit 0, без диагностики; suite/build не запускались.
+
+Viewer/capability boundary сохранена: initial personal recipe и record.test требуют фактической uor.prepare; fixture не разрешает эти команды читателю, а использует штатный local-preview переключатель curator. Читатель может увидеть готовый собственный result и получить сохранённые файлы. Это не утверждение о банковском допуске, SSO/ГОСТ/сертификатах или F11 security.

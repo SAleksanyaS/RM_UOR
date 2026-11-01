@@ -1,6 +1,7 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { importGoalMap } from '../src/features/catalog/import-map';
+import { assertLegacyCliAllowed } from './local-history';
 
 const input = process.argv[2];
 if (!input) {
@@ -8,6 +9,7 @@ if (!input) {
   process.exitCode = 1;
 } else {
   try {
+    await assertLegacyCliAllowed(process.cwd());
     const catalog = importGoalMap(await readFile(resolve(input), 'utf8'));
     const directory = resolve('.runtime/imports');
     await mkdir(directory, { recursive: true });
