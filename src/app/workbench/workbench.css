@@ -56,7 +56,7 @@
 .wb-skip { position:fixed; left:16px; top:-80px; color:#163f33; background:#fff; padding:12px; z-index:100; }
 .wb-skip:focus { top:12px; }
 .wb-welcome { position:fixed; right:24px; bottom:20px; z-index:40; display:flex; align-items:center; gap:16px; padding:12px 16px; max-width:calc(100vw - 32px); border:1px solid var(--wb-border); border-radius:8px; background:var(--wb-surface); box-shadow:0 6px 28px #163b2617; font-size:13px; }
-.wb-shell .wb-welcome button { min-height:30px; font-size:12px; }
+.wb-shell .wb-welcome button { min-height:30px; font-size:12px; flex-shrink:0; white-space:nowrap; }
 .wb-dialog-backdrop { position:fixed; inset:0; z-index:80; background:#102c2780; display:flex; justify-content:flex-end; padding:16px; }
 .wb-notifications { background:var(--wb-surface); border-radius:10px; padding:24px; width:min(100%,42rem); max-height:100%; overflow-y:auto; min-width:0; }
 .wb-notifications header { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; margin-bottom:16px; }

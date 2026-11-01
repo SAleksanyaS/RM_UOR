@@ -366,6 +366,8 @@
 .wb-goals-table td:first-child { min-width:190px; width:22%; }
 .wb-goals-table td:nth-child(2) { min-width:180px; }
 .wb-goals-table td:nth-child(3) { min-width:210px; }
+.wb-goals-table td:last-child { min-width:112px; }
+.wb-goals-table td:last-child button { white-space:nowrap; }
 .wb-goals-table .wb-result-summary { margin-top:10px; }
 .wb-inline-details { margin-top:10px; }
 .wb-inline-details > summary { color:var(--wb-accent); font-size:14px; }
@@ -409,6 +411,8 @@
 @media(max-width:767px) {
   .wb-page-toolbar { align-items:stretch; gap:12px; }
   .wb-page-toolbar > .wb-field,.wb-page-toolbar > .wb-search-field { flex-basis:100%; }
+  .wb-goals-list > .wb-page-toolbar { display:grid; grid-template-columns:minmax(0,1.7fr) minmax(0,1fr); align-items:end; }
+  .wb-goals-list > .wb-page-toolbar > :nth-child(-n+2) { grid-column:1 / -1; }
   .wb-toolbar-actions { margin-left:0; width:100%; }
   .wb-toolbar-actions > button { flex:1 1 140px; }
   .wb-form-grid,.wb-definition-grid { grid-template-columns:1fr; gap:14px; }

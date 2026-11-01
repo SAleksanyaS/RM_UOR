@@ -1,10 +1,14 @@
 .wb-data { min-width:0; }
 .wb-data .wb-panel { margin-block:20px; padding:22px; border:1px solid var(--wb-border); border-radius:8px; background:var(--wb-surface); }
 .wb-data .wb-panel > h2 { margin-bottom:14px; }
+.wb-data .wb-panel > .wb-section-header { padding:0 0 16px; flex-wrap:wrap; align-items:flex-start; }
+.wb-data .wb-panel > .wb-section-header > div { flex:1 1 240px; min-width:0; }
+.wb-data .wb-panel > .wb-section-header > button { flex-shrink:0; }
 .wb-data [aria-pressed=true] { background:var(--wb-accent-soft); border-color:var(--wb-accent); color:var(--wb-accent); }
 .wb-data table { border-collapse:collapse; width:100%; min-width:42rem; font-size:14px; }
 .wb-data th,.wb-data td { min-width:6rem; padding:12px 14px; border-bottom:1px solid var(--wb-border); vertical-align:top; text-align:left; }
 .wb-data th { color:var(--wb-muted); background:var(--wb-surface-subtle); font-size:13px; }
+.wb-data .wb-data-table button { white-space:nowrap; }
 .wb-data [role=region] { max-width:100%; overflow-x:auto; }
 .wb-data-dialog { width:min(100%,880px); max-height:100%; overflow-y:auto; border-radius:10px; padding:24px; background:var(--wb-surface); color:var(--wb-text); border:1px solid var(--wb-border); overscroll-behavior:contain; }
 .wb-data-dialog > header { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; padding-bottom:18px; margin-bottom:18px; border-bottom:1px solid var(--wb-border); }
