@@ -24,7 +24,7 @@
 .wb-layout { display:grid; grid-template-columns:248px minmax(0,1fr); min-height:100vh; }
 .wb-workspace { min-width:0; }
 .wb-sidebar { position:sticky; top:0; align-self:start; display:flex; flex-direction:column; height:100dvh; background:#172f2f; color:#b5c8c5; min-width:0; overflow-y:auto; z-index:20; }
-.wb-brand { min-height:138px; padding:14px 19px 18px; display:flex; gap:10px; align-items:center; border-bottom:1px solid #ffffff0d; }
+.wb-brand { flex:none; min-height:138px; padding:14px 19px 18px; display:flex; gap:10px; align-items:center; border-bottom:1px solid #ffffff0d; }
 .wb-brand img { width:104px; height:104px; object-fit:contain; flex:none; }
 .wb-brand-description { font-size:12px; line-height:1.7; color:#c2d2ce; }
 .wb-navigation { display:flex; flex-direction:column; gap:5px; padding:20px 12px; }
