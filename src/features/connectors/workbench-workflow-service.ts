@@ -51,6 +51,8 @@ export type OkoWorkflowDependencies = {
     jobs: JobStore;
     clock: Clock;
     setup?: () => OkoWorkspaceView['setup'];
+    /** Explicit composition boundary: shared source preparation keeps its curator gate. */
+    preparationCapability?: 'uor.prepare' | 'personal.write';
     recheckGuard?: (context: CommandContext) => Promise<void>;
     getDirectory?: (context: QueryContext, sourceId: string) => Promise<Row[]>;
 };
@@ -81,8 +83,9 @@ export function createOkoWorkflowService(deps: OkoWorkflowDependencies) {
         return value;
     };
     const load = (context: QueryContext, id: string): Draft => store.get<Draft>(owner(context), id) ?? fail('WORKFLOW_NOT_FOUND', 'Own workflow not found', 404);
-    const requirePrepare = (context: CommandContext) => { if (!canUseCapability(context.ownAccess, 'uor.prepare'))
-        fail('COMMAND_FORBIDDEN', 'Preparation requires an active curator profile', 403); };
+    const preparationCapability = deps.preparationCapability ?? 'uor.prepare';
+    const requirePrepare = (context: CommandContext) => { if (!canUseCapability(context.ownAccess, preparationCapability) || preparationCapability === 'personal.write' && context.ownAccess.personId === null)
+        fail('COMMAND_FORBIDDEN', preparationCapability === 'personal.write' ? 'Personal workflow requires an identified local owner' : 'Preparation requires an active curator profile', 403); };
     const freshPrepare = async (context: CommandContext) => { assertMutationActive(context); requirePrepare(context); await deps.recheckGuard?.(context); assertMutationActive(context); };
     const mutationQueues = new Map<string, Promise<void>>();
     const serializeMutation = async <T>(context: CommandContext, input: { workflowId?: string }, action: () => Promise<T>): Promise<T> => {

@@ -17,11 +17,12 @@ import { createBrowserProfileService } from './workbench-browser-profile';
 import type { BrowserWorkflowRuntimePort } from './workbench-browser-runtime';
 import { createOkoWorkflowService } from './workbench-workflow-service';
 import { createOkoWorkflowModule } from './workbench-workflow-module';
+import { personalWorkflowName, type PersonalWorkflowPrefix } from './workbench-workflow-names';
 import type { OkoWorkflowView, OkoDictionaryMapping } from './workbench-workflow-contracts';
 import { createSourceArchiveOwners } from '../workspace-maintenance/workbench/source-archive-owners';
 const closes:Array<()=>Promise<void>>=[];
 afterEach(async()=>{for(const close of closes.splice(0).reverse())await close();});
-async function fixture(){
+async function fixture(prefix: PersonalWorkflowPrefix = 'source.browser'){
  const root=mkdtempSync(path.join(tmpdir(),'uor-oko-workflow-')),installationId=randomUUID(),personId=randomUUID(),clock={now:()=> '2026-10-28T10:00:00Z'};
  const repository=createWorkbenchRepository({filename:path.join(root,'own.sqlite'),artifactRoot:root}),jobs=createJobStore({repository,clock});
  let own:OwnAccessProfile={role:'curator',personId,displayName:'Synthetic',policyState:'verified',checkedAt:clock.now()};
@@ -30,18 +31,39 @@ async function fixture(){
  const closedOwners:string[]=[];
  const handle=randomUUID(),steps=[{action:'download' as const,locator:{kind:'css' as const,selector:'#export'}}];
  const runtime:BrowserWorkflowRuntimePort={openLogin:async()=>({handleId:randomUUID(),state:'open',mode:'login'}),startRecording:async()=>({handleId:handle,state:'open',mode:'record'}),finish:async()=>({recordingId:handle,startUrl:'https://report.example/report',authenticatedSelector:'#report',steps,parameterNames:[],screenshotHandles:[],hasDownload:true}),readRecordingStatus:async()=>({state:'completed',problem:null}),readRecordingDownload:async()=>({bytes:replayBytes,name:'report.csv',contentType:'text/csv'}),selectMarker:async()=>({selector:'#report',label:'Synthetic report'}),replay:async()=>{await duringReplay();if(failReplay)throw Error('Replay failed');return{bytes:replayBytes,name:'report.csv',contentType:'text/csv'};},screenshot:async()=>{throw Error('Unused');},waitForCompletion:async()=>{throw Error('Unused');},closeOwned:async(owner)=>{closedOwners.push(owner.installationId+'/'+owner.profilePersonId);}};
- const files=createFileStore({directory:path.join(root,'files'),limits:defaultFileLimits}),profiles=createBrowserProfileService({runtimeRoot:root,repository,clock}),service=createOkoWorkflowService({repository,runtime,profiles,files,jobs,clock,recheckGuard:async(context)=>{await duringGuard();if(own.role==='viewer'||own.personId!==context.ownAccess.personId)throw Error('Access revoked');}}),commands=createCommandRegistry({repository,jobs,accessPolicy});
- const module=createOkoWorkflowModule({service});
+ const files=createFileStore({directory:path.join(root,'files'),limits:defaultFileLimits}),profiles=createBrowserProfileService({runtimeRoot:root,repository,clock}),service=createOkoWorkflowService({repository,runtime,profiles,files,jobs,clock,preparationCapability:prefix==='oko.workflow'?'personal.write':'uor.prepare',recheckGuard:async(context)=>{await duringGuard();if(prefix==='source.browser'&&own.role==='viewer'||own.personId!==context.ownAccess.personId)throw Error('Access revoked');}}),commands=createCommandRegistry({repository,jobs,accessPolicy});
+ const module=createOkoWorkflowModule({service,prefix});
  const app=await createWorkbenchApp({hostname:()=> 'SYNTHETIC-HOST',repository,clock,accessPolicy,commands,queries:new QueryRegistry(),jobs,modules:[module],sessions:createLocalSessionStore({clock}),allowedOrigins:['http://localhost:5173'],installationId,files,browserResults:{read:service.readResult}});
  closes.push(async()=>{await app.close();repository.close();if(!path.basename(root).startsWith('uor-oko-workflow-'))throw Error('Unsafe cleanup');rmSync(root,{recursive:true,force:true});});
 
  const session=await app.inject({method:'GET',url:'/api/v1/session',headers:{host:'localhost'}}),headers={host:'localhost',origin:'http://localhost:5173',cookie:String(session.headers['set-cookie']).split(';')[0],'x-csrf-token':session.json().data.csrfToken};
- const command=async(name:string,payload:unknown)=>{const response=await app.inject({method:'POST',url:'/api/v1/commands',headers,payload:{commandId:randomUUID(),name,baseRevision:null,payload}});if(![200,202].includes(response.statusCode))throw Error(name+JSON.stringify(response.json()));const data=response.json().data;if(data.jobId){await commands.idle();return jobs.get(data.jobId,installationId)!;}return data;};
+ const command=async(name:string,payload:unknown)=>{const response=await app.inject({method:'POST',url:'/api/v1/commands',headers,payload:{commandId:randomUUID(),name:personalWorkflowName(prefix,name),baseRevision:null,payload}});if(![200,202].includes(response.statusCode))throw Error(name+JSON.stringify(response.json()));const data=response.json().data;if(data.jobId){await commands.idle();return jobs.get(data.jobId,installationId)!;}return data;};
  const result=async(name:string,payload:unknown):Promise<OkoWorkflowView>=>{const response=await command(name,payload);if('status'in response){expect(response.status,JSON.stringify(response)).toBe('succeeded');return response.result as OkoWorkflowView;}return response.result;};
  const prepare=async()=>{let v=await result('source.browser.workflow.open',{});v=await result('source.browser.profile.set',{workflowId:v.workflowId,expectedRevision:v.revision,reportUrl:'https://report.example/report',profile:{allowedOrigins:['https://report.example'],maxBytes:100000,timeoutMs:10000,retries:0,browser:{channel:'msedge',profileDirectory:'synthetic',headless:false}}});v=await result('source.browser.marker.select',{workflowId:v.workflowId,reportUrl:v.reportUrl});v=await result('source.browser.record.start',{workflowId:v.workflowId,expectedRevision:v.revision,reportUrl:v.reportUrl,parsingProfile:{...v.parsingProfile,decimalSeparator:',',csvDelimiter:';',dateFormat:'dd.mm.yyyy'}});v=await result('source.browser.record.finish',{workflowId:v.workflowId,recordingId:handle});v=await result('source.browser.mapping.save',{workflowId:v.workflowId,expectedRevision:v.revision,parsingProfile:v.parsingProfile,parameters:{},mapping:{rowKeyColumns:['Key'],productKeyColumn:'Key',dimensionColumns:{},numberColumns:{value:'Amount'},dateColumn:'Date',unitColumn:null,fixedUnitCode:'units'}});return v;};
  const context=()=>({requestId:randomUUID(),installationId,repository,clock,ownAccess:own});
  return{app,headers,service,profiles,runtime,closedOwners,command,result,prepare,files,installationId,context,repository,root,commands,jobs,restart:()=>createOkoWorkflowService({repository,runtime,profiles,files,jobs,clock}),setReplayFailure:(v:boolean)=>{failReplay=v;},setDuringReplay:(v:()=>Promise<void>)=>{duringReplay=v;},setDuringGuard:(v:()=>Promise<void>)=>{duringGuard=v;},setOwn:(v:Partial<OwnAccessProfile>)=>{own={...own,...v};}};
 }
+it('reader configures, records and replays only an own personal workflow; foreign recipe, profile and result remain inaccessible',async()=>{
+ const f=await fixture('oko.workflow');f.setOwn({role:'viewer'});
+ let view=await f.prepare();view=await f.result('source.browser.record.test',{workflowId:view.workflowId,expectedRevision:view.revision});
+ expect(view.result).toMatchObject({rowCount:2,unresolvedRows:2});
+ const download=await f.app.inject({method:'GET',url:view.result!.originalDownload,headers:f.headers});expect(download.statusCode).toBe(200);expect(download.body).toContain('12,5');
+ expect(f.repository.exportWorkspaceCore()).toEqual([]);
+ const malformedNamespace=await f.app.inject({method:'POST',url:'/api/v1/commands',headers:f.headers,payload:{commandId:randomUUID(),name:'source.browser.workflow.open',baseRevision:null,payload:{}}});expect(malformedNamespace.statusCode).toBe(404);
+ const previousOwner=f.context().ownAccess.personId;f.setOwn({personId:randomUUID()});
+ expect((await f.service.workspace(f.context())).workflows).toEqual([]);
+ expect((await f.profiles.getOwn(f.context(),view.sourceId)).configured).toBe(false);
+ await expect(f.command('source.browser.profile.set',{workflowId:view.workflowId,expectedRevision:view.revision,reportUrl:view.reportUrl,profile:view.profile.profile})).rejects.toThrow(/WORKFLOW_NOT_FOUND/);
+ const foreignReplay=await f.command('source.browser.record.test',{workflowId:view.workflowId,expectedRevision:view.revision});expect(foreignReplay.status).toBe('failed');
+ expect((await f.app.inject({method:'GET',url:view.result!.originalDownload,headers:f.headers})).statusCode).toBe(404);
+ f.setOwn({personId:previousOwner});expect((await f.service.workspace(f.context(),view.workflowId)).current!.result!.resultId).toBe(view.result!.resultId);
+});
+it('personal replay cannot retain a result after its owner changes during browser work',async()=>{
+ const f=await fixture('oko.workflow');f.setOwn({role:'viewer'});const view=await f.prepare(),personId=f.context().ownAccess.personId;
+ f.setDuringReplay(async()=>{f.setOwn({personId:randomUUID()});});
+ const job=await f.command('source.browser.record.test',{workflowId:view.workflowId,expectedRevision:view.revision});expect(job.status).toBe('failed');
+ f.setOwn({personId});expect((await f.service.workspace(f.context(),view.workflowId)).current!.result).toBeNull();
+});
 it('full v1 own recording → mapping → real SQLite result + verified private downloads; failed replay preserves previous success',async()=>{
  const f=await fixture();let v=await f.prepare();expect(v.columns).toEqual(['Key','Amount','Date']);expect(v.sampleRows).toHaveLength(2);
  const before=f.repository.getStateRevision();const query=await f.app.inject({method:'POST',url:'/api/v1/queries/source.browser.workspace',headers:f.headers,payload:{context:null,filter:{workflowId:v.workflowId},sort:[]}});expect(query.statusCode,query.body).toBe(200);expect(f.repository.getStateRevision()).toBe(before);
@@ -137,8 +159,8 @@ it('release preserves the completed scenario, mapping and result across a servic
  const restarted=(await f.restart().workspace(f.context(),v.workflowId)).current!;expect(restarted.recording).toEqual(before.recording);expect(restarted.result).toEqual(before.result);
  const repeated=await f.result('source.browser.record.test',{workflowId:v.workflowId,expectedRevision:v.revision});expect(repeated.result!.rowCount).toBe(2);
 });
-it('expired own SSO waits for explicit native login then continues the same job and original revision',async()=>{
- const f=await fixture();let v=await f.prepare();v=await f.result('source.browser.record.test',{workflowId:v.workflowId,expectedRevision:v.revision});const previous=structuredClone(v.result),replay=f.runtime.replay;let attempts=0,logins=0;
+it.each(['source.browser','oko.workflow'] as const)('%s expired own SSO waits for explicit native login then continues the same job and original revision',async prefix=>{
+ const f=await fixture(prefix);if(prefix==='oko.workflow')f.setOwn({role:'viewer'});let v=await f.prepare();v=await f.result('source.browser.record.test',{workflowId:v.workflowId,expectedRevision:v.revision});const previous=structuredClone(v.result),replay=f.runtime.replay;let attempts=0,logins=0;
  f.runtime.replay=async(...args)=>{attempts++;if(attempts===1)throw new ConnectorError('manual_login_required','Synthetic expired authentication');return replay(...args);};f.runtime.openLogin=async()=>{logins++;return{handleId:randomUUID(),state:'open',mode:'login'};};
  const waiting=await f.command('source.browser.record.test',{workflowId:v.workflowId,expectedRevision:v.revision});expect(waiting.status).toBe('waiting_user');expect(waiting.warnings[0]?.code).toBe('MANUAL_LOGIN_REQUIRED');expect(waiting.nextAction).toMatchObject({commandName:'job.openAuth',payload:{jobId:waiting.jobId}});expect(logins).toBe(0);expect(waiting.retryAvailable).toBe(false);expect((await f.service.workspace(f.context(),v.workflowId)).current!.result).toEqual(previous);
  await f.command('job.openAuth',{jobId:waiting.jobId});expect(logins).toBe(1);expect(f.jobs.get(waiting.jobId,f.installationId)!.nextAction).toMatchObject({commandName:'job.retry',payload:{jobId:waiting.jobId}});

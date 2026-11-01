@@ -31,7 +31,7 @@ export async function createPersonalRuntime(prefix: 'source.browser' | 'oko.work
   // No browser action is used by these namespace/empty-workspace tests.
   const runtime = {} as BrowserWorkflowRuntimePort;
   const profiles = createBrowserProfileService({ runtimeRoot: root, repository, clock });
-  const service = createOkoWorkflowService({ repository, files, profiles, jobs, clock, runtime });
+  const service = createOkoWorkflowService({ repository, files, profiles, jobs, clock, runtime, preparationCapability: prefix === 'oko.workflow' ? 'personal.write' : 'uor.prepare' });
   const preferences = createPreferencesService({ repository, installationId, clock });
   const queries = new QueryRegistry(); registerPreferencesQueries(queries, preferences);
   const app = await createWorkbenchApp({ repository, clock, installationId, hostname: () => 'synthetic-prefix-host', accessPolicy: policy, commands, jobs, files, queries, modules: [createOkoWorkflowModule({ service, prefix })], sessions: createLocalSessionStore({ clock }), allowedOrigins: ['http://127.0.0.1:5173'] });

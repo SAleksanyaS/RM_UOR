@@ -1,15 +1,22 @@
 import { SharedBrowserProfileForm, type SharedBrowserProfileProps } from './SharedBrowserProfileForm';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import type { PrivateProfile } from '../contracts';
 import type { OkoWorkflowView } from '../workbench-workflow-contracts';
+import { useUnsavedChanges } from '../../../app/workbench/use-unsaved-changes';
 
-export function PersonalBrowserProfileForm({ workflow, reportUrl, busy, onSave }: { workflow: OkoWorkflowView; reportUrl: string; busy: boolean; onSave(profile: PrivateProfile): Promise<unknown> }) {
+export function PersonalBrowserProfileForm({ workflow, reportUrl, busy, onSave, onDirtyChange }: { workflow: OkoWorkflowView; reportUrl: string; busy: boolean; onSave(profile: PrivateProfile): Promise<unknown>; onDirtyChange?(dirty: boolean): void }) {
   const saved = workflow.profile.profile;
   const [kind, setKind] = useState(saved?.browser?.channel === 'msedge' ? 'edge' : saved?.browser?.channel === 'chrome' ? 'chrome' : 'sber');
   const [executable, setExecutable] = useState(saved?.browser?.executablePath ?? '');
   const [directory, setDirectory] = useState(saved?.browser?.profileDirectory ?? 'oko');
   const [origins, setOrigins] = useState((saved?.allowedOrigins ?? []).filter(origin => { try { return origin !== new URL(reportUrl).origin; } catch { return true; } }).join('\n'));
   const [error, setError] = useState('');
+  const savedOrigins = (saved?.allowedOrigins ?? []).filter(origin => { try { return origin !== new URL(reportUrl).origin; } catch { return true; } }).join('\n');
+  const dirty = kind !== (saved?.browser?.channel === 'msedge' ? 'edge' : saved?.browser?.channel === 'chrome' ? 'chrome' : 'sber')
+    || (kind === 'sber' && executable !== (saved?.browser?.executablePath ?? '')) || directory !== (saved?.browser?.profileDirectory ?? 'oko') || origins !== savedOrigins;
+  useUnsavedChanges(dirty);
+  useEffect(() => { onDirtyChange?.(dirty); }, [dirty, onDirtyChange]);
+  useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
   const submit = async (event: React.FormEvent) => {
     event.preventDefault(); setError('');
     try {

@@ -3,7 +3,7 @@ import type { JobSnapshot, SessionView } from '../../../server/workbench/protoco
 import type { OkoWorkspaceView, OkoWorkflowView } from '../workbench-workflow-contracts';
 import { OkoClient, OkoClientError } from './client';
 
-type Workspace = { client: OkoClient; session: SessionView | null; workspace: OkoWorkspaceView | null; current: OkoWorkflowView | null; loading: boolean; busy: boolean; error: string; job: JobSnapshot | null; refresh(): Promise<void>; open(id?: string, title?: string): Promise<void>; run(name: string, payload: Record<string, unknown>): Promise<unknown>; select(id: string): Promise<void>; clearError(): void };
+type Workspace = { client: OkoClient; session: SessionView | null; workspace: OkoWorkspaceView | null; current: OkoWorkflowView | null; loading: boolean; busy: boolean; error: string; job: JobSnapshot | null; recoveryPending: boolean; refresh(): Promise<void>; recover(): Promise<void>; open(id?: string, title?: string): Promise<void>; run(name: string, payload: Record<string, unknown>): Promise<unknown>; select(id: string): Promise<void>; clearError(): void };
 const Context = createContext<Workspace | null>(null);
 const defaultClient = new OkoClient();
 const releaseCommand = 'source.browser.record.cancel';
@@ -34,6 +34,7 @@ function PersonalProviderState({ children, client }: { children: React.ReactNode
   const pendingRelease = useRef<PendingCommand | null>(readCommand(releaseKey));
   const active = useRef<{ name: string; workflowId: string | null; promise: Promise<unknown> } | null>(null);
   const activeRelease = useRef<typeof active.current>(null);
+  const activeRecovery = useRef<Promise<void> | null>(null);
   const rememberCommand = (value: PendingCommand | null, release = value?.name === releaseCommand) => { const pending = release ? pendingRelease : pendingCommand, key = release ? releaseKey : commandKey; pending.current = value; try { if (value) sessionStorage.setItem(key, JSON.stringify(value)); else sessionStorage.removeItem(key); } catch { /* Retain the same command in memory while storage is disabled. */ } };
   const forgetCommand = (command: PendingCommand) => { if (pendingCommand.current?.commandId === command.commandId) rememberCommand(null); if (pendingRelease.current?.commandId === command.commandId) rememberCommand(null, true); };
   const acceptSession = useCallback((own: SessionView) => {
@@ -55,7 +56,7 @@ function PersonalProviderState({ children, client }: { children: React.ReactNode
         if (acceptSession(own) || personId !== own.personId) throw new OkoClientError('OWN_PERSON_CHANGED', 'Личность рабочего места изменилась. Выберите собственный сценарий.');
         const snapshot = await client.job(id); if (!mounted.current || ticket !== pollGeneration.current) return null; setJob(snapshot);
         if (snapshot.status === 'succeeded' || snapshot.status === 'partial') { forget(); let value: unknown = snapshot.result; if (value && typeof value === 'object' && 'result' in value) value = value.result; return value; }
-        if (['failed', 'cancelled', 'interrupted'].includes(snapshot.status)) { forget(); throw new OkoClientError(snapshot.error?.code ?? snapshot.status, snapshot.error?.message ?? (snapshot.status === 'cancelled' ? 'Операция отменена. Предыдущий результат сохранён.' : 'Операция прервана. Повторите действие.')); }
+        if (['failed', 'cancelled', 'interrupted'].includes(snapshot.status)) { forget(); throw new OkoClientError(snapshot.error?.code ?? snapshot.status, snapshot.error?.message ?? (snapshot.status === 'cancelled' ? 'Операция отменена.' : 'Операция прервана. Повторите действие.')); }
         if (snapshot.status === 'waiting_user') { setError(snapshot.nextAction?.label ?? 'Завершите ручной вход в открытом браузере.'); return null; }
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
@@ -85,10 +86,28 @@ function PersonalProviderState({ children, client }: { children: React.ReactNode
     return { recovered: false, value: null };
   }, [client, finish]);
   useEffect(() => { mounted.current = true; const bootstrap = ++generation.current; void (async () => { try { await refresh(); if (!mounted.current || bootstrap + 1 !== generation.current) return; setLoading(false); const release = pendingRelease.current; if (release && release.personId === ownPerson.current) { setBusy(true); await reconcile(release, true); } const command = pendingCommand.current; if (command) setBusy(true); if (command && command.personId === ownPerson.current) { const result = await reconcile(command); if (!result.recovered) setError('Ответ предыдущего действия не найден. Повторите то же действие; его идентификатор сохранён.'); } else { const pending = readPending(); if (pending && pending.personId === ownPerson.current) { selected.current = pending.workflowId; await poll(pending.jobId); if (mounted.current) await refresh(); } } } catch (failure) { if (mounted.current) setError((failure as Error).message); } finally { if (mounted.current) { setLoading(false); if (!active.current && !activeRelease.current) setBusy(false); } } })(); return () => { mounted.current = false; ++pollGeneration.current; ++generation.current; }; }, [client, refresh, poll, reconcile]);
+  const recover = useCallback((): Promise<void> => {
+    if (activeRecovery.current) return activeRecovery.current;
+    if (active.current || activeRelease.current) return Promise.reject(new OkoClientError('COMMAND_BUSY', 'Дождитесь завершения предыдущего действия.'));
+    const promise = Promise.resolve().then(async () => {
+      setBusy(true); setError('');
+      try {
+        await refresh(); if (!mounted.current) return;
+        const release = pendingRelease.current;
+        if (release) { const outcome = await reconcile(release, true); if (!outcome.recovered) throw new OkoClientError('COMMAND_UNCERTAIN', 'Ответ освобождения браузера пока не найден. Повторите то же действие с сохранённым идентификатором.'); }
+        const command = pendingCommand.current;
+        if (command) { const outcome = await reconcile(command); if (!outcome.recovered) throw new OkoClientError('COMMAND_UNCERTAIN', 'Ответ предыдущего действия пока не найден. Повторите то же действие; его идентификатор сохранён.'); }
+        else { const pending = readPending(); if (pending && pending.personId === ownPerson.current) { await poll(pending.jobId); if (mounted.current) await refresh(); } }
+      } catch (failure) { if (mounted.current) setError((failure as Error).message); throw failure; }
+      finally { if (activeRecovery.current === promise) activeRecovery.current = null; if (mounted.current) setBusy(Boolean(active.current || activeRelease.current)); }
+    });
+    activeRecovery.current = promise; return promise;
+  }, [refresh, reconcile, poll]);
   const run = useCallback((name: string, payload: Record<string, unknown>): Promise<unknown> => {
     const workflowId = typeof payload.workflowId === 'string' ? payload.workflowId : null;
     const controlsOwnJob = name.startsWith('job.') && readPending()?.jobId === payload.jobId;
     const releasesBrowser = name === releaseCommand && workflowId !== null;
+    if (activeRecovery.current && !releasesBrowser && !controlsOwnJob) return Promise.reject(new OkoClientError('COMMAND_BUSY', 'Дождитесь проверки сохранённого ответа.'));
     const lane = releasesBrowser ? activeRelease : active;
     const blocking = activeRelease.current ?? (!releasesBrowser && !controlsOwnJob ? active.current : null);
     if (blocking) return blocking.name === name && blocking.workflowId === workflowId ? blocking.promise : Promise.reject(new OkoClientError('COMMAND_BUSY', 'Дождитесь завершения предыдущего действия.'));
@@ -124,6 +143,6 @@ function PersonalProviderState({ children, client }: { children: React.ReactNode
   const select = async (id: string) => { selected.current = id; setError(''); try { await refresh(); } catch (failure) { setError((failure as Error).message); } };
   const open = async (workflowId?: string, title?: string) => { await run('source.browser.workflow.open', { ...(workflowId ? { workflowId } : {}), ...(title ? { title } : {}) }); };
   useEffect(() => { if (workspace?.current?.recording.state !== 'recording') return; const timer = setInterval(() => { void refresh().catch(failure => setError((failure as Error).message)); }, 1200); return () => clearInterval(timer); }, [workspace?.current?.recording.state, refresh]);
-  return <Context.Provider value={{ client, session, workspace, current: workspace?.current ?? null, loading, busy, error, job, refresh, open, run, select, clearError: () => setError('') }}>{children}</Context.Provider>;
+  return <Context.Provider value={{ client, session, workspace, current: workspace?.current ?? null, loading, busy, error, job, recoveryPending: Boolean(pendingCommand.current || pendingRelease.current), refresh, recover, open, run, select, clearError: () => setError('') }}>{children}</Context.Provider>;
 }
 export function useWorkbench() { const context = useContext(Context); if (!context) throw new Error('WorkbenchProvider is required'); return context; }

@@ -31,9 +31,9 @@ export async function openBrowser(runtime: string, profile: PrivateProfile, opti
   const certs = await Promise.all((browser.clientCertificates ?? []).map(async c => ({ origin: checkedUrl(c.origin, profile).origin, cert: await readFile(c.certFile), key: await readFile(c.keyFile), ...(c.passphraseEnv ? { passphrase: process.env[c.passphraseEnv] } : {}) })));
   const downloads=await safeArtifactPath(runtime,`browser-downloads/${randomUUID()}`);await mkdir(downloads,{recursive:true});
   let context: BrowserContext;
-  const launchOptions: BrowserLaunchOptions = { executablePath: browser.executablePath, channel: browser.channel, headless: browser.headless, serviceWorkers:'block', downloadsPath:downloads, acceptDownloads: true, ignoreHTTPSErrors: false, clientCertificates: certs };
+  const launchOptions: BrowserLaunchOptions = { executablePath: browser.executablePath, channel: browser.channel, headless: browser.headless, chromiumSandbox: true, serviceWorkers:'block', downloadsPath:downloads, acceptDownloads: true, ignoreHTTPSErrors: false, clientCertificates: certs };
   try { context = options.launcher ? await options.launcher.launchPersistent(profile, folder, launchOptions) : await chromium.launchPersistentContext(folder, launchOptions); }
-  catch { await rm(downloads,{recursive:true,force:true}).catch(()=>{});throw new ConnectorError('configuration_required', 'Не удалось запустить Chromium. Проверьте executable/channel, установку браузера и занятость профиля'); }
+  catch { await rm(downloads,{recursive:true,force:true}).catch(()=>{});throw new ConnectorError('configuration_required', 'Не удалось запустить браузер с включённой защитой. Проверьте путь или канал Chrome/Edge, занятость профиля и разрешение Chromium sandbox в ОС. Защита не отключается автоматически.'); }
   try{
   context.setDefaultTimeout(profile.timeoutMs); context.setDefaultNavigationTimeout(profile.timeoutMs);
   const limit:{error?:ConnectorError}={};browserLimits.set(context,limit);

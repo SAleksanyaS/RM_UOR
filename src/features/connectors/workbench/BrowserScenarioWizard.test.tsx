@@ -5,14 +5,22 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { WorkbenchBrowserScenarioWizard } from './BrowserScenarioWizard';
 const ctx = vi.hoisted(() => ({ current: null as any, session: { role: 'curator', allowedCommands: ['source.browser.record.start'] }, busy: false, job: null, run: vi.fn(), client: { upload: vi.fn() } }));
 vi.mock('./WorkbenchProvider', () => ({ useWorkbench: () => ctx }));
-afterEach(() => { cleanup(); ctx.run.mockReset(); sessionStorage.clear(); });
+afterEach(() => { cleanup(); ctx.run.mockReset(); sessionStorage.clear(); ctx.busy = false; ctx.session.allowedCommands = ['source.browser.record.start']; });
 const workflow = () => ({ workflowId: 'own', revision: 'r1', title: 'Отчёт', reportUrl: 'https://oko.example/report', marker: { selector: '#report', label: 'Отчёт' }, parsingProfile: { sheetName: null, csvDelimiter: ';', csvEncoding: 'utf8', dateFormat: 'iso', decimalSeparator: '.', groupSeparator: 'none' }, profile: { configured: true, profile: null }, recording: { state: 'idle', recordingId: null, steps: [], parameterNames: [], problem: null }, columns: ['ID', 'Значение'], sampleRows: [], parameters: {}, mapping: null, dictionary: { columns: [], sampleRows: [], mapping: null, origin: 'none', issues: [] }, result: null, warnings: [] });
 it('viewer sees own login and result, while preparation controls stay hidden', () => {
-  ctx.current = workflow(); ctx.session.role = 'viewer'; render(<WorkbenchBrowserScenarioWizard />);
+  ctx.current = workflow(); ctx.session.role = 'viewer'; ctx.session.allowedCommands = []; render(<WorkbenchBrowserScenarioWizard />);
   expect(screen.getByRole('button', { name: 'Открыть браузер для входа' })).toBeDefined();
   expect(screen.queryByRole('button', { name: 'Начать запись действий' })).toBeNull();
   expect(screen.queryByText('Сопоставление столбцов')).toBeNull();
   expect(screen.queryByLabelText(/CSS|JSON/i)).toBeNull();
+});
+it('waits for an in-flight start command before auto-finishing a completed owned download', async () => {
+  ctx.session.role = 'curator'; ctx.current = { ...workflow(), recording: { ...workflow().recording, state: 'completed', recordingId: 'record-after-start' } }; ctx.busy = true; ctx.run.mockResolvedValue(null);
+  const { rerender } = render(<WorkbenchBrowserScenarioWizard />);
+  expect(ctx.run).not.toHaveBeenCalled();
+  ctx.busy = false; rerender(<WorkbenchBrowserScenarioWizard />);
+  await waitFor(() => expect(ctx.run).toHaveBeenCalledWith('source.browser.record.finish', { workflowId: 'own', recordingId: 'record-after-start' }));
+  rerender(<WorkbenchBrowserScenarioWizard />); expect(ctx.run).toHaveBeenCalledTimes(1);
 });
 it('auto-finishes completed download once and retains unfinished form through status refresh', async () => {
   ctx.session.role = 'curator'; ctx.current = workflow(); ctx.run.mockResolvedValue(null);

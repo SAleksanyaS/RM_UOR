@@ -28,5 +28,5 @@ export function createOkoWorkflowModule({ service, prefix = 'source.browser' }: 
             command('source.browser.directory.apply', okoWorkflowCasSchema.extend({ mapping: okoDictionaryMappingSchema }), okoWorkflowViewSchema, service.directoryApply),
             command('source.browser.record.test', okoWorkflowCasSchema, okoWorkflowViewSchema, service.test, 'uor.prepare', 'async'),
         ] };
-    return { ...module, commands: module.commands.map(descriptor => ({ ...descriptor, name: personalWorkflowName(prefix, descriptor.name) })) };
+    return { ...module, commands: module.commands.map(descriptor => ({ ...descriptor, name: personalWorkflowName(prefix, descriptor.name), capability: prefix === 'oko.workflow' ? 'personal.write' : descriptor.capability })) };
 }
