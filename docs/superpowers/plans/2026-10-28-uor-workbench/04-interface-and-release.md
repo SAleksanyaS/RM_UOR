@@ -155,17 +155,17 @@ UI-тесты указывают `// @vitest-environment jsdom`, использ�
 
 **Interfaces:** `WorkbenchExecutionPage()`; handlers work.transition/work.draft.save/workDependency.draft.save/decision.draft.save. Один Work.id отображается из разных целей, а не копируется.
 
-- [ ] Написать `cancel_blocker_requires_replacement_or_reasoned_unlink`, `reopen_preserves_previous_completion`, `forecast_never_changes_planned_deadline`. Запросить отмену без причины → ошибка/сохранённый ввод; добавить причину и снятие зависимости → пакет готов, прежний план неизменён.
+- [x] Написать `cancel_blocker_requires_replacement_or_reasoned_unlink`, `reopen_preserves_previous_completion`, `forecast_never_changes_planned_deadline`. Запросить отмену без причины → ошибка/сохранённый ввод; добавить причину и снятие зависимости → пакет готов, прежний план неизменён.
   ```ts
   // Arrange Work dueOn=2026-11-05; изменить только forecastOn на2026-11-12.
   expect((screen.getByLabelText('Плановый срок') as HTMLInputElement).value).toBe('2026-11-05');
   expect((screen.getByLabelText('Прогноз') as HTMLInputElement).value).toBe('2026-11-12');
   expect(screen.queryByRole('button',{name:'Подтвердить цель'})).toBeNull();
   ```
-- [ ] RED: `npm test -- src/features/execution/workbench/execution-views.test.tsx`.
-- [ ] Реализовать состояния 16, риск отдельно от state, план отдельно от forecast. Схема зависимости показывает ответственного/затронутые цели; прогнозы куратор правит явно. Ответ решения и answeredAt заполняются вместе. Viewer читает всё без кнопок общей правки.
-- [ ] GREEN: тот же test + `npm run build`; новый timezone clock выдаёт просрочку с 00:00 Москвы, календарь не переносит срок.
-- [ ] `git add src/features/execution/workbench/ExecutionPage.tsx src/features/execution/workbench/WorkEditor.tsx src/features/execution/workbench/DecisionEditor.tsx src/features/execution/workbench/DependencyView.tsx src/features/execution/workbench/execution-views.test.tsx src/app/workbench/WorkbenchShell.tsx`; `git commit -m "feat(workbench): connect works decisions and dependency actions"`.
+- [x] RED: `npm test -- src/features/execution/workbench/execution-views.test.tsx`.
+- [x] Реализовать состояния 16, риск отдельно от state, план отдельно от forecast. Схема зависимости показывает ответственного/затронутые цели; прогнозы куратор правит явно. Ответ решения и answeredAt заполняются вместе. Viewer читает всё без кнопок общей правки.
+- [x] GREEN: тот же test + `npm run build`; новый timezone clock выдаёт просрочку с 00:00 Москвы, календарь не переносит срок.
+- [x] `git add src/features/execution/workbench/ExecutionPage.tsx src/features/execution/workbench/WorkEditor.tsx src/features/execution/workbench/DecisionEditor.tsx src/features/execution/workbench/DependencyView.tsx src/features/execution/workbench/execution-views.test.tsx src/app/workbench/WorkbenchShell.tsx`; `git commit -m "feat(workbench): connect works decisions and dependency actions"`.
 
 ### T36: Панель УОР, накопленный пакет и внешний вход Git
 
