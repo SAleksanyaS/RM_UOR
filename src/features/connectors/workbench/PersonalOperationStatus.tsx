@@ -30,7 +30,7 @@ export function PersonalOperationStatus({ job, busy, hasResult, execute }: {
   const next = job.nextAction;
   const progress = job.progress.total !== null || job.progress.completed > 0
     ? `${job.progress.completed}${job.progress.total !== null ? ` из ${job.progress.total}` : ''} ${units[job.progress.unit] ?? 'единиц'}` : null;
-  return <div className={'wb-operation-state' + (job.status === 'waiting_user' ? ' wb-operation-manual' : '')} role="status" aria-live="polite">
+  return <div className={'wb-operation-state' + (job.status === 'waiting_user' ? ' wb-operation-manual' : '')} data-status={job.status} role="status" aria-live="polite">
     <div><strong>{titles[job.status]}</strong>
       {stages[job.stage] && <p>{stages[job.stage]}</p>}
       {progress && <p className="wb-operation-progress">Обработано: {progress}</p>}

@@ -147,7 +147,13 @@
 .wb-personal-settings .oko-workflow { max-width:none; }
 .wb-new-recipe { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:22px; padding:16px; background:var(--wb-surface); border:1px solid var(--wb-border); border-radius:7px; }
 .wb-new-recipe input { flex:1; min-width:180px; }
-.wb-operation-state,.wb-first-step { display:flex; align-items:center; gap:16px; padding:18px; margin-bottom:20px; border:1px solid var(--wb-success-border); background:var(--wb-success-bg); border-radius:7px; }
+.wb-operation-state,.wb-first-step { display:flex; align-items:center; gap:16px; padding:18px; margin-bottom:20px; border:1px solid var(--wb-border); background:var(--wb-surface-subtle); border-radius:7px; }
+.wb-first-step,.wb-operation-state[data-status=succeeded] { border-color:var(--wb-success-border); background:var(--wb-success-bg); }
+.wb-operation-state[data-status=succeeded] { color:var(--wb-success); }
+.wb-operation-state[data-status=failed] { border-color:var(--wb-danger-border); background:var(--wb-danger-bg); color:var(--wb-danger); }
+.wb-operation-state:is([data-status=interrupted],[data-status=partial],[data-status=waiting_user]) { border-color:var(--wb-warning-border); background:var(--wb-warning-bg); color:var(--wb-warning); }
+.wb-operation-state:is([data-status=queued],[data-status=running],[data-status=retry_wait]) { border-color:var(--wb-info-border); background:var(--wb-info-bg); color:var(--wb-info); }
+.wb-operation-state[data-status=cancelled] { border-color:var(--wb-border); background:var(--wb-neutral-bg); color:var(--wb-muted); }
 .wb-operation-state > div,.wb-first-step > div { flex:1; }
 .wb-operation-state p,.wb-first-step p { color:var(--wb-muted); font-size:12px; margin-top:4px; }
 .wb-operation-manual { border-color:var(--wb-warning-border); background:var(--wb-warning-bg); }

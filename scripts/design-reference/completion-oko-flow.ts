@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { chromium, type Download, type Locator, type Page } from 'playwright';
 import type { createHttpDriver } from '../../tests/workbench/helpers/runtime';
@@ -42,6 +42,9 @@ export async function runCompletionOkoFlow({ origin, query, output, executablePa
   const browserErrors: string[] = [], dialogs: string[] = [];
   const commands: Array<{ name: string; commandId: string }> = [];
   const checks: Array<{ name: string; status: 'passed' | 'failed'; details?: unknown; error?: string }> = [];
+  const operationStyles: Array<Record<string, unknown>> = [];
+  const styledFiles = ['src/app/workbench/production-ui.css', 'src/features/connectors/workbench/PersonalOperationStatus.tsx'];
+  const sourceHashes = Object.fromEntries(await Promise.all(styledFiles.map(async file => [file, hash(await readFile(new URL('../../' + file, import.meta.url)))])));
   let workflowId = '', finalResultId = '', video: string | null = null, fatal: unknown;
   page.on('pageerror', error => browserErrors.push(error.message));
   page.on('dialog', dialog => { dialogs.push(dialog.message()); void dialog.dismiss(); });
@@ -56,7 +59,26 @@ export async function runCompletionOkoFlow({ origin, query, output, executablePa
     void cdp.send('Page.screencastFrameAck', { sessionId: event.sessionId }).catch(() => {});
   });
   async function capture(name: string, target: Page = page) {
+    if (name === '14-real-source-schema-failure') await target.locator('.wb-operation-state[data-status="failed"]').waitFor();
+    if (name === '16-cancelled-previous-result-retained') await target.locator('.wb-operation-state[data-status="cancelled"]').waitFor();
+    const styles = await target.locator('.wb-operation-state[data-status]').evaluateAll(elements => elements.filter(element => (element as HTMLElement).checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })).map(element => {
+      const status = element.getAttribute('data-status')!;
+      const style = getComputedStyle(element);
+      const family = ({ failed: 'danger', interrupted: 'warning', partial: 'warning', waiting_user: 'warning', queued: 'info', running: 'info', retry_wait: 'info', cancelled: 'neutral', succeeded: 'success' } as Record<string, string>)[status];
+      return { status, background: style.backgroundColor, border: style.borderTopColor, foreground: style.color, expectedBackground: style.getPropertyValue('--wb-' + family + '-bg').trim(), expectedBorder: style.getPropertyValue(family === 'neutral' ? '--wb-border' : '--wb-' + family + '-border').trim() };
+    }));
+    for (const style of styles) {
+      for (const key of ['Background', 'Border'] as const) {
+        const hex = style[('expected' + key) as 'expectedBackground' | 'expectedBorder'];
+        assert.match(hex, /^#[a-f0-9]{6}$/i, 'The actual theme token must resolve to an RGB color');
+        const rgb = `rgb(${[1, 3, 5].map(index => parseInt(hex.slice(index, index + 2), 16)).join(', ')})`;
+        assert.equal(key === 'Background' ? style.background : style.border, rgb, name + ': ' + style.status + ' must use its semantic ' + key.toLowerCase());
+      }
+      operationStyles.push({ capture: name, ...style });
+    }
+    if (/^(11-|14-|20-)/.test(name)) await target.evaluate(() => window.scrollTo(0, 0));
     await target.screenshot({ path: path.join(runOutput, name + '.png'), fullPage: true });
+    if (/^(11-|14-|20-)/.test(name)) await target.screenshot({ path: path.join(runOutput, name + '-viewport.png'), fullPage: false });
   }
   async function step(name: string, action: () => Promise<unknown>) {
     console.log('OKO_STEP ' + name);
@@ -273,7 +295,7 @@ export async function runCompletionOkoFlow({ origin, query, output, executablePa
         }); video = path.join(runOutput, 'completion-oko.mp4');
       } catch (error) { fatal ??= error; }
     }
-    await writeFile(path.join(runOutput, 'completion-oko.json'), JSON.stringify({ synthetic: true, origin, workflowId, finalResultId, browser: browser.version(), node: process.version, sandbox: true, checks, browserErrors, dialogs, commands, native: environment.hooks.counts(), video, realCdpFrames: frames.length, fatalError: fatal ? String(fatal) : null }, null, 2));
+    await writeFile(path.join(runOutput, 'completion-oko.json'), JSON.stringify({ synthetic: true, origin, workflowId, finalResultId, browser: browser.version(), node: process.version, sandbox: true, checks, browserErrors, dialogs, commands, native: environment.hooks.counts(), video, realCdpFrames: frames.length, sourceHashes, operationStyles, fatalError: fatal ? String(fatal) : null }, null, 2));
     await writeFile(path.join(output, 'oko-latest.json'), JSON.stringify({ runOutput, workflowId, finalResultId, video, passed: checks.filter(check => check.status === 'passed').length, failed: checks.filter(check => check.status === 'failed').length, fatalError: fatal ? String(fatal) : null }, null, 2));
     await context.close(); await browser.close();
   }

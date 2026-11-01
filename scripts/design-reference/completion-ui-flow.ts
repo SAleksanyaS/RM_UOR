@@ -1,11 +1,15 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { chromium, type Locator } from 'playwright';
 
 /** Uses only the explicitly synthetic production runtime prepared by completion-runtime.ts. */
 const runtimeFile = process.env.UOR_COMPLETION_RUNTIME_JSON;
 const readOnly = process.argv.includes('--read-only');
+const finalFocused = process.argv.includes('--final-focused');
+const textOnly = process.argv.includes('--text-only') || finalFocused;
 assert.ok(runtimeFile, 'UOR_COMPLETION_RUNTIME_JSON must identify the synthetic runtime metadata');
 const runtime = JSON.parse(await readFile(runtimeFile, 'utf8'));
 assert.equal(runtime.synthetic, true, 'This driver must never run against a user workspace');
@@ -20,7 +24,8 @@ type Check = { name: string; status: 'passed' | 'failed' | 'unavailable'; detail
 const checks: Check[] = [], images: Array<Record<string, unknown>> = [], browserErrors: string[] = [];
 const commands: Array<{ name: string; commandId: string }> = [], dialogs: Array<Record<string, unknown>> = [];
 const evidence: Record<string, unknown> = {
-  startedAt: new Date().toISOString(), runtimeFile, synthetic: true, readOnly,
+  startedAt: new Date().toISOString(), runtimeFile, synthetic: true, readOnly, textOnly, finalFocused,
+  driverSha256: createHash('sha256').update(await readFile(fileURLToPath(import.meta.url))).digest('hex'),
   origin: origin.origin, sourceWorktree: runtime.sourceWorktree, codeRoot: runtime.codeRoot,
   sourceRevision: runtime.sourceRevision, syncedAt: runtime.syncedAt, checks, images, browserErrors, commands, dialogs,
 };
@@ -76,12 +81,15 @@ async function capture(name: string, full = true) {
     const tables = [...document.querySelectorAll<HTMLElement>('.wb-table-scroll')].filter(element => element.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }) && !element.closest('[inert]')).map(element => ({ label: element.getAttribute('aria-label'), clientWidth: element.clientWidth, scrollWidth: element.scrollWidth }));
     const content = document.querySelector<HTMLElement>('.wb-shell');
     const active = document.activeElement as HTMLElement | null;
+    const sidebar = document.querySelector<HTMLElement>('.wb-sidebar');
+    const brand = document.querySelector<HTMLElement>('.wb-brand');
     return {
       width: innerWidth, height: innerHeight, scrollWidth: document.documentElement.scrollWidth, devicePixelRatio,
       theme: content?.getAttribute('data-theme'), systemDark: matchMedia('(prefers-color-scheme: dark)').matches,
       background: content ? getComputedStyle(content).backgroundColor : null,
       foreground: content ? getComputedStyle(content).color : null,
       tiny, tables, focus: active?.getAttribute('aria-label') ?? active?.textContent?.trim().slice(0, 120),
+      sidebar: sidebar && brand ? { scrollTop: sidebar.scrollTop, scrollHeight: sidebar.scrollHeight, clientHeight: sidebar.clientHeight, brandTop: brand.getBoundingClientRect().top, brandHeight: brand.getBoundingClientRect().height, children: [...brand.children].map(element => ({ tag: element.tagName, top: element.getBoundingClientRect().top, bottom: element.getBoundingClientRect().bottom })) } : null,
     };
   });
   const file = name + '.png';
@@ -237,7 +245,14 @@ async function sharedData(prefix: string, includeSource = true) {
   await page.getByRole('button', { name: 'Обогащённые строки', exact: true }).click();
   await page.getByRole('region', { name: 'Обогащённые строки', exact: true }).locator('tbody tr').first().waitFor();
   await capture(prefix + '-data-enriched');
-  if (!includeSource) return { raw, sourceOpened: false };
+  if (!includeSource) {
+    await page.getByRole('tab', { name: 'Личные выгрузки ОКО', exact: true }).click();
+    await page.getByRole('heading', { name: 'Данные', exact: true, level: 1 }).waitFor();
+    await page.getByRole('tab', { name: 'Данные целей', exact: true }).click();
+    await page.getByRole('heading', { name: 'Общие данные целей', exact: true }).waitFor();
+    assert.equal(commands.some(command => command.name === 'oko.workflow.record.finish'), false, 'Reading common data and switching tabs must not finish a recording owned by another form');
+    return { raw, sourceOpened: false, hiddenRecordingFinish: 0 };
+  }
   const opener = page.getByRole('button', { name: 'Настроить источник', exact: true });
   await opener.click();
   const dialog = page.getByRole('dialog', { name: 'Настройка источника', exact: true });
@@ -279,12 +294,81 @@ async function mainReferenceScreens() {
   await capture('light-1366x768-goal87');
   return { text };
 }
+async function enlargedText() {
+  await page.setViewportSize({ width: 1366, height: 768 });
+  await open('/goals', 'Цели');
+  await page.locator('.wb-goals-table tbody tr').first().waitFor();
+  await page.waitForFunction(() => ![...document.querySelectorAll('.wb-goals-table [role="status"]')].some(element => element.textContent?.includes('Загружаем')));
+  const changed = await page.evaluate(() => {
+    const elements = new Set<HTMLElement>();
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    while (walker.nextNode()) {
+      const element = walker.currentNode.parentElement;
+      if (walker.currentNode.textContent?.trim() && element instanceof HTMLElement && !['SCRIPT', 'STYLE'].includes(element.tagName) && element.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }) && !element.closest('[inert],.wb-visually-hidden')) elements.add(element);
+    }
+    for (const element of document.querySelectorAll<HTMLElement>('input,select,textarea,button')) if (element.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }) && !element.closest('[inert]')) elements.add(element);
+    // Read every original computed size before applying any override: nested text is doubled once.
+    const sizes = [...elements].map(element => ({ element, original: parseFloat(getComputedStyle(element).fontSize) }));
+    for (const item of sizes) item.element.style.fontSize = item.original * 2 + 'px';
+    return { elements: sizes.length, minimumOriginalPx: Math.min(...sizes.map(item => item.original)), multiplier: 2 };
+  });
+  const controls = [
+    page.getByRole('searchbox', { name: 'Найти на странице', exact: true }),
+    page.getByRole('combobox', { name: 'Сортировка всего списка', exact: true }),
+    page.getByRole('button', { name: /^Открыть цель:/ }).first(),
+    page.getByRole('button', { name: 'Обслуживание рабочего места', exact: true }),
+  ];
+  const accessible: Array<Record<string, unknown>> = [];
+  try {
+    for (const control of controls) {
+      await control.scrollIntoViewIfNeeded(); await control.focus();
+      assert.equal(await control.evaluate(element => document.activeElement === element), true);
+      const rectangle = await control.boundingBox(); assert.ok(rectangle && rectangle.width > 0 && rectangle.height > 0);
+      assert.ok(rectangle.x >= -1 && rectangle.x + rectangle.width <= 1367, 'The focused control must be horizontally reachable');
+      accessible.push({ label: await control.getAttribute('aria-label') ?? await control.textContent(), rectangle });
+    }
+    // Focusing a lower service control may scroll the sidebar. Capture its deliberate start state.
+    await page.locator('.wb-sidebar').evaluate(element => element.scrollTo(0, 0));
+    const geometry = await capture('text200-emulation-1366x768-goals');
+    assert.ok(geometry.sidebar && geometry.sidebar.children.every(child => child.top >= geometry.sidebar!.brandTop - 1 && child.bottom <= geometry.sidebar!.brandTop + geometry.sidebar!.brandHeight + 1), 'Enlarged brand content must fit its own non-clipped layout box');
+    return { method: 'Эмуляция увеличения текста 200%, не browser zoom: временное удвоение исходного computed font-size видимых текстовых узлов и controls', changed, accessible, geometry };
+  } finally { await page.goto(url('/goals')); await ready(); }
+}
 
 let originalTheme: string | null = null;
 try {
   evidence.browser = browser.version();
   const session = (await (await context.request.get(origin.origin + '/api/v1/session')).json()).data;
   assert.equal(session.policyState, 'local_preview');
+  if (textOnly) {
+    await check('Normal brand at laptop resolution', async () => { await open('/goals', 'Цели'); await page.locator('.wb-goals-table tbody tr').first().waitFor(); return capture('normal-brand-1366x768-goals'); });
+    await check('Emulated 200 percent text enlargement, not browser zoom', enlargedText);
+    await check('Text-only inspection invoked no commands', async () => { assert.deepEqual(commands, []); assert.deepEqual(browserErrors, []); });
+    if (finalFocused) {
+      assert.equal(session.role, 'curator', 'Wait for the actual OKO flow to restore the curator role');
+      await check('Save one real synthetic draft change for focused preview', preparePreviewChange);
+      await check('Actual package comparison in the laptop viewport', async () => {
+        const preview = await previewPackage();
+        assert.equal(preview.status, 'succeeded');
+        const comparison = page.getByRole('region', { name: 'Сравнение изменений', exact: true });
+        await comparison.waitFor();
+        assert.ok((await comparison.innerText()).includes(previewNextAction));
+        await comparison.scrollIntoViewIfNeeded();
+        const file = 'focused-uor-preview-1366x768.png';
+        await page.screenshot({ path: path.join(output, file), fullPage: false });
+        await page.screenshot({ path: path.join(output, 'focused-uor-preview-1366x768-full.png'), fullPage: true });
+        const geometry = await page.evaluate(() => ({ width: innerWidth, height: innerHeight, scrollY, scrollWidth: document.documentElement.scrollWidth }));
+        images.push({ file, fullFile: 'focused-uor-preview-1366x768-full.png', url: page.url(), ...geometry });
+        assert.ok(geometry.scrollWidth <= geometry.width + 1);
+        return { preview, geometry };
+      });
+      await check('Focused inspection invoked only its declared local draft operations', async () => {
+        const allowed = new Set(['draft.open', 'work.draft.save', 'package.preview']);
+        assert.deepEqual(commands.filter(command => !allowed.has(command.name)), []);
+        assert.deepEqual(browserErrors, []);
+      });
+    }
+  } else {
   if (readOnly) {
     for (const viewport of [{ width: 1366, height: 768 }, { width: 320, height: 900 }]) {
       await page.setViewportSize(viewport);
@@ -351,10 +435,12 @@ try {
     await cdp.send('Emulation.setDeviceMetricsOverride', { width: 683, height: 384, deviceScaleFactor: 2, mobile: false });
     try {
       await open('/goals', 'Цели');
+      await page.locator('.wb-goals-table tbody tr').first().waitFor();
       const geometry = await capture('scale2-1366x768-goals');
       return { method: '683 × 384 CSS px, DPR 2; equivalent reflow and physical scale, not a native browser shortcut zoom', geometry };
     } finally { await cdp.send('Emulation.clearDeviceMetricsOverride'); await cdp.detach(); }
   });
+  await check('Emulated 200 percent text enlargement, not browser zoom', enlargedText);
   await check('Only declared local operations were invoked', async () => {
     const allowed = new Set(['preferences.set', 'draft.open', 'work.draft.save', 'package.preview']);
     assert.deepEqual(commands.filter(command => !allowed.has(command.name)), []);
@@ -362,6 +448,7 @@ try {
     return { commands: [...new Set(commands.map(command => command.name))], browserErrors: 0 };
   });
   } else await check('Read-only flow invoked no commands', async () => { assert.deepEqual(commands, []); assert.deepEqual(browserErrors, []); });
+  }
 } catch (error) {
   checks.push({ name: 'Driver prerequisites', status: 'failed', error: String(error) });
 } finally {
@@ -371,7 +458,7 @@ try {
   evidence.finishedAt = new Date().toISOString();
   evidence.failed = checks.filter(check => check.status === 'failed').length;
   evidence.unavailable = checks.filter(check => check.status === 'unavailable').length;
-  await writeFile(path.join(output, readOnly ? 'ui-flow-readonly.json' : 'ui-flow.json'), JSON.stringify(evidence, null, 2));
+  await writeFile(path.join(output, finalFocused ? 'ui-flow-focused.json' : textOnly ? 'ui-flow-text200.json' : readOnly ? 'ui-flow-readonly.json' : 'ui-flow.json'), JSON.stringify(evidence, null, 2));
   await context.close();
   await browser.close();
 }
