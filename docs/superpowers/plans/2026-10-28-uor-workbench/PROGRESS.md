@@ -5,7 +5,7 @@ Branch: `codex/uor-workbench-rebuild`. Source code baseline: `3d8704e4a6ff2195af
 
 ## Continue here
 
-T00–T38 and T42–T47 are implemented and checked. The exact combined source/browser gate passed after both independent review fix passes. Production runtime composition and final launcher flow remain T39/T40. Read the latest run entry and [core checkpoint review](CORE_CHECKPOINT_REVIEW.md). No live data has been migrated; real bank/platform acceptance remains separate.
+T00–T40 and T42–T47 local implementation/checks are complete. Current source **a445c23385c9f32f4a284537d944c228430df11e** closes residual I1; I1/I2/I3/M1/M3 are ADDRESSED, only cosmetic M2 deferred. Original scoped f1331c4 verdict did NOT close I1 and is preserved; the same reviewer accepted its narrow continuation on a445c23. Pre-fix **fba0ce6 full260files/1892tests PASS668.70s** is historical, not current full-suite evidence. Current6files104tests PASS78.45s/type+build PASS1.99s plus separate native-entry5PASS23.64s. Only actual extracted-artifact build and final release-docs record remain **PENDING_LOCAL**. Real T41/T48/BP-01–BP-06 remain **BLOCKED_BANK_INPUT**. No live user data migrated. Details: [acceptance matrix](../../../validation/workbench-acceptance.md), [release candidate](../../../releases/workbench-candidate.md).
 
 Resume commands from the repository root:
 
@@ -18,11 +18,11 @@ node docs/superpowers/plans/2026-10-28-uor-workbench/verify-plan.mjs
 
 Use Node22.16.0/npm10.9.2. On this Windows executor the portable runtime is already cached in `.runtime/toolchains/node-v22.16.0-win-x64`; prepend its absolute path to PATH and use `npm.cmd`. On another machine use the standard installed target runtime, not that machine-specific path. Never reinstall over live workspace data.
 
-The personal OKO command/query/UI path and its audited corrections include actual standard-launcher synthetic browser acceptance. The user requests the whole approved plan. Server history/publication/recovery components and the T44/T45 shared scenario/capture libraries are complete; do not repeat completed tasks. Current exact full-suite evidence remains the T25 checkpoint176files/1115tests, followed by the scoped/isolated gates recorded below. T46/T47 wizard/new-v1 browser integration and T39 production composition remain, with no guessed bank parameters or export proof. Preserve previous successful data and original dates; no hidden file fallback for Qlik. The later manual Chrome walkthrough interrupted by physical Escape before app actions is not claimed complete.
+The personal/shared OKO, production composition and stock-launcher synthetic scenarios have local evidence. First259files/1871tests with3fail is superseded by **260files/1892tests PASS on fba0ce6**. Corrections f1331c4 and narrow I1completion a445c23 have separate focused/native/build/review evidence, not a new full run. The first scoped I1failure remains recorded. Do not add overlapping counts or turn separate4files52tests and unchanged8files124tests into one176-test GREEN invocation. Preserve prior successful data/dates and no Qlik file fallback. The earlier Escape-interrupted manual walkthrough remains unclaimed.
 
 ## Task status
 
-Statuses: PLANNED / RUNNING / DONE / BLOCKED_RUNTIME / BLOCKED_BANK_INPUT / FAILED.
+Statuses: PLANNED / RUNNING / DONE / PENDING_LOCAL / BLOCKED_RUNTIME / BLOCKED_BANK_INPUT / FAILED.
 DONE requires actual checks, commit and evidence. Default execution order is in the main plan; numeric order alone is incorrect.
 
 | Task | Plan | Deliverable | Status | Commit / evidence |
@@ -66,27 +66,27 @@ DONE requires actual checks, commit and evidence. Default execution order is in 
 | T36 | [04-interface-and-release.md](04-interface-and-release.md) | Панель УОР, накопленный пакет и внешний вход Git | DONE | Commit titled feat(workbench): connect goal setup and curator publication; truthful delivery and same-job native-login observation |
 | T37 | [04-interface-and-release.md](04-interface-and-release.md) | Конструктор дашбордов, поля и общий поиск | DONE | Commit titled feat(workbench): connect dashboards typed fields and canonical search; exact21source snapshot158tests/build PASS; actual Edge |
 | T38 | [04-interface-and-release.md](04-interface-and-release.md) | Обновление, копия и перенос из интерфейса | DONE | Commit titled feat(workbench): connect recoverable workspace maintenance; exact17source snapshot109tests/build PASS; actual restore/restart/download Edge |
-| T39 | [04-interface-and-release.md](04-interface-and-release.md) | Переключение рабочего запуска без старого обхода доступа | PLANNED | Not executed |
-| T40 | [04-interface-and-release.md](04-interface-and-release.md) | Сквозной локальный browser/runtime прогон | PLANNED | Not executed |
-| T41 | [04-interface-and-release.md](04-interface-and-release.md) | Банковская приёмка, перенос и комплект общего выпуска | PLANNED | Not executed |
+| T39 | [04-interface-and-release.md](04-interface-and-release.md) | Переключение рабочего запуска без старого обхода доступа | DONE | a445c23;current104focused+type/build+native-entry5 PASS; original f133I1failure preserved, residual scoped closure ADDRESSED; old fba full260/1892PASS |
+| T40 | [04-interface-and-release.md](04-interface-and-release.md) | Сквозной локальный browser/runtime прогон | DONE | fba full260/1892PASS; separate shared-native3/final native-entry5/current104focused PASS; all mandatory local review points ADDRESSED at a445c23 |
+| T41 | [04-interface-and-release.md](04-interface-and-release.md) | Банковская приёмка, перенос и комплект общего выпуска | BLOCKED_BANK_INPUT | Local code/checks/review complete at a445c23; only extracted-artifact build/final release-docs record pending; real BP/legacy acceptance absent |
 | T42 | [06-oko-browser-scenarios.md](06-oko-browser-scenarios.md) | Собственный браузерный профиль и управляемый runtime port | DONE | Existing owner runtime/profile/schema/CAS plus real personal v1 bindings completed with T44; bank runtime not_ready |
 | T43 | [06-oko-browser-scenarios.md](06-oko-browser-scenarios.md) | Recorder после входа, безопасные действия и приватные снимки | DONE | Commit titled `feat(workbench): record completed browser exports and enrich mapped rows`; real Edge record→auto-END→replay, full712/712/build + review PASS |
 | T44 | [06-oko-browser-scenarios.md](06-oko-browser-scenarios.md) | Версионный scenario draft, параметры и проверка экспорта | DONE | Commit titled feat(workbench): validate shared browser scenarios before publication; exact11file snapshot145tests/build PASS; coverage provider absent remains unverified |
 | T45 | [06-oko-browser-scenarios.md](06-oko-browser-scenarios.md) | Воспроизведение, повтор после входа и локальное принятие | DONE | Commit titled feat(workbench): recover browser captures with verified login; exact9file snapshot169tests/build PASS; bank completeness unverified |
 | T46 | [06-oko-browser-scenarios.md](06-oko-browser-scenarios.md) | Мастер без JSON — профиль → запись → проверка → пакет | DONE | Commit titled feat(workbench): connect guided OKO recording and verified downloads; exact38source combined230tests/build PASS |
 | T47 | [06-oko-browser-scenarios.md](06-oko-browser-scenarios.md) | Настоящий локальный browser fixture и полный v1 сценарий | DONE | Same accepted combined source gate; native 2000rows/2facts, private proof, protected PNG and real downloads; no bank certification |
-| T48 | [06-oko-browser-scenarios.md](06-oko-browser-scenarios.md) | Проба Сбербраузера, эксплуатационные инструкции и граница готовности | PLANNED | Not executed |
+| T48 | [06-oko-browser-scenarios.md](06-oko-browser-scenarios.md) | Проба Сбербраузера, эксплуатационные инструкции и граница готовности | BLOCKED_BANK_INPUT | Local CLI/service/tests/guide delivered;3Important fixed, isolated4files/57tests+types PASS, integrated61/61 PASS; real SberBrowser/SSO/export binding absent |
 
 ## Bank readiness
 
 | Probe | Status | Real environment evidence |
 | --- | --- | --- |
-| BP-01 | NOT_READY | Not executed; inputs described in part05 |
-| BP-02 | NOT_READY | Not executed; inputs described in part05 |
-| BP-03 | NOT_READY | Not executed; inputs described in part05 |
-| BP-04 | NOT_READY | Not executed; inputs described in part05 |
-| BP-05 | NOT_READY | Not executed; inputs described in part05 |
-| BP-06 | NOT_READY | Not executed; inputs described in part05 |
+| BP-01 | BLOCKED_BANK_INPUT | Actual readiness exit2:REPORT_MISSING; real inputs described in part05 |
+| BP-02 | BLOCKED_BANK_INPUT | Actual readiness exit2:REPORT_MISSING; real inputs described in part05 |
+| BP-03 | BLOCKED_BANK_INPUT | Actual readiness exit2:REPORT_MISSING; real inputs described in part05 |
+| BP-04 | BLOCKED_BANK_INPUT | Actual readiness exit2:REPORT_MISSING; real inputs described in part05 |
+| BP-05 | BLOCKED_BANK_INPUT | Actual readiness exit2:REPORT_MISSING; real inputs described in part05 |
+| BP-06 | BLOCKED_BANK_INPUT | Actual readiness exit2:REPORT_MISSING; real inputs described in part05 |
 
 ## Run 2026-10-28 — execution setup and T01
 
@@ -537,3 +537,14 @@ Remaining work is explicit: wire own v1 profile/record/test commands/queries and
 - One T47 fresh review found a private-file test-host exposure; a safe known synthetic-log probe returned200. One consolidated fix pass shares the project/default Vite deny policy between actual config and native host:42 controlled direct/raw/@fs probes now deny. Root regraded unbounded artifact-history loading Important; indexed target reads retain one central ownership predicate and exact integrity, and unrelated damaged history cannot block a valid download. No secrets were requested, no other process killed, no second reviews. Known SQLite/annotation/occupied-port diagnostics remain visible.
 - Final exact combined38source snapshot onff8cd7e, after both fix passes:25files230/230 PASS exit0,117.00s (t46-t47-isolated-final-focused.log); pinned build exit0,Vite3.65s (t46-t47-isolated-final-build.log). Includes actual Edge UI320/360/1024, T46 recovery, private-files HTTP and existing source/goal regressions. Earlier149/172/7/35 counts overlap and are not a new whole-suite total. T47's corrected targeted rerun is superseded by this all-green combined gate.
 - Rulings: standalone native app composition was explicitly authorized to preserve the concurrent shared test factory; it does not replace T39 production bootstrap/T40 launcher proof. UI and transport are committed together as one coherent integration. The priority personal workflow remains preserved; T39 must mount it with a noncolliding namespace. Full constructor-to-source native handoff and same-person/new-installation transfer remain T39/T40 obligations. Actual bank/SberBrowser/SSO/BP inputs are unavailable and not_ready. Attached PDF remains unopened until the rest of the approved local plan is finished.
+
+### 2026-11-01 — local release candidate and honest final gates
+
+- Candidate version0.5.0; initial full-tested source **fba0ce678c082b9dae1f576fbda87df86fb413c1** after3a0b743; its142files/5079insertions/168deletions follow targeted61+23+exporter10 checks. Current source **a445c23385c9f32f4a284537d944c228430df11e** completes I1residual after f1331c4; final release-docs/artifact record **PENDING_LOCAL**.
+- T39/T40: one fresh combined review,4Important accepted and corrected in one consolidated pass; no second task review. Corrections cover staged-root capsule export, absent/corrupt active DB fail-closed, real published scope/time controls, and original artifacts from non-browser adapters.
+- T48: local CLI/service/tests/guide exist. One fresh review found3Important, all fixed once: lease-first immutable read-only inspection with pending-journal/WAL refusal, canonical recorder capability/fresh gates, and one authoritative final sample plus both proof freshness checks after the last await. Isolated4files/57tests and types exit0; coordinator verified/copied exact seven-file delta. Integrated main gate T48/read-only/startup/legacy fixture:61/61,exit0,17.78s. Counts overlap.
+- First combined full suite:259files/1871tests,257files/1868tests pass,3fail. All three stale fixtures corrected; partial-file/unknown-scenario application checks23/23 PASS. Frozen fba0ce6 full suite **260files/1892tests PASS,exit0,668.70s**, start2026-11-01 10:41:50MSK (`workbench-candidate-full-suite-final.log`,npm test -- --fileParallelism --maxWorkers=2). Native personal Chrome25.31s and all5native-entry checks including stock launcher are included, not added. Build exit0,TypeScript+Vite2.12s (`workbench-candidate-final-build.log`).
+- Whole-branch3d8704e→fba0ce6 COMPLETE:0Critical/3Important/3Minor. Consolidated f1331c4(17files343insertions50deletions) had isolated4files52PASS62.45s and separate unchanged8files124PASS, main74PASS55.11s/build1.85s. Scoped review accepted I2/I3/M1/M3 but **I1NOT ADDRESSED**, SQL still parsed lifetime payload. That failure remains in original report; no single176-test GREEN call is claimed.
+- Same worker narrowly completed I1in **a445c23385c9f32f4a284537d944c228430df11e**(6files52insertions9deletions): true covering core/published/source/diagnostic indexes,5nativequery programs0payload Columns/0JSONfunctions. Main6files104PASSexit0,78.45s (source24/readmodels23/repo15/restore5/readonly1/T48probe36),type+buildPASSexit0,Vite1.99s; separate actual native-entry5PASSexit0,23.64s. Same scoped reviewer confirmed **I1ADDRESSED/no new Critical/Important breakage** in report-i1-closure.md, preserving first failure. All I1–I3/M1/M3 ADDRESSED;M2cosmeticDEFERRED. Only actual extracted-artifact build/final release-docs record **PENDING_LOCAL**. Full260/1892 remains pre-fix fba0ce6 evidence.
+- Actual readiness command with all six mandatory BP and an empty required report root:exit2,ready=false, all six **REPORT_MISSING**. Real T41/T48/BP remain **BLOCKED_BANK_INPUT**. Native Chrome156.0.8078.74/Edge156.0.4314.58 on Node22.16.0/npm10.9.2 use synthetic external services; default Bitbucket binding remains unavailable.
+- Local release documents distinguish delivery from bank acceptance;56unique AC/OC and6BP rows remain. AC-08/AC-28 remain contract-only gaps, not full observed scenarios. No real migration/merge/tag/rollout or PDF operation performed.

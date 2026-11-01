@@ -1,4 +1,22 @@
-# Проверка целевой поставки 0.4.1
+# Проверка локального кандидата Workbench 0.5.0
+
+## Текущее объединённое состояние — 2026-11-01
+
+Ветка `codex/uor-workbench-rebuild`, текущая source revision **`a445c23385c9f32f4a284537d944c228430df11e`**. Предыдущая база **`fba0ce678c082b9dae1f576fbda87df86fb413c1`** прошла общий suite **260файлов/1892теста,exit0,668.70s**, старт2026-11-01 10:41:50MSK, лог `workbench-candidate-full-suite-final.log`; команда `npm test -- --fileParallelism --maxWorkers=2`. Сборка той базы exit0,Vite2.12s. Это pre-final-fix evidence, не новый полный suite a445c23. Подробные границы: [матрица приёмки](validation/workbench-acceptance.md), [кандидат0.5.0](releases/workbench-candidate.md).
+
+Первый общий suite был259файлов/1871тест,257файлов/1868тестов PASS и3fail. Три устаревшие fixtures исправлены: две legacy launcher проверки и ожидаемый отказ уже реализованного partial-file пути; partial success и unknown-scenario guard адресно23/23 PASS. Успешный повтор260/1892 выше заменяет этот первый неуспешный gate. Native personal Chrome25.31s и все5native-entry checks, включая stock launcher, входят в общий набор и не прибавляются к1892.
+
+Whole-branch review3d8704e→fba0ce6: **0Critical/3Important/3Minor**. Correction f1331c4 имел4файла/52PASS62.45s и отдельные неизменённые8файлов/124PASS, не один176-test GREEN run. Main74PASS55.11s/build1.85s тоже прошли, но scoped review **не закрыл I1**: SQLite продолжал parsing полного payload JSON. **I2/I3/M1/M3 ADDRESSED**, M2cosmetic DEFERRED. Первый scoped verdict не объявляется чистым.
+
+Тот же исполнитель завершил узкий residual I1в **a445c23385c9f32f4a284537d944c228430df11e**(6файлов/52insertions/9deletions): core/published metadata и source diagnostics читаются через true covering indexes. Native5actual query programs показывают **0payload table Columns/0JSON functions** (`final-fix-wave/i1-scalar-native-proof.json`). Main **6файлов/104теста PASSexit0,78.45s**:source24/readmodels23/repo15/restore5/readonly1/T48probe36 (`final-fix-wave/i1-scalar-final.log`); type+build **PASSexit0,Vite1.99s** (`final-fix-wave/i1-scalar-build.log`). Дополнительные actual native-entry/stock-launcher/update-failure/ACK-loss **5PASSexit0,23.64s** (`final-scalar-native-entry.log`). Это отдельные вызовы, не суммарный suite.
+
+Тот же scoped-review seat подтвердил residual f1331c4→a445c23: **I1ADDRESSED**, без нового Critical/Important breakage (`report-i1-closure.md`). Исходный f1331c4 verdict **I1NOT ADDRESSED** сохранён; это узкое продолжение проверки того же original finding. Все I1–I3 и M1/M3 теперь ADDRESSED, M2cosmetic DEFERRED. **PENDING_LOCAL** только фактический filtered/extracted artifact build и финальная release-docs запись; sourcefix/current build/review завершены. Банк остаётся отдельной незакрытой приёмкой.
+
+T39/T40 прошли один fresh combined task review: все4Important исправлены одним проходом. Включены actual native global scope/time regression (5файлов/26тестов,exit0,16.16s), original artifact обычного SourceAdapter (3файла/48тестов,exit0,20.17s), staged capsule и active-storage fail-closed проверки. T48 CLI/service/tests/guide поставлены; один fresh review/один correction pass закрыли3Important. В изолированной копии4файла/57тестов и TypeScript exit0; exact-hash семь файлов перенесены координатором. Объединённый main gate T48/read-only/startup/legacy fixture: **61/61,exit0,17.78s**. Счётчики пересекаются и **не складываются**.
+
+Наблюдённый readiness с пустым требуемым report root и всеми шестью BP: **exit2**, `ready=false`, **REPORT_MISSING** у BP-01–BP-06. Реальные T41/T48 и банковские gates — **BLOCKED_BANK_INPUT**. Windows/Node22.16.0/npm10.9.2, Chrome156.0.8078.74 и Edge156.0.4314.58 используют синтетические внешние сервисы. Настоящие Bitbucket adapter, СберБраузер/SSO, migration acceptance и целевое железо не подтверждены. Default Bitbucket binding недоступен; внешний merge в локальных сценариях синтетический.
+
+Ниже сохраняется история прежних проверок; она не меняет текущие PENDING_LOCAL/BLOCKED_BANK_INPUT.
 
 ## T19: уведомления и жизненный цикл — 2026-10-29
 

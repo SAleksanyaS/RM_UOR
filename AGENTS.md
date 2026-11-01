@@ -2,11 +2,11 @@
 
 Приложение: «Рабочее место УОР ДИТ Operations». УОР — управление обеспечения развития. Текущая версия определяется src/domain/app-version.ts. Это локальное веб-приложение, не центральный многопользовательский сервер.
 
-## Согласованная переработка в отдельной ветке
+## Штатная композиция 0.5.0 в отдельной ветке
 
-Для `codex/uor-workbench-rebuild` сначала читать `docs/superpowers/plans/2026-10-28-uor-workbench/AGENT_START.md`, главный план `docs/superpowers/plans/2026-10-28-uor-workbench-rebuild.md` и согласованные specs по его ссылкам. Они фиксируют новое целевое поведение и переход от версии0.4.1; инструкции ниже описывают существующий код и не отменяют новые решения пользователя.
+Для `codex/uor-workbench-rebuild` сначала читать `docs/agents/START_HERE.md`, журнал `docs/superpowers/plans/2026-10-28-uor-workbench/PROGRESS.md`, главный план `docs/superpowers/plans/2026-10-28-uor-workbench-rebuild.md` и согласованные specs по его ссылкам. Новый штатный путь: `src/server/main.ts` → `createWorkbenchRuntime` → `createWorkbenchApp`; UI — `src/app/main.tsx` → `WorkbenchApp`. Прежние createApp/createContext/LocalDatabase и старые feature routes сохраняются для совместимости и миграционных проверок, но не подключаются к production. Точные действующие модули — в module-map; общие правила сохранности ниже действуют также для нового кода.
 
-В частности, целевой доступ определяется hostname без привязки аккаунта; reader может получать данные и применять verified main; окончательный merge — Bitbucket; история бессрочна; ОКО использует сохраняемый СберБраузер и recorder/replay. Прежние password/release-current routes не должны становиться обходом новой сборки. Порядок безопасного включения — T39, не переписывание entry до проверки компонентов. Передавать исполнителю только весь план вместе со спеками, не одиночный список задач без контекста.
+Целевой доступ определяется hostname без привязки аккаунта; reader может получать данные и применять verified main; окончательный merge — Bitbucket; история бессрочна; ОКО использует сохраняемый СберБраузер и recorder/replay. По прямому указанию владельца пока разрешён локальный переключатель читатель/редактор со стабильной личностью: local_preview не выдаёт банковский допуск и запрещает внешнюю отправку/применение main. Не требовать отсутствующий приватный реестр повторно для этого режима. Канонические общие команды `source.browser.*` и встроенные личные `oko.workflow.*` имеют раздельные клиентские recovery-ключи. Реальные BP/T48/T41 остаются отдельной приёмкой.
 
 ## Начните здесь
 
@@ -21,7 +21,7 @@
 ## Как устроено и как расширять
 
 - src/domain — предметные контракты; src/features/evaluation — вычисления. Чистый расчёт не получает UI/HTTP/БД/сеть.
-- Каждый src/features/<feature> содержит свои contracts/schema, service, routes, UI и focused tests. src/server/app.ts — сборка API; src/app/App.tsx — сборка страниц. Следуйте существующим feature slices, не помещайте всю логику в общие файлы.
+- Каждый src/features/<feature> содержит свои contracts/schema, service, UI и focused tests. Новая сборка API — src/server/workbench/bootstrap.ts и app.ts; страницы собирает src/app/workbench/WorkbenchApp.tsx. Следуйте существующим feature slices, не помещайте всю логику в общие файлы.
 - Получение (connectors/adapters) отделено от разбора (importing/tabular-import), нормализации, принятия snapshots и оценки. Историческая основа фиксируется при принятии.
 - reporting строит неизменяемый снимок. report-templates предоставляет общий OOXML-движок; индивидуальные профили и специализированные пресеты отдельно. Не превращайте maturity-preset в общий обработчик любой цели.
 - publishing/release отделены от локальных черновиков. system/workspace-maintenance отвечают за обновление, копии и хранение, не за методику цели.
