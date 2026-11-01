@@ -218,6 +218,7 @@ it('same owner query refresh preserves dirty decision and does not reopen its dr
   expect(h.requests.filter(request => request.body?.name === 'draft.open')).toHaveLength(opens);
 });
 it('a real goal context change isolates an old dirty work and does not write it', async () => {
+  vi.spyOn(window, 'confirm').mockReturnValue(true); // Explicitly accept discarding the edited form.
   const h = await fixture(); await h.open('/execution'); fireEvent.click(await screen.findByRole('button', { name: 'Изменить работу: Работа А' }));
   fireEvent.change(await screen.findByLabelText('Прогноз'), { target: { value: '2026-11-20' } });
   await h.open('/execution?goal=' + fixtureId(350006));
@@ -248,6 +249,7 @@ it('StrictMode creates one real draft and an immediate repeated save creates one
   expect(h.requests.filter(request => request.body?.name === 'work.draft.save')).toHaveLength(1);
 });
 it('closing an editor while a command is pending prevents follow-on package reads or actions', async () => {
+  vi.spyOn(window, 'confirm').mockReturnValue(true); // Explicitly accept discarding the edited form.
   const h = await fixture(); await h.open('/execution'); fireEvent.click(await screen.findByRole('button', { name: 'Изменить работу: Работа А' }));
   fireEvent.change(await screen.findByLabelText('Прогноз'), { target: { value: '2026-11-20' } });
   const command = h.client.command.bind(h.client); let release!: () => void; const held = new Promise<void>(resolve => { release = resolve; });
@@ -349,4 +351,33 @@ it.each(['network', 'interrupted'] as const)('lost work-save response %s reuses 
   const writes = h.requests.filter(request => request.body?.name === 'work.draft.save');
   expect(writes).toHaveLength(2); expect(writes[0].body?.commandId).toBe(writes[1].body?.commandId);
   expect(h.repository.sqlForModule('drafts').all('SELECT revision FROM wb_drafts_revisions')).toEqual(versions);
+});
+
+it('keeps changed work fields on cancelled close or Escape and clears the guard after verified save', async () => {
+  const h = await fixture(); await h.open('/execution');
+  const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+  fireEvent.click(await screen.findByRole('button', { name: 'Изменить работу: Работа А' }));
+  fireEvent.change(await screen.findByLabelText('Название работы'), { target: { value: 'Работа с несохранённым названием' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Закрыть редактор' }));
+  expect(confirm).toHaveBeenCalledTimes(1);
+  expect((screen.getByLabelText('Название работы') as HTMLInputElement).value).toBe('Работа с несохранённым названием');
+  fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+  expect(confirm).toHaveBeenCalledTimes(2);
+  expect(screen.getByRole('dialog')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Сохранить поля работы' }));
+  await screen.findByText('Черновик сохранён');
+  fireEvent.click(screen.getByRole('button', { name: 'Закрыть редактор' }));
+  expect(confirm).toHaveBeenCalledTimes(2);
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(h.draft('work', h.a.id)?.title).toBe('Работа с несохранённым названием');
+});
+it('filters only loaded execution rows without changing the server kind or canonical record', async () => {
+  const h = await fixture('viewer'); await h.open('/execution');
+  await screen.findByText('Работа А');
+  const before = h.requests.filter(request => request.url.endsWith('/queries/execution.list')).length;
+  fireEvent.change(screen.getByRole('searchbox', { name: 'Найти в загруженных' }), { target: { value: 'Согласовать план' } });
+  expect(screen.queryByText('Работа А')).toBeNull();
+  expect(screen.getByText('Согласовать план')).toBeTruthy();
+  expect(h.requests.filter(request => request.url.endsWith('/queries/execution.list'))).toHaveLength(before);
+  expect(h.repository.readPublishedHead({ entityType: 'decision', id: h.decision.id })?.revision).toBe(1);
 });

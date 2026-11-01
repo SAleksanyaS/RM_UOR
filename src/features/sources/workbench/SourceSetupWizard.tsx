@@ -1,5 +1,6 @@
 import { WorkbenchBrowserScenarioWizard } from '../../connectors/workbench/BrowserScenarioWizard';
 import { useEffect, useRef, useState } from 'react';
+import { useUnsavedChanges } from '../../../app/workbench/use-unsaved-changes';
 import type { EntityRef, VersionRef } from '../../../domain/workbench/primitives';
 import type { SourceDefinition } from '../../../domain/workbench/entities';
 import type { FormDescription } from '../../knowledge/workbench-fields';
@@ -16,10 +17,13 @@ type SourceDefinitionValue = Partial<Pick<SourceDefinition, 'goalId' | 'kind' | 
 type DraftOpened = { draftId: string; objectId: string; entityRef: EntityRef; editToken: string };
 type DraftSaved = { draftId: string; versionRef: VersionRef; complete: boolean };
 export function WorkbenchSourceSetupWizard({ sourceRef, goalRef, packageRef: suppliedPackage, metricHints: suppliedHints, onClose, rechecking = false }: { sourceRef?: EntityRef; goalRef: EntityRef; packageRef?: EntityRef; metricHints?: SourceMappingHints; onClose(): void; rechecking?: boolean }) {
+  const [dirty, setDirty] = useState(false);
+  const requestLeave = useUnsavedChanges(dirty);
   const dialog = useRef<HTMLElement | null>(null), closeButton = useRef<HTMLButtonElement | null>(null);
-  const close = useRef(onClose); close.current = onClose;
+  const close = useRef(onClose); close.current = () => { requestLeave(onClose); };
   useEffect(() => {
-    const opener = document.activeElement as HTMLElement | null;
+    const opener = document.activeElement as HTMLElement | null, previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
     closeButton.current?.focus();
     const keyboard = (event: KeyboardEvent) => {
       if (event.key === 'Escape') { event.preventDefault(); close.current(); return; }
@@ -30,7 +34,7 @@ export function WorkbenchSourceSetupWizard({ sourceRef, goalRef, packageRef: sup
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
     };
     document.addEventListener('keydown', keyboard);
-    return () => { document.removeEventListener('keydown', keyboard); if (opener?.isConnected) opener.focus(); };
+    return () => { document.removeEventListener('keydown', keyboard); document.body.style.overflow = previousOverflow; if (opener?.isConnected) opener.focus(); };
   }, []);
   const { context } = useGlobalContext();
   const [selectedPackage, selectPackage] = useState('');
@@ -56,17 +60,20 @@ export function WorkbenchSourceSetupWizard({ sourceRef, goalRef, packageRef: sup
   const methods = suppliedPackage ? ownMethod?.complete ? [ownMethod.definition as unknown as import('../../../domain/workbench/entities').MethodVersion] : [] : goal.data?.tabs.method ?? [];
   const mappingRef = source?.mappingRef ?? null;
   const ready = form.data && (suppliedPackage ? draftGoal.data : goal.data) && (mappingRef ? mapping.data : true);
-  return <div className="wb-dialog-backdrop"><section ref={dialog} role="dialog" aria-modal="true" aria-label="Настройка источника" className="wb-data-dialog"><h2>Настройка источника</h2><button ref={closeButton} type="button" onClick={onClose}>Закрыть настройку</button>
-    {!suppliedPackage && packages.length > 1 && <label>Пакет УОР<select value={packageRef?.id ?? ''} onChange={e => selectPackage(e.target.value)}><option value="">Выберите пакет для настройки</option>{packages.map((item, index) => <option key={item.packageRef.id} value={item.packageRef.id}>Пакет {index + 1}, редакция {item.revision} ({item.packageRef.id})</option>)}</select></label>}
+  return <div className="wb-dialog-backdrop"><section ref={dialog} role="dialog" aria-modal="true" aria-label="Настройка источника" className="wb-data-dialog"><header><div><span className="wb-eyebrow">Общие данные цели</span><h2>Настройка источника</h2></div><button ref={closeButton} type="button" onClick={() => close.current()}>Закрыть настройку</button></header>
+    {!suppliedPackage && packages.length > 1 && <label>Пакет УОР<select value={packageRef?.id ?? ''} onChange={e => { const next = e.target.value; requestLeave(() => { setDirty(false); selectPackage(next); }); }}><option value="">Выберите пакет для настройки</option>{packages.map((item, index) => <option key={item.packageRef.id} value={item.packageRef.id}>Пакет {index + 1}, редакция {item.revision}</option>)}</select></label>}
     {(queue.error !== null || ownPackage.error !== null || draftGoal.error !== null || form.error !== null || mapping.error !== null) && <p role="alert">{dataError(ownPackage.error || draftGoal.error || queue.error || form.error || mapping.error, 'read')}</p>}
     {suppliedPackage && ownPackage.data && !ownMethod?.complete && !verifiedHints && source?.kind !== 'manual_status' && <p>Сначала завершите методику цели. Соответствие показателей пока не определено.</p>}
-    {!ready ? <p>Загружаем настройку и собственные черновики…</p> : <SetupForm key={JSON.stringify([goalRef, sourceRef, context, packageRef?.id ?? 'new'])} sourceRef={sourceRef} goalRef={goalRef} packageRef={packageRef} baseRevision={form.data?.editToken ?? packageItem?.editToken ?? null} checking={rechecking || queue.loading || form.loading || mapping.loading || goal.loading || ownPackage.loading || draftGoal.loading} metricHints={verifiedHints ?? methods.flatMap(method => method.mode === 'numeric' ? method.rules.map(rule => ({ metricId: rule.metricRef.id, fields: rule.reducer.kind === 'count' ? [] : rule.reducer.kind === 'ratio' ? [rule.reducer.numeratorField, rule.reducer.denominatorField] : [rule.reducer.valueField] })) : [])} previewAssignmentRef={ownAssignment?.versionRef ?? undefined} initialSource={source ?? { goalId: goalRef.id, kind: 'qlik', mappingRef: null, publicLocator: null }} initialMapping={mapping.data?.values as MappingDefinition | null ?? { sourceId: sourceRef?.id ?? goalRef.id, rowKeyFields: [], dimensionFields: {}, productKeyField: null, fixedScope: null, metricFields: verifiedHints ? verifiedHints.map(hint=>({metricId:hint.metricId,fields:Object.fromEntries(hint.fields.map(field=>[field,'']))})) : methods.flatMap(method => method.mode === 'numeric' ? method.rules.map(rule => ({ metricId: rule.metricRef.id, fields: Object.fromEntries((rule.reducer.kind === 'count' ? [] : rule.reducer.kind === 'ratio' ? [rule.reducer.numeratorField, rule.reducer.denominatorField] : [rule.reducer.valueField]).map(name => [name, ''])) })) : []), dateField: null, periodStartField: null, periodEndField: null, unitField: null, fixedUnitCode: null, parsingProfile: defaultParsingProfile }} mappingRef={mappingRef} />}
+    {!ready ? <p role="status">Загружаем настройку и собственные черновики…</p> : <SetupForm onDirty={setDirty} key={JSON.stringify([goalRef, sourceRef, context, packageRef?.id ?? 'new'])} sourceRef={sourceRef} goalRef={goalRef} packageRef={packageRef} baseRevision={form.data?.editToken ?? packageItem?.editToken ?? null} checking={rechecking || queue.loading || form.loading || mapping.loading || goal.loading || ownPackage.loading || draftGoal.loading} metricHints={verifiedHints ?? methods.flatMap(method => method.mode === 'numeric' ? method.rules.map(rule => ({ metricId: rule.metricRef.id, fields: rule.reducer.kind === 'count' ? [] : rule.reducer.kind === 'ratio' ? [rule.reducer.numeratorField, rule.reducer.denominatorField] : [rule.reducer.valueField] })) : [])} previewAssignmentRef={ownAssignment?.versionRef ?? undefined} initialSource={source ?? { goalId: goalRef.id, kind: 'qlik', mappingRef: null, publicLocator: null }} initialMapping={mapping.data?.values as MappingDefinition | null ?? { sourceId: sourceRef?.id ?? goalRef.id, rowKeyFields: [], dimensionFields: {}, productKeyField: null, fixedScope: null, metricFields: verifiedHints ? verifiedHints.map(hint=>({metricId:hint.metricId,fields:Object.fromEntries(hint.fields.map(field=>[field,'']))})) : methods.flatMap(method => method.mode === 'numeric' ? method.rules.map(rule => ({ metricId: rule.metricRef.id, fields: Object.fromEntries((rule.reducer.kind === 'count' ? [] : rule.reducer.kind === 'ratio' ? [rule.reducer.numeratorField, rule.reducer.denominatorField] : [rule.reducer.valueField]).map(name => [name, ''])) })) : []), dateField: null, periodStartField: null, periodEndField: null, unitField: null, fixedUnitCode: null, parsingProfile: defaultParsingProfile }} mappingRef={mappingRef} />}
   </section></div>;
 }
-function SetupForm({ sourceRef, goalRef, initialSource, initialMapping, mappingRef, packageRef, baseRevision, metricHints, checking, previewAssignmentRef }: { previewAssignmentRef?: VersionRef; sourceRef?: EntityRef; goalRef: EntityRef; initialSource: SourceDefinitionValue; initialMapping: MappingDefinition; mappingRef: VersionRef | null; packageRef: EntityRef | null; baseRevision: string | null; metricHints: MappingMetricHint[]; checking: boolean }) {
+function SetupForm({ onDirty, sourceRef, goalRef, initialSource, initialMapping, mappingRef, packageRef, baseRevision, metricHints, checking, previewAssignmentRef }: { onDirty(value: boolean): void; previewAssignmentRef?: VersionRef; sourceRef?: EntityRef; goalRef: EntityRef; initialSource: SourceDefinitionValue; initialMapping: MappingDefinition; mappingRef: VersionRef | null; packageRef: EntityRef | null; baseRevision: string | null; metricHints: MappingMetricHint[]; checking: boolean }) {
   const { client, session, loading } = useWorkbench();
   const { context } = useGlobalContext();
   const [source, setSource] = useState(initialSource), [mapping, setMapping] = useState(initialMapping), [busy, setBusy] = useState(false), [saved, setSaved] = useState(false), [incomplete, setIncomplete] = useState(false), [error, setError] = useState<unknown>(null);
+  const initialSignature = useRef(JSON.stringify([initialSource, initialMapping]));
+  const signature = JSON.stringify([source, mapping]);
+  useEffect(() => { onDirty(!saved && signature !== initialSignature.current); }, [signature, saved, onDirty]);
   const owner = useRef<AbortController | null>(null);
   // Every completed step retains its exact request/receipt; an explicit retry
   // continues the same drafts after a lost response, never creates a second PR.
@@ -118,18 +125,18 @@ function SetupForm({ sourceRef, goalRef, initialSource, initialMapping, mappingR
         stepToken = mappingSave.editToken; nextMapping = mappingSave.result.versionRef; complete = mappingSave.result.complete;
       } else nextMapping = null;
       const sourceSave = await command<DraftSaved>('source.save', 'source.draft.save', { draftId: sourceDraft.draftId, definition: { ...source, goalId: goalRef.id, mappingRef: nextMapping } }, stepToken);
-      if (!lifetime.signal.aborted) { setSaved(true); setIncomplete(!complete || !sourceSave.result.complete); if (source.kind === 'qlik' && sourceSave.editToken) setBrowserSource({ sourceRef: sourceSave.result.versionRef, ownDraft: { packageId: target.id, sourceDraftId: sourceDraft.draftId, editToken: sourceSave.editToken } }); }
+      if (!lifetime.signal.aborted) { setSaved(true); onDirty(false); setIncomplete(!complete || !sourceSave.result.complete); if (source.kind === 'qlik' && sourceSave.editToken) setBrowserSource({ sourceRef: sourceSave.result.versionRef, ownDraft: { packageId: target.id, sourceDraftId: sourceDraft.draftId, editToken: sourceSave.editToken } }); }
     } catch (failure) { if (!lifetime.signal.aborted) setError(failure); }
     finally { if (!lifetime.signal.aborted) setBusy(false); }
   };
   const canEdit = !busy && !saved && editable;
-  return <><form onSubmit={e => { e.preventDefault(); void save(); }} aria-busy={busy}>
-    <fieldset disabled={!canEdit || !allowed}><legend>Штатное получение данных</legend><label>Тип источника<select value={source.kind ?? ''} onChange={e => setSource({ ...source, kind: e.target.value as SourceDefinition['kind'] })}><option value="" disabled>Не задан</option><option value="qlik">ОКО — сценарий СберБраузера</option><option value="file">Файл — отдельный штатный режим</option><option value="manual_status">Ручной статус</option></select></label>
+  return <>{!allowed && <p className="wb-status-note">Сохранение настройки недоступно при текущем допуске. Введённые значения остаются в форме.</p>}<form onSubmit={e => { e.preventDefault(); void save(); }} aria-busy={busy}>
+    <fieldset className="wb-form-section" disabled={!canEdit || !allowed}><legend>Штатное получение данных</legend><label>Тип источника<select value={source.kind ?? ''} onChange={e => setSource({ ...source, kind: e.target.value as SourceDefinition['kind'] })}><option value="" disabled>Не задан</option><option value="qlik">ОКО — сценарий СберБраузера</option><option value="file">Файл — отдельный штатный режим</option><option value="manual_status">Ручной статус</option></select></label>
       {source.kind === 'qlik' && <><label>Ссылка ОКО<input type="url" value={source.publicLocator ?? ''} onChange={e => setSource({ ...source, publicLocator: e.target.value || null })} /></label><p>Скачанный сценарием Excel/CSV остаётся источником ОКО. Для получения используется опубликованный сценарий СберБраузера.</p></>}
     </fieldset>
     {source.kind !== 'manual_status' && <MappingEditor value={mapping} onChange={setMapping} metricHints={metricHints} disabled={!canEdit || !allowed} />}
-    <p>Изменения источника и соответствия столбцов сохраняются в общем черновике. Публикация выполняется отдельно в панели УОР.</p>
-    <button type="submit" disabled={busy || saved || !writesAllowed}>Сохранить черновик настройки</button>
+    <p className="wb-status-note">Изменения источника и соответствия столбцов сохраняются в общем черновике. Публикация выполняется отдельно в панели УОР.</p>
+    <div className="wb-form-actions"><button className="wb-primary-button" type="submit" disabled={busy || saved || !writesAllowed}>Сохранить черновик настройки</button></div>
     {error !== null && <div role="alert">{dataError(error)}{error instanceof WorkbenchApiError && <ul>{error.problem.details.map((problem, index) => <li key={index}>{problem.path}: {problem.message} ({problem.code})</li>)}</ul>}<button type="button" disabled={busy || !writesAllowed} onClick={() => { void save(); }}>Повторить сохранение настройки</button></div>}
     {saved && <p role="status">Настройка сохранена в черновике. Для общего применения включите её в пакет УОР.</p>}
     {incomplete && <p>Черновик неполный. Проверьте обязательные поля в панели УОР.</p>}

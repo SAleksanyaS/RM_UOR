@@ -22,11 +22,12 @@ export function ExecutionError({ error, operation = 'mutation' }: { error: unkno
 }
 export function ExecutionDialog({ title, onClose, children }: { title: string; onClose(): void; children: ReactNode }) {
   const element = useRef<HTMLElement>(null), closer = useRef<HTMLButtonElement>(null);
+  const close = useRef(onClose); close.current = onClose;
   useEffect(() => {
     const opener = document.activeElement as HTMLElement | null, previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden'; closer.current?.focus();
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onClose(); return; }
+      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close.current(); return; }
       if (event.key !== 'Tab') return;
       const items = [...element.current!.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),a[href]')];
       const first = items[0], last = items.at(-1), outside = !element.current?.contains(document.activeElement);
@@ -49,7 +50,7 @@ function definiteRejection(error: unknown): boolean {
 export type ExecutionEditorApi = {
   entry: DraftEntry; entries: DraftEntry[]; packageId: string; disabled: boolean; unknown: boolean;
   run<T>(step: string, name: string, payload: Record<string, unknown>): Promise<T>;
-  perform(name: string, action: () => Promise<void>): void;
+  perform(name: string, action: () => Promise<void>, onSaved?: () => void): void;
 };
 /** All edits go through the real draft owner. Unknown steps keep their exact request identity. */
 export function ExecutionDraftEditor({ reference, entityType = reference?.entityType, commandName, children }: { reference: EntityRef | null; entityType?: string; commandName: string; children(api: ExecutionEditorApi): ReactNode }) {
@@ -117,12 +118,12 @@ export function ExecutionDraftEditor({ reference, entityType = reference?.entity
   };
   useEffect(() => { const owner = {}; live.current = owner; locked.current = false; return () => { if (live.current === owner) live.current = null; }; }, []);
   useEffect(() => { const owner = live.current; if (owner && !view && !unknown && !conflict && queue.data && (queueCursor === null && queue.data.items.length <= 1 && !queue.data.page.nextCursor)) void load(owner, selection || queue.data.items[0]?.packageRef.id || 'new'); }, [queue.data, view, checking, selection, queueCursor, unknown, conflict]);
-  const perform = (name: string, action: () => Promise<void>) => {
+  const perform = (name: string, action: () => Promise<void>, onSaved?: () => void) => {
     const owner = live.current; if (!owner || locked.current || !access.current || conflict) return;
     if (unknown && actionName.current !== name) return;
     if (actionName.current !== name || saved) { for (const step of [...requests.current.keys()]) if (step !== 'editor.open') requests.current.delete(step); }
     actionName.current = name; locked.current = true; setBusy(true); setSaved(false); setError(null);
-    void action().then(async () => { if (!current(owner)) return; const pkg = await readPackage(owner, packageId.current!); assertReadback(pkg); if (current(owner)) { setView(previous => previous ? { pkg, draftId: previous.draftId } : null); setUnknown(false); setSaved(true); } }, failure => {
+    void action().then(async () => { if (!current(owner)) return; const pkg = await readPackage(owner, packageId.current!); assertReadback(pkg); if (current(owner)) { setView(previous => previous ? { pkg, draftId: previous.draftId } : null); setUnknown(false); setSaved(true); onSaved?.(); } }, failure => {
       if (current(owner)) { setError(failure); setUnknown(!definiteRejection(failure)); }
     }).catch(failure => { if (current(owner)) { setError(failure); setConflict(failure instanceof ExecutionReadbackConflict); setUnknown(!(failure instanceof ExecutionReadbackConflict)); } }).finally(() => { if (current(owner)) { locked.current = false; setBusy(false); } });
   };
@@ -138,8 +139,8 @@ export function ExecutionDraftEditor({ reference, entityType = reference?.entity
     finally { if (current(owner)) { locked.current = false; setBusy(false); } }
   };
   const entry = view?.pkg.entries.find(item => item.draftId === view.draftId);
-  return <><p>Изменения сохраняются в личном пакете и станут общими после принятия.</p>{checking && <p role="status">Проверяем доступ…</p>}<ExecutionError error={error} />{queue.error !== null && !view && <ExecutionError error={queue.error} operation="read" />}{busy && <p role="status">Сохраняем черновик…</p>}{saved && <p role="status">Черновик сохранён</p>}{unknown && <p role="status">Результат последнего действия не подтверждён. Поля заблокированы; повторите это же действие для проверки.</p>}
-    {!entry && <><label>Пакет изменений<select aria-label="Пакет изменений" value={selection} disabled={busy || checking || unknown || conflict} onChange={event => setSelection(event.target.value)}><option value="">Выберите пакет</option><option value="new">Создать новый пакет</option>{queueItems.map(item => <option key={item.packageRef.id} value={item.packageRef.id}>{item.packageRef.id}</option>)}</select></label><button disabled={busy || checking || conflict || !queue.data || ((queueItems.length > 1 || !!queue.data.page.nextCursor) && !selection)} onClick={() => { if (live.current) void load(live.current, selection || 'new'); }}>Повторить открытие черновика</button>{queue.data?.page.nextCursor && <button disabled={busy || checking || queue.loading} onClick={() => setQueueCursor(queue.data!.page.nextCursor)}>Показать ещё пакеты</button>}</>}
+  return <><p className="wb-status-note">Изменения сохраняются в личном пакете и станут общими после принятия.</p>{checking && <p role="status">Проверяем доступ…</p>}<ExecutionError error={error} />{queue.error !== null && !view && <ExecutionError error={queue.error} operation="read" />}{busy && <p role="status">Сохраняем черновик…</p>}{saved && <p role="status">Черновик сохранён</p>}{unknown && <p role="status">Результат последнего действия не подтверждён. Поля заблокированы; повторите это же действие для проверки.</p>}
+    {!entry && <><label className="wb-field"><span>Пакет изменений</span><select aria-label="Пакет изменений" value={selection} disabled={busy || checking || unknown || conflict} onChange={event => setSelection(event.target.value)}><option value="">Выберите пакет</option><option value="new">Создать новый пакет</option>{queueItems.map((item, index) => <option key={item.packageRef.id} value={item.packageRef.id}>Пакет {index + 1} · редакция {item.revision} · незавершённых: {item.incomplete}</option>)}</select></label><button disabled={busy || checking || conflict || !queue.data || ((queueItems.length > 1 || !!queue.data.page.nextCursor) && !selection)} onClick={() => { if (live.current) void load(live.current, selection || 'new'); }}>Повторить открытие черновика</button>{queue.data?.page.nextCursor && <button disabled={busy || checking || queue.loading} onClick={() => setQueueCursor(queue.data!.page.nextCursor)}>Показать ещё пакеты</button>}</>}
     {conflict && <button type="button" disabled={busy || checking || !access.current} onClick={() => { void reconcile(); }}>Загрузить актуальный черновик вместо введённых данных</button>}
     {entry && <Fragment key={formRevision}>{children({ entry, entries: view!.pkg.entries, packageId: view!.pkg.summary.packageRef.id, disabled: busy || checking || !access.current || unknown || conflict, unknown, run: (step, name, payload) => { const owner = live.current; if (!owner) return Promise.reject(Error('Редактор закрыт')); return call(owner, step, name, payload); }, perform })}</Fragment>}
   </>;

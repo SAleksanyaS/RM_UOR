@@ -1,1 +1,18 @@
-.wb-maintenance-backdrop{position:fixed;inset:0;background:#142c46a8;z-index:40;display:flex;justify-content:center;align-items:flex-start;padding:1.5rem;overflow:auto}.wb-maintenance{background:#fff;color:#182b41;max-width:760px;width:100%;border-radius:14px;padding:1.5rem;box-sizing:border-box;overflow-wrap:anywhere}.wb-maintenance header{display:flex;gap:1rem;justify-content:space-between;align-items:start}.wb-maintenance h2{margin:0}.wb-maintenance h3{font-size:1.08rem}.wb-maintenance-card{border-top:1px solid #d3dde6;margin-top:1.5rem;padding-top:.5rem}.wb-maintenance button{min-height:44px;white-space:normal;margin:.4rem .5rem .4rem 0;padding:.6rem 1rem}.wb-maintenance label{display:block;margin:.8rem 0}.wb-maintenance input[type=file]{display:block;max-width:100%;margin-top:.5rem}.wb-maintenance input[type=checkbox]{min-width:20px;min-height:20px;vertical-align:middle}.wb-maintenance a{display:inline-block;padding:.4rem 0;color:#14579e}.wb-maintenance [role=alert]{padding:1rem;border-left:4px solid #b62736;background:#fff0f1}.wb-maintenance :focus-visible{outline:3px solid #176ac2;outline-offset:3px}.wb-maintenance progress{max-width:100%}@media(max-width:480px){.wb-maintenance-backdrop{padding:.5rem}.wb-maintenance{padding:1rem}.wb-maintenance header{flex-direction:column}.wb-maintenance button{max-width:100%}}
+.wb-maintenance-backdrop { position:fixed; inset:0; background:#102c2780; z-index:80; display:flex; justify-content:center; align-items:flex-start; padding:24px; overflow:auto; }
+.wb-maintenance { background:var(--wb-surface); color:var(--wb-text); max-width:840px; width:100%; border:1px solid var(--wb-border); border-radius:10px; padding:24px; box-sizing:border-box; overflow-wrap:anywhere; }
+.wb-maintenance > header { display:flex; gap:16px; justify-content:space-between; align-items:flex-start; margin-bottom:20px; padding-bottom:18px; border-bottom:1px solid var(--wb-border); }
+.wb-maintenance > header button { flex-shrink:0; margin:0; }
+.wb-maintenance h2 { margin:0; }
+.wb-maintenance h3 { font-size:17px; margin:0 0 12px; }
+.wb-maintenance p + p { margin-top:8px; }
+.wb-maintenance-card { border-top:1px solid var(--wb-border); margin-top:24px; padding-top:20px; }
+.wb-maintenance-restore { background:var(--wb-surface-subtle); border:1px solid var(--wb-warning-border); border-radius:8px; padding:18px; }
+.wb-maintenance button { min-height:40px; white-space:normal; margin:8px 8px 8px 0; padding:8px 12px; }
+.wb-maintenance label { display:block; margin:14px 0; }
+.wb-maintenance input[type=file] { display:block; max-width:100%; width:100%; margin-top:8px; }
+.wb-maintenance input[type=checkbox] { vertical-align:middle; margin-right:8px; }
+.wb-maintenance a { display:inline-block; padding:6px 0; color:var(--wb-accent); }
+.wb-maintenance progress { max-width:100%; width:100%; accent-color:var(--wb-accent); }
+.wb-maintenance ul { padding-left:22px; }
+.wb-maintenance li { margin-block:8px; }
+@media(max-width:767px) { .wb-maintenance-backdrop { padding:8px; } .wb-maintenance { padding:16px; } .wb-maintenance > header { flex-wrap:wrap; } .wb-maintenance > header button { margin-left:auto; } .wb-maintenance button { max-width:100%; min-height:42px; } .wb-maintenance-restore { padding:14px; } }

@@ -140,3 +140,13 @@ it('observes live native Git login through completion without an additional UI c
   expect(h.requests.filter(r=>typeof r.body?.name==='string'&&['package.submit','job.retry','job.openAuth'].includes(r.body.name))).toHaveLength(1);
  }finally{native.complete();await h.publishingTesting!.commands.idle();}
 });
+
+it('does not call a pending queue read an empty package list',async()=>{
+ const h=await createWorkbenchUiHarness({role:'curator',scenario:'publication-ready'},{views:{uor:WorkbenchCuratorPanel}});cleanups.push(h.close);
+ const query=h.client.query.bind(h.client);let release!:()=>void;const gate=new Promise<void>(resolve=>{release=resolve;});
+ vi.spyOn(h.client,'query').mockImplementation(async(name,input,options)=>{if(name==='uor.queue')await gate;return query(name,input,options);});
+ await h.open('/uor');await screen.findByText('Загружаем собственные пакеты…');
+ expect(screen.queryByText('Накопленных пакетов пока нет. Сохраните изменения в карточке цели или в исполнении.')).toBeNull();
+ release();await screen.findByRole('button',{name:'Проверить пакет'});
+ expect(screen.queryByText('Загружаем собственные пакеты…')).toBeNull();
+});

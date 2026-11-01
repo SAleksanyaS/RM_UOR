@@ -343,3 +343,18 @@ it('review_interrupted_command_response_keeps_the_unknown_operation_identity', (
   expect(definitiveDataRejection(new WorkbenchApiError(problem, 409, null))).toBe(false);
   expect(definitiveDataRejection(new WorkbenchApiError({ ...problem, code: 'VALIDATION_FAILED' }, 422, null))).toBe(true);
 });
+
+it('source setup protects changed mapping on close and stops warning after a confirmed save', async () => {
+  await setup(); const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+  fireEvent.click(screen.getByRole('button', { name: 'Настроить источник' }));
+  const dialog = await screen.findByRole('dialog', { name: 'Настройка источника' });
+  fireEvent.change(await within(dialog).findByLabelText('Лист XLSX'), { target: { value: 'Согласованный лист' } });
+  fireEvent.keyDown(dialog, { key: 'Escape' });
+  expect(confirm).toHaveBeenCalledTimes(1);
+  expect((within(dialog).getByLabelText('Лист XLSX') as HTMLInputElement).value).toBe('Согласованный лист');
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Сохранить черновик настройки' }));
+  await within(dialog).findByText('Настройка сохранена в черновике. Для общего применения включите её в пакет УОР.');
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Закрыть настройку' }));
+  expect(screen.queryByRole('dialog', { name: 'Настройка источника' })).toBeNull();
+  expect(confirm).toHaveBeenCalledTimes(1);
+});

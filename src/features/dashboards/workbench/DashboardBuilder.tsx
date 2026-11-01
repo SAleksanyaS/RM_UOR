@@ -1,4 +1,5 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useUnsavedChanges } from '../../../app/workbench/use-unsaved-changes';
 import { useGlobalContext, useWorkbench, useWorkbenchQuery } from '../../../app/workbench/context';
 import type { EntityRef } from '../../../domain/workbench/primitives';
 import type { DashboardDef, MethodVersion } from '../../../domain/workbench/entities';
@@ -8,14 +9,17 @@ import { blockKind,blockNames,columnLabels,configurationRequest,executionColumns
 import { QueryFeedback } from '../../overview/workbench/goal-view-utils';
 import './dashboards.css';
 import { DashboardPackagePreview } from './DashboardPackagePreview';
-export function DashboardBuilder({reference=null}:{reference?:EntityRef|null}){
+export function DashboardBuilder({reference=null,onDirtyChange}:{reference?:EntityRef|null;onDirtyChange?(value:boolean):void}){
  const {session,client}=useWorkbench();
  if(!session?.allowedCommands.includes('dashboard.draft.save'))return <p>Общие дашборды настраивает куратор УОР. Личный вид доступен каждому.</p>;
- return <section className="wb-dashboard-editor" aria-label="Конструктор общего дашборда"><h2>Общий дашборд</h2><ExecutionDraftEditor key={executionOwner(client)+":"+session.personId+":"+(reference?.id??"new")} reference={reference} entityType="dashboard_def" commandName="dashboard.draft.save">{api=><DashboardForm api={api}/>}</ExecutionDraftEditor></section>;
+ return <section className="wb-dashboard-editor" aria-label="Конструктор общего дашборда"><h2>Общий дашборд</h2><ExecutionDraftEditor key={executionOwner(client)+":"+session.personId+":"+(reference?.id??"new")} reference={reference} entityType="dashboard_def" commandName="dashboard.draft.save">{api=><DashboardForm api={api} onDirtyChange={onDirtyChange}/>}</ExecutionDraftEditor></section>;
 }
-function DashboardForm({api}:{api:ExecutionEditorApi}){
+function DashboardForm({api,onDirtyChange}:{api:ExecutionEditorApi;onDirtyChange?(value:boolean):void}){
  const {context}=useGlobalContext();const initial=api.entry.definition as Partial<DashboardDefinition>;
  const [title,setTitle]=useState(initial.title??''),[blocks,setBlocks]=useState(initial.blocks??[]),[filters,setFilters]=useState(initial.filters??[]),[kind,setKind]=useState<BlockKind>('goal-table'),[error,setError]=useState(''),[announcement,setAnnouncement]=useState(''),[cursor,setCursor]=useState<string|null>(null),[assignmentOptions,setAssignmentOptions]=useState<WorkbenchReadModels['goals.list']['items']>([]);
+ const signature=JSON.stringify({title,blocks,filters});const [savedSignature,setSavedSignature]=useState(signature);
+ useUnsavedChanges(signature!==savedSignature);
+ useEffect(()=>{onDirtyChange?.(signature!==savedSignature);return()=>onDirtyChange?.(false);},[signature,savedSignature,onDirtyChange]);
  const form=useWorkbenchQuery<WorkbenchReadModels['forms.describe']>('forms.describe',context?configurationRequest(context,{formKind:'dashboard_def',ref:api.entry.entityRef,packageRef:{entityType:'publication_package',id:api.packageId}}):null);
  const goals=useWorkbenchQuery<WorkbenchReadModels['goals.list']>('goals.list',context?configurationRequest({...context,goalId:null}, {},cursor):null);
  const registered=new Set(form.data?.registeredSchemas.filter(schema=>schema.schemaVersion===1).map(schema=>schema.schemaId));
@@ -31,7 +35,7 @@ function DashboardForm({api}:{api:ExecutionEditorApi}){
    if(Array.isArray(settings.kinds)&&!settings.kinds.length){setError('Выберите хотя бы один вид проблемы данных.');return;}
    if(['metric-card','metric-trend'].includes(blockKind(block))&&(!settings.assignmentRef||!settings.metricRef)){setError('Выберите назначение и показатель для каждого числового блока.');return;}
   }
-  api.perform('dashboard',async()=>{await api.run('dashboard.save','dashboard.draft.save',{draftId:api.entry.draftId,definition:{...(title.trim()?{title}:{}),blocks,filters}});});
+  api.perform('dashboard',async()=>{await api.run('dashboard.save','dashboard.draft.save',{draftId:api.entry.draftId,definition:{...(title.trim()?{title}:{}),blocks,filters}});},()=>{setSavedSignature(signature);onDirtyChange?.(false);});
  };
  return <><QueryFeedback loading={form.loading} error={form.error}/>{error&&<p role="alert">{error}</p>}<p role="status" className="wb-dashboard-announcement">{announcement}</p><fieldset disabled={api.disabled||!form.data}><legend>Состав и порядок</legend><label>Название дашборда<input value={title} onChange={event=>setTitle(event.target.value)}/></label><label>Новый блок<select aria-label="Новый блок" value={kind} onChange={event=>setKind(event.target.value as BlockKind)}>{Object.entries(blockNames).map(([key,label])=><option key={key} value={key} disabled={!registered.has(`uor.dashboard.${key}.v1`)}>{label}</option>)}</select></label><button type="button" disabled={!registered.has(`uor.dashboard.${kind}.v1`)} onClick={()=>setBlocks(previous=>[...previous,newBlock(kind)])}>Добавить блок</button>
  {blocks.map((block,index)=>{const type=blockKind(block),settings=block.settings.value,layout=settings.layout as {w:number;h:number};const name=blockNames[type]??'Неизвестный блок';return <fieldset key={block.id} aria-label={'Блок: '+name}><legend>{index+1}. {name}</legend><div className="wb-dashboard-actions">{[-1,1].map(offset=><button key={offset} type="button" ref={element=>{if(element)buttons.current.set(block.id+':'+offset,element);else buttons.current.delete(block.id+':'+offset);}} aria-label={(offset<0?'Вверх: ':'Вниз: ')+name} aria-disabled={index+offset<0||index+offset>=blocks.length} onClick={()=>move(block.id,offset)}>{offset<0?'Вверх':'Вниз'}</button>)}<button type="button" onClick={()=>setBlocks(previous=>previous.filter(item=>item.id!==block.id))}>Удалить блок: {name}</button></div><label>Ширина<select aria-label="Ширина" value={layout?.w??6} onChange={event=>change(block.id,{layout:{...layout,w:Number(event.target.value)}})}>{[3,6,12].map(width=><option key={width} value={width}>{width}/12</option>)}</select></label><label>Высота<select aria-label="Высота" value={layout?.h??2} onChange={event=>change(block.id,{layout:{...layout,h:Number(event.target.value)}})}>{[1,2,3].map(height=><option key={height} value={height}>{height}</option>)}</select></label>

@@ -34,16 +34,17 @@ export function ImportPreview({ preview, onApplied }: { preview: ImportPreviewRe
   };
   const rejected = result ? preview.rows.filter(r => result.rejectedRowIds.includes(r.id)) : preview.rows.filter(r => !r.acceptable);
   return <section role="region" aria-label="Предпросмотр импорта" aria-busy={busy} className="wb-panel">
-    <h2>Предпросмотр импорта</h2><p>Файл ещё не создаёт подтверждение УОР. Выберите строки и изменения явно.</p>
+    <h2>Предпросмотр импорта</h2><p className="wb-status-note">Файл ещё не создаёт подтверждение УОР. Выберите строки и изменения явно.</p>
     {preview.issues.map((issue, i) => <p key={i}>{dataIssueLabel(issue.code, issue.message)}</p>)}
-    {!preview.complete && <p>Набор неполный. Отсутствующие значения не заменяются нулём.</p>}
-    <button type="button" disabled={busy || result !== null} onClick={() => { request.current = null; setSelected(valid.map(r => r.id)); }}>Выбрать корректные строки</button>
-    <table><caption>Строки файла</caption><thead><tr><th>Выбор</th><th>Строка</th><th>Значение</th><th>Исходная дата / период</th><th>Проверка</th></tr></thead><tbody>{preview.rows.map(row => {
+    {!preview.complete && <p className="wb-risk-note">Набор неполный. Отсутствующие значения не заменяются нулём.</p>}
+    <dl className="wb-import-metrics"><div><dt>Строк в файле</dt><dd>{preview.rows.length}</dd></div><div><dt>Выбрано новых строк</dt><dd>{selected.length}</dd></div><div><dt>Выбрано исправлений</dt><dd>{corrections.length}</dd></div><div><dt>Строк с проблемами</dt><dd>{preview.rows.filter(row => !row.acceptable).length}</dd></div></dl>
+    <div className="wb-form-actions"><button type="button" disabled={busy || result !== null} onClick={() => { request.current = null; setSelected(valid.map(r => r.id)); }}>Выбрать корректные строки</button></div>
+    <div className="wb-table-scroll" role="region" aria-label="Строки предпросмотра" tabIndex={0}><table className="wb-data-table"><caption className="wb-visually-hidden">Строки файла</caption><thead><tr><th>Выбор</th><th>Строка</th><th>Значение</th><th>Исходная дата / период</th><th>Проверка</th></tr></thead><tbody>{preview.rows.map(row => {
       const revision = preview.corrections.find(c => c.afterFact.id === row.proposedFact?.id);
       return <tr key={row.id}><td>{!revision && <input type="checkbox" aria-label={'Принять строку ' + row.coordinate.row} disabled={!row.acceptable || busy || result !== null} checked={selected.includes(row.id)} onChange={e => change(row.id, e.target.checked, 'row')} />}</td><td>{row.coordinate.sheet ?? 'CSV'}: {row.coordinate.row}</td><td>{row.proposedFact?.value === null || !row.proposedFact ? 'Нет данных' : typeof row.proposedFact.value === 'string' ? row.proposedFact.value : JSON.stringify(row.proposedFact.value)}</td><td>{row.proposedFact ? formatDataTime(row.proposedFact.businessTime) : 'Не разобрана'}</td><td>{row.problems.map(p => dataIssueLabel(p.code, p.message)).join('; ') || 'Корректна'}</td></tr>;
-    })}</tbody></table>
-    {preview.corrections.length > 0 && <fieldset disabled={busy || result !== null}><legend>Изменения прежних фактов</legend>{preview.corrections.map(c => <label key={c.id}><input type="checkbox" aria-label={'Принять изменение ' + c.beforeFactRef.id} checked={corrections.includes(c.id)} onChange={e => change(c.id, e.target.checked, 'correction')} /><CorrectionDiff correction={c} /></label>)}</fieldset>}
-    <button type="button" disabled={busy || loading || result !== null || selected.length + corrections.length === 0} onClick={() => { void apply(); }}>Принять выбранные строки</button>
+    })}</tbody></table></div>
+    {preview.corrections.length > 0 && <fieldset className="wb-form-section" disabled={busy || result !== null}><legend>Изменения прежних фактов</legend>{preview.corrections.map(c => <label className="wb-check-label" key={c.id}><input type="checkbox" aria-label={'Принять изменение ' + c.beforeFactRef.id} checked={corrections.includes(c.id)} onChange={e => change(c.id, e.target.checked, 'correction')} /><CorrectionDiff correction={c} /></label>)}</fieldset>}
+    <div className="wb-form-actions"><button className="wb-primary-button" type="button" disabled={busy || loading || result !== null || selected.length + corrections.length === 0} onClick={() => { void apply(); }}>Принять выбранные строки</button></div>
     {busy && <p role="status">Принимаем данные: {stage}</p>}
     {error !== null && <p role="alert">{dataError(error)} <button type="button" disabled={busy} onClick={() => { void apply(); }}>Повторить принятие</button></p>}
     {result && <p role="status">Принято: {result.acceptedRowIds.length + result.acceptedCorrectionIds.length}; не принято: {result.rejectedRowIds.length}</p>}

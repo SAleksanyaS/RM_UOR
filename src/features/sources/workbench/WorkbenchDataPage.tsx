@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { RefreshCw, Database } from 'lucide-react';
 import type { EntityRef, VersionRef } from '../../../domain/workbench/primitives';
 import type { SourceDefinition } from '../../../domain/workbench/entities';
 import type { FormDescription } from '../../knowledge/workbench-fields';
@@ -19,7 +20,7 @@ export function WorkbenchDataPage() {
   if (lifetime.current.client !== client) lifetime.current = { client, generation: lifetime.current.generation + 1 };
   const [revision, setRevision] = useState(0);
 
-  return <div className="wb-data"><button type="button" onClick={() => setRevision(v => v + 1)}>Обновить список данных</button><DataWorkspace refreshRevision={revision} key={JSON.stringify([context, window.location.search, session?.personId, session?.role, session?.allowedCommands, lifetime.current.generation])} /></div>;
+  return <div className="wb-data"><div className="wb-page-toolbar"><div><h2>Общие данные целей</h2><p className="wb-status-note">Получения и факты для расчёта цели. Личные отчёты ОКО доступны в отдельной вкладке.</p></div><div className="wb-toolbar-actions"><button type="button" onClick={() => setRevision(v => v + 1)}><RefreshCw size={16} aria-hidden="true" />Обновить список данных</button></div></div><DataWorkspace refreshRevision={revision} key={JSON.stringify([context, window.location.search, session?.personId, session?.role, session?.allowedCommands, lifetime.current.generation])} /></div>;
 }
 function DataWorkspace({ refreshRevision }: { refreshRevision: number }) {
   const { context, setContext } = useGlobalContext();
@@ -41,12 +42,12 @@ function DataWorkspace({ refreshRevision }: { refreshRevision: number }) {
   const applied = (result: ImportApplyResult) => { setSelectedCapture(result.captureRef); setDataRevision(v => v + 1); };
   return <>
     {goals.error !== null && <p role="alert">{dataError(goals.error, 'read')}</p>}
-    {!context?.goalId && <section><h2>Выберите цель</h2>{goals.data?.items.map(row => <button type="button" key={row.ref.id} onClick={() => { void setContext({ goalId: row.goal.id }).catch(() => undefined); }}>{row.goal.title}</button>)}</section>}
-    {goal && <h2>{goal.title}</h2>}
+    {goals.loading && !goals.data && <p role="status">Загружаем цели…</p>}{!context?.goalId && <section className="wb-panel"><h2>Выберите цель</h2>{goals.data?.items.map(row => <button type="button" key={row.ref.id} onClick={() => { void setContext({ goalId: row.goal.id }).catch(() => undefined); }}>{row.goal.title}</button>)}</section>}
+    {goal && <div className="wb-source-heading"><Database size={20} aria-hidden="true" /><h3>{goal.title}</h3></div>}
     {source.error !== null && <p role="alert">{dataError(source.error, 'read')}</p>}
-    {definition && <><p>Штатный источник: {definition.kind === 'qlik' ? 'ОКО' : definition.kind === 'file' ? 'файл' : 'ручной статус'}</p>
+    {definition && <><p>Штатный источник: {definition.kind === 'qlik' ? 'ОКО' : definition.kind === 'file' ? 'файл' : definition.kind === 'manual_status' ? 'ручной статус' : `Неизвестный тип: ${definition.kind}`}</p>
       {definition.kind === 'qlik' && <p>Выгрузка Excel/CSV, скачанная сценарием СберБраузера, относится к ОКО.</p>}
-      {sourceRef && session?.allowedCommands.includes('source.draft.save') && <button type="button" onClick={() => setSetupOpen(true)}>Настроить источник</button>}
+      {sourceRef && session?.allowedCommands.includes('source.draft.save') && <div className="wb-form-actions"><button type="button" onClick={() => setSetupOpen(true)}>Настроить источник</button></div>}
       {definition.kind === 'file' && context?.goalId && session?.allowedCommands.includes('import.preview') && session.allowedCommands.includes('import.apply') && <FileImport goalId={context.goalId} onApplied={applied} />}
       {definition.kind === 'qlik' && context?.goalId && <CaptureSource goalId={context.goalId} onCaptured={ref => { setSelectedCapture(ref); setDataRevision(v => v + 1); }} />}
     </>}
@@ -74,8 +75,8 @@ function FileImport({ goalId, onApplied }: { goalId: string; onApplied(result: I
     } catch (failure) { if (!current.signal.aborted) setError(failure); }
     finally { if (!current.signal.aborted) setBusy(false); }
   };
-  return <section aria-label="Загрузка файла" className="wb-panel"><h2>Загрузка файла</h2><label>Файл данных<input type="file" accept=".csv,.xlsx" disabled={busy} onChange={e => { operation.current = null; setPreview(null); setError(null); setFile(e.target.files?.[0] ?? null); }} /></label>
-    <button type="button" disabled={!file || busy || loading} onClick={() => { void inspect(); }}>Проверить файл</button>
+  return <section aria-label="Загрузка файла" className="wb-panel"><h2>Загрузка файла</h2><label className="wb-field"><span>Файл данных</span><input type="file" accept=".csv,.xlsx" disabled={busy} onChange={e => { operation.current = null; setPreview(null); setError(null); setFile(e.target.files?.[0] ?? null); }} /></label>
+    <div className="wb-form-actions"><button className="wb-primary-button" type="button" disabled={!file || busy || loading} onClick={() => { void inspect(); }}>Проверить файл</button></div>
     {busy && <p role="status">Проверяем файл: {stage}</p>}{error !== null && <p role="alert">{dataError(error)}</p>}
     {preview && <ImportPreview key={preview.previewToken} preview={preview} onApplied={onApplied} />}
   </section>;
@@ -116,10 +117,10 @@ function CaptureSource({ goalId, onCaptured }: { goalId: string; onCaptured(ref:
   if (job?.nextAction?.enabled && job.nextAction.commandName && ['job.openAuth', 'job.retry', 'job.cancel'].includes(job.nextAction.commandName) && job.nextAction.payload) actions.push({ name: job.nextAction.commandName, label: job.nextAction.label, payload: job.nextAction.payload });
   if (job?.retryAvailable && !actions.some(a => a.name === 'job.retry')) actions.push({ name: 'job.retry', label: 'Продолжить получение', payload: { jobId: job.jobId } });
   if (job?.cancelAvailable && !actions.some(a => a.name === 'job.cancel')) actions.push({ name: 'job.cancel', label: 'Отменить получение', payload: { jobId: job.jobId } });
-  return <section aria-label="Получение ОКО">
+  return <section className="wb-panel" aria-label="Получение ОКО"><h3>Штатное получение из ОКО</h3><p className="wb-status-note">Результат появится среди принятых наборов после завершения получения.</p><div className="wb-form-actions">
     {!terminal && <button type="button" disabled={busy || !allowed} onClick={() => { void capture(); }}>{job ? 'Обновить состояние получения' : request.current ? 'Проверить прежнее получение ОКО' : 'Получить данные ОКО'}</button>}
     {terminal && <button type="button" disabled={busy || !allowed} onClick={() => { void capture(true); }}>Начать новое получение ОКО</button>}
-    {job && <p role="status">Задание {job.jobId}: {job.status}</p>}
+    </div>{job && <><p role="status">{({ queued: 'Получение в очереди', running: 'Получаем данные', waiting_user: 'Требуется действие пользователя', retry_wait: 'Ожидается повтор', succeeded: 'Получение завершено', partial: 'Получено с замечаниями', failed: 'Получение остановлено с ошибкой', cancelled: 'Получение отменено', interrupted: 'Получение прервано' } as Record<string, string>)[job.status] ?? `Неизвестное состояние: ${job.status}`}</p><details className="wb-technical-details"><summary>Ссылка на операцию</summary><code>{job.jobId}</code></details></>}
     {actions.filter(action => session?.allowedCommands.includes(action.name)).map(action => <button type="button" key={action.name} disabled={busy || loading} onClick={() => { void control(action.name, action.payload); }}>{action.label}</button>)}
     {job?.nextAction?.enabled && job.nextAction.route && <button type="button" onClick={() => navigate(job.nextAction!.route!)}>{job.nextAction.label}</button>}
     {busy && <p role="status">Получаем данные: {stage}</p>}{error !== null && <p role="alert">{dataError(error)} Последний успешный набор сохранён.</p>}
@@ -134,12 +135,12 @@ function CaptureList({ selected, onSelect, onLineage }: { selected: VersionRef |
   const [rowCursor, setRowCursor] = useState<string | null>(null);
   const rows = useWorkbenchQuery<WorkbenchReadModels['data.rows']>('data.rows', context && capture ? { ...dataPageRequest, context, filter: { captureRef: capture, layer, issuesOnly }, page: { limit: 100, cursor: rowCursor } } : null);
   return <section className="wb-panel"><h2>Принятые наборы</h2>{captures.error !== null && <p role="alert">{dataError(captures.error, 'read')}</p>}{captures.data?.items.length === 0 && <p>Нет данных. Получите штатный источник или загрузите файл для цели с файловым режимом.</p>}
-    {captures.data?.items.map(item => <button key={item.ref.id} type="button" aria-pressed={item.ref.id === capture?.id} onClick={() => { onSelect(item.ref); setRowCursor(null); }}>{item.capture.capturedAt} — {item.obtainedVia === 'git' ? 'Git' : 'локальный набор'}; принято: {item.capture.acceptedRows}; не принято: {item.capture.rejectedRows}{item.latestAttemptIncomplete ? '; неполный' : ''}</button>)}
+    {captures.loading && !captures.data && <p role="status">Загружаем принятые наборы…</p>}<ul className="wb-capture-list">{captures.data?.items.map(item => <li key={item.ref.id}><div><strong>{new Date(item.capture.capturedAt).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' })} МСК</strong><p>{item.obtainedVia === 'git' ? 'Общий набор из Git' : 'Локальный набор'} · принято: {item.capture.acceptedRows} · не принято: {item.capture.rejectedRows}</p>{item.latestAttemptIncomplete && <span className="wb-badge wb-badge-confirmation">Неполный набор</span>}</div><button type="button" aria-pressed={item.ref.id === capture?.id} aria-label={'Открыть набор от ' + item.capture.capturedAt} onClick={() => { onSelect(item.ref); setRowCursor(null); }}>{item.ref.id === capture?.id ? 'Открыт' : 'Открыть строки'}</button></li>)}</ul>
     {captures.data?.page.nextCursor && <button type="button" onClick={() => { setCursor(captures.data!.page.nextCursor); }}>Следующая страница наборов</button>}
     {selectedIssues.length > 0 && <section aria-label="Проблемы набора"><h3>Проблемы набора</h3><ul>{selectedIssues.map((issue, index) => <li key={index}>{dataIssueLabel(issue.code, issue.message)}</li>)}</ul></section>}
-    {capture && <><div><button type="button" aria-pressed={layer === 'raw'} onClick={() => { setLayer('raw'); setRowCursor(null); }}>Исходные строки</button><button type="button" aria-pressed={layer === 'enriched'} onClick={() => { setLayer('enriched'); setRowCursor(null); }}>Обогащённые строки</button><label><input type="checkbox" checked={issuesOnly} onChange={e => { setIssuesOnly(e.target.checked); setRowCursor(null); }} />Только строки с проблемами</label></div>
-      {rows.error !== null && <p role="alert">{dataError(rows.error, 'read')}</p>}{rows.loading && <p>Загружаем строки…</p>}
-      {rows.data && <section role="region" aria-label={layer === 'raw' ? 'Исходные строки' : 'Обогащённые строки'}><p>{layer === 'raw' ? 'Исходные значения сохранены без изменения.' : 'Обогащённые строки отделены от исходного файла и расчёта.'}</p><table><thead><tr><th>Ключ строки</th><th>Значения</th><th>Дата / период</th><th>Происхождение и проблемы</th></tr></thead><tbody>{rows.data.items.map(item => <tr key={item.row.rowKey}><td>{item.row.rowKey}</td><td>{item.layer === 'raw' ? Object.entries(item.row.cells).map(([name, cell]) => `${name}: ${cell.original ?? 'пусто'}`).join('; ') : Object.entries({ ...item.row.dimensions, ...item.row.numbers }).map(([name, value]) => `${name}: ${value ?? 'Нет данных'}`).join('; ')}</td><td>{item.layer === 'raw' ? 'Как в исходном файле' : formatDataTime(item.row.businessTime)}</td><td>{item.issues.map(issue => dataIssueLabel(issue.code, issue.message)).join('; ')}{item.layer === 'enriched' && item.factRefs.map(ref => <button key={ref.id + '/' + ref.revision} type="button" onClick={() => onLineage(ref)}>Происхождение</button>)}</td></tr>)}</tbody></table>{rows.data.page.nextCursor && <button type="button" onClick={() => setRowCursor(rows.data!.page.nextCursor)}>Следующая страница строк</button>}</section>}
+    {capture && <><div className="wb-data-layer-toolbar"><button type="button" aria-pressed={layer === 'raw'} onClick={() => { setLayer('raw'); setRowCursor(null); }}>Исходные строки</button><button type="button" aria-pressed={layer === 'enriched'} onClick={() => { setLayer('enriched'); setRowCursor(null); }}>Обогащённые строки</button><label><input type="checkbox" checked={issuesOnly} onChange={e => { setIssuesOnly(e.target.checked); setRowCursor(null); }} />Только строки с проблемами</label></div>
+      {rows.error !== null && <p role="alert">{dataError(rows.error, 'read')}</p>}{rows.loading && <p role="status">Загружаем строки…</p>}
+      {rows.data && <section role="region" tabIndex={0} aria-label={layer === 'raw' ? 'Исходные строки' : 'Обогащённые строки'}><p>{layer === 'raw' ? 'Исходные значения сохранены без изменения.' : 'Обогащённые строки отделены от исходного файла и расчёта.'}</p><table className="wb-data-table"><thead><tr><th>Ключ строки</th><th>Значения</th><th>Дата / период</th><th>Происхождение и проблемы</th></tr></thead><tbody>{rows.data.items.map(item => <tr key={item.row.rowKey}><td>{item.row.rowKey}</td><td>{item.layer === 'raw' ? Object.entries(item.row.cells).map(([name, cell]) => `${name}: ${cell.original ?? 'пусто'}`).join('; ') : Object.entries({ ...item.row.dimensions, ...item.row.numbers }).map(([name, value]) => `${name}: ${value ?? 'Нет данных'}`).join('; ')}</td><td>{item.layer === 'raw' ? 'Как в исходном файле' : formatDataTime(item.row.businessTime)}</td><td>{item.issues.map(issue => dataIssueLabel(issue.code, issue.message)).join('; ')}{item.layer === 'enriched' && item.factRefs.map(ref => <button key={ref.id + '/' + ref.revision} type="button" onClick={() => onLineage(ref)}>Происхождение</button>)}</td></tr>)}</tbody></table>{rows.data.page.nextCursor && <button type="button" onClick={() => setRowCursor(rows.data!.page.nextCursor)}>Следующая страница строк</button>}</section>}
     </>}
   </section>;
 }
