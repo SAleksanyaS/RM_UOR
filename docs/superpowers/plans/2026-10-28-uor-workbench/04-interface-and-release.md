@@ -215,17 +215,17 @@ UI-тесты указывают `// @vitest-environment jsdom`, использ�
 
 **Interfaces:** publication.check/apply; backup.create/restore.preview/restore.apply; source of success — JobSnapshot, а не нажатие кнопки. Вход restore только fileHandle purpose workspace-restore.
 
-- [ ] Написать `rejects_stale_restore_without_losing_input`, `shows_rescue_before_replace`, `reader_applies_verified_main_without_rest_timestamp`. Изменить БД после preview → PREVIEW_STALE; apply не выполнен, выбранный архив/ошибка видны. После нового preview и подтверждения есть rescue backupId.
+- [x] Написать `rejects_stale_restore_without_losing_input`, `shows_rescue_before_replace`, `reader_applies_verified_main_without_rest_timestamp`. Изменить БД после preview → PREVIEW_STALE; apply не выполнен, выбранный архив/ошибка видны. После нового preview и подтверждения есть rescue backupId.
   ```ts
   // При PREVIEW_STALE сервер не заменил данные, UI требует новый preview.
   expect(await screen.findByRole('alert')).toHaveProperty('textContent',expect.stringContaining('предпросмотр'));
   expect(screen.getByRole('button',{name:'Проверить архив'})).toBeTruthy();
   expect(screen.queryByText('Восстановление завершено')).toBeNull();
   ```
-- [ ] RED: `npm test -- src/features/workspace-maintenance/workbench/maintenance-ui.test.tsx`.
-- [ ] Реализовать сводку обновления и restore counts/warnings, явное подтверждение замены, progress/cancelAvailable, восстановление после перезапуска. Основное «Создать копию» посылает includeOriginals=true; неполный архив возможен только явным дополнительным выбором с предупреждением omissions. Скачать архив через защищённый backups/:id/file, evidence — через artifacts/:id, без серверного абсолютного пути. RECOVERY_REQUIRED показывает запрет записи и следующий безопасный шаг. Архив не обещает перенос логина/роли; old rescue доступен в списке копий.
-- [ ] GREEN: тот же test + `npm run build`; текущие личные настройки/история не теряются при обычном main update.
-- [ ] `git add src/features/workspace-maintenance/workbench/MaintenancePanel.tsx src/features/workspace-maintenance/workbench/RestorePreview.tsx src/features/workspace-maintenance/workbench/maintenance-ui.test.tsx src/app/workbench/WorkbenchShell.tsx`; `git commit -m "feat(workbench): add reviewable maintenance and restore flow"`.
+- [x] RED: `npm test -- src/features/workspace-maintenance/workbench/maintenance-ui.test.tsx`.
+- [x] Реализовать сводку обновления и restore counts/warnings, явное подтверждение замены, progress/cancelAvailable, восстановление после перезапуска. Основное «Создать копию» посылает includeOriginals=true; неполный архив возможен только явным дополнительным выбором с предупреждением omissions. Скачать архив через защищённый backups/:id/file, evidence — через artifacts/:id, без серверного абсолютного пути. RECOVERY_REQUIRED показывает запрет записи и следующий безопасный шаг. Архив не обещает перенос логина/роли; old rescue доступен в списке копий.
+- [x] GREEN: тот же test + `npm run build`; текущие личные настройки/история не теряются при обычном main update.
+- [x] `git add src/features/workspace-maintenance/workbench/MaintenancePanel.tsx src/features/workspace-maintenance/workbench/RestorePreview.tsx src/features/workspace-maintenance/workbench/maintenance-ui.test.tsx src/app/workbench/WorkbenchShell.tsx`; `git commit -m "feat(workbench): add reviewable maintenance and restore flow"`.
 
 ### T39: Переключение рабочего запуска без старого обхода доступа
 

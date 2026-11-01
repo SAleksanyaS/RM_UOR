@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { apiErrorSchema, apiSuccessSchema, commandResultSchema, jobAcceptedSchema, sessionViewSchema, jobSnapshotSchema, type ApiSuccess, type AnyQueryRequest, type CommandRequest, type JobAccepted, type JobSnapshot, type Problem, type SessionView } from '../../server/workbench/protocol';
 import type { FileHandleView, FilePurpose } from '../../server/workbench/files';
 import { fileHandleViewSchema } from '../../server/workbench/file-view';
+import { commandReconciliationSchema,type CommandReconciliation } from '../../server/workbench/protocol';
 
 export class WorkbenchApiError extends Error {
   constructor(public readonly problem: Problem, public readonly status: number, public readonly requestId: string | null) {
@@ -66,6 +67,9 @@ export class WorkbenchClient {
     const parsed = jobSnapshotSchema.safeParse(response.data);
     if (!parsed.success) throw new WorkbenchApiError(invalidResponse, 200, response.requestId);
     return { ...response, data: parsed.data };
+  }
+  async reconcileCommand(commandId:string):Promise<ApiSuccess<CommandReconciliation>> {
+    return this.request<CommandReconciliation>('/commands/'+encodeURIComponent(commandId),{method:'GET'},value=>{const parsed=commandReconciliationSchema.safeParse(value);return parsed.success&&parsed.data.commandId===commandId;});
   }
   async upload(file: File, purpose: FilePurpose): Promise<ApiSuccess<FileHandleView>> {
     const headers = await this.mutationHeaders();

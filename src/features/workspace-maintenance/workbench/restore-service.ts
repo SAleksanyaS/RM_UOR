@@ -5,6 +5,9 @@ import { isDeepStrictEqual } from 'node:util';
 import { z } from 'zod';
 import { uuidSchema } from '../../../domain/workbench/primitives';
 import type { CommandContext } from '../../../server/workbench/command-registry';
+import type { JobStore } from '../../../server/workbench/jobs';
+import { commandDigest,createCommandStore,stableJson } from '../../../server/workbench/command-store';
+import { commandRequestSchema } from '../../../server/workbench/protocol';
 import type { QueryContext } from '../../../server/workbench/query-registry';
 import { WorkbenchHttpError } from '../../../server/workbench/protocol';
 import { restoreApplyInputSchema, restoreApplyResultSchema, restorePreviewInputSchema, restoreTokenRecordSchema, type ArchiveDependencies, type BackupIndexRecord, type BackupCreateInput, type BackupCreateResult, type BackupFile, type RestoreApplyInput, type RestoreApplyResult, type RestorePreviewInput, type RestorePreviewResult, type RestoreTokenRecord, type ValidatedWorkspaceArchive } from './contracts';
@@ -13,7 +16,8 @@ import { assertOwnedWorkspaceRoot, clearDeadMaintenanceLock, clearRecoveryRequir
 
 const savedTokenSchema = z.strictObject({ binding: restoreTokenRecordSchema, personId: uuidSchema.nullable(), result: restoreApplyResultSchema.nullable() });
 type SavedToken = z.infer<typeof savedTokenSchema>;
-const journalSchema = z.strictObject({ version: z.literal(1), id: uuidSchema, token: z.string().regex(/^[a-f0-9]{64}$/), previousName: z.string().regex(/^[a-zA-Z0-9._-]+$/), stagedName: z.string().regex(/^restore-[a-f0-9-]{36}$/), previousRevision: z.string().regex(/^[a-f0-9]{64}$/), stagedRevision: z.string().regex(/^[a-f0-9]{64}$/), archiveSha256: z.string().regex(/^[a-f0-9]{64}$/), rescue: z.union([uuidSchema, z.null()]), phase: z.enum(['prepared', 'activating', 'committed', 'rolled_back', 'recovery_required']), result: restoreApplyResultSchema.nullable() });
+const journalV1Schema = z.strictObject({ version: z.literal(1), id: uuidSchema, token: z.string().regex(/^[a-f0-9]{64}$/), previousName: z.string().regex(/^[a-zA-Z0-9._-]+$/), stagedName: z.string().regex(/^restore-[a-f0-9-]{36}$/), previousRevision: z.string().regex(/^[a-f0-9]{64}$/), stagedRevision: z.string().regex(/^[a-f0-9]{64}$/), archiveSha256: z.string().regex(/^[a-f0-9]{64}$/), rescue: z.union([uuidSchema, z.null()]), phase: z.enum(['prepared', 'activating', 'committed', 'rolled_back', 'recovery_required']), result: restoreApplyResultSchema.nullable() });
+const journalSchema=z.discriminatedUnion('version',[journalV1Schema,journalV1Schema.extend({version:z.literal(2),commandId:uuidSchema,installationId:uuidSchema,personId:uuidSchema.nullable()})]);
 type RestoreJournal = z.infer<typeof journalSchema>;
 const stale = () => new WorkbenchHttpError(409, 'PREVIEW_STALE', 'The workspace or restore preview changed');
 const recoveryRequired = () => new WorkbenchHttpError(409, 'RECOVERY_REQUIRED', 'Workspace writes require startup recovery');
@@ -22,7 +26,22 @@ const sortedRecords = (records: ValidatedWorkspaceArchive['records']) => [...rec
 
 /** The artifact catalog/tokens/journals live outside the replaced directory and SQLite database. */
 export class RestoreService {
-  constructor(private readonly deps: ArchiveDependencies) {}
+  constructor(private readonly deps: ArchiveDependencies, private readonly jobs?: JobStore) {}
+  private reconcileCommitted(journal:Extract<RestoreJournal,{version:2}>,saved:SavedToken):void {
+    if(!this.jobs||!journal.result||journal.result.appliedArchiveSha256!==journal.archiveSha256||saved.result&&stableJson(saved.result)!==stableJson(journal.result))throw recoveryRequired();
+    const store=createCommandStore(this.deps.repository),intent=store.get(journal.installationId,journal.commandId);
+    if(!intent||intent.owner_person_id!==journal.personId||intent.owner_scope!==(journal.personId?'person':'installation'))throw recoveryRequired();
+    const request=commandRequestSchema.parse(JSON.parse(intent.request_json));
+    if(request.commandId!==journal.commandId||request.name!=='backup.restore.apply'||commandDigest(request)!==intent.digest||request.payload.restoreToken!==journal.token||request.payload.confirmReplacement!==true)throw recoveryRequired();
+    const job=this.jobs.findByCommand(journal.commandId,journal.installationId);
+    if(!job||this.jobs.name(job.jobId,journal.installationId)!=='backup.restore.apply'||!intent.accepted_json||JSON.parse(intent.accepted_json).jobId!==job.jobId)throw recoveryRequired();
+    if(intent.receipt_json&&stableJson(JSON.parse(intent.receipt_json).result)!==stableJson(journal.result))throw recoveryRequired();
+    if(['failed','cancelled'].includes(job.status)||['succeeded','partial'].includes(job.status)&&stableJson(job.result)!==stableJson(journal.result))throw recoveryRequired();
+    this.deps.repository.transaction(()=>{
+      if(!intent.receipt_json)store.receipt(journal.installationId,journal.commandId,{result:journal.result!,changedRefs:[],editToken:journal.result!.stateRevision});
+      if(!['succeeded','partial'].includes(job.status)){if(job.status!=='running')this.jobs!.update(job.jobId,{status:'running',stage:'running'});this.jobs!.complete(job.jobId,journal.result!,[]);}
+    });
+  }
   async createBackup(context: CommandContext, input: BackupCreateInput): Promise<BackupCreateResult> { return withMaintenanceLock(this.deps.artifactRoot, async () => { await this.assertReady(); return saveWorkspaceBackup(context, input, this.deps); }); }
   private async journalNames(): Promise<string[]> { const root = await privatePath(this.deps.artifactRoot, 'journals'); try { return (await readdir(root)).filter(n => /^[a-f0-9-]{36}\.json$/.test(n)).sort(); } catch (e) { if ((e as NodeJS.ErrnoException).code === 'ENOENT') return []; throw e; } }
   private async assertReady(): Promise<void> {
@@ -71,7 +90,7 @@ export class RestoreService {
       const expiresAt = new Date(Date.parse(this.deps.clock.now()) + 30 * 60_000).toISOString(); const token = randomBytes(32).toString('hex');
       const binding: RestoreTokenRecord = { token, archiveSha256, stateRevision: current.revision, repositoryId: current.repositoryId, installationId: context.installationId, sessionId, expiresAt, consumedBy: null };
       await durableWrite(this.deps.artifactRoot, `tokens/${token}/archive.zip`, bytes); await this.saveToken({ binding, personId: context.ownAccess.personId, result: null });
-      return { restoreToken: token, archiveSha256, repoId: current.repositoryId, currentStateRevision: current.revision, currentEmpty: current.empty, mode: 'replace', expiresAt, counts: { records: archive.records.length, files: archive.files.size }, warnings: [] };
+      return { restoreToken: token, archiveSha256, repoId: current.repositoryId, currentStateRevision: current.revision, currentEmpty: current.empty, mode: 'replace', expiresAt, counts: { records: archive.records.length, files: archive.files.size }, warnings: archive.manifest.exclusions.includes('originals') ? [{code:'ORIGINALS_OMITTED',message:'Архив неполный: исходные файлы не включены и не будут восстановлены.',retryable:false,details:[],operationId:null,provider:null}] : [] };
     });
   }
   private async stage(archive: ValidatedWorkspaceArchive, id: string): Promise<string> {
@@ -108,7 +127,7 @@ export class RestoreService {
         synchronousArchiveCall(() => w.authorizeCompleteWorkspace(context, { operation: 'replace', records: quiescedCurrent.records, incomingRecords: archive.records }));
         if (rescue.status === 'created') { const verified = await readOwnBackup(context, rescue.backupId, this.deps); await validateWorkspaceArchive(verified.bytes, this.deps.modules, w); }
         const previousRoot = await w.activeRoot(); await assertOwnedWorkspaceRoot(w.managedRoot, previousRoot); if (path.resolve(previousRoot) === path.resolve(stagedRoot)) throw recoveryRequired();
-        journal = { version: 1, id, token: input.restoreToken, previousName: path.basename(previousRoot), stagedName: path.basename(stagedRoot), previousRevision: saved.binding.stateRevision, stagedRevision: workspaceRevision(saved.binding.repositoryId, archive.records, archive.manifest.files), archiveSha256: saved.binding.archiveSha256, rescue: rescue.backupId, phase: 'prepared', result: null }; await saveJournal();
+        journal = { ...(this.jobs?{version:2 as const,commandId:context.commandId,installationId:context.installationId,personId:context.ownAccess.personId}:{version:1 as const}), id, token: input.restoreToken, previousName: path.basename(previousRoot), stagedName: path.basename(stagedRoot), previousRevision: saved.binding.stateRevision, stagedRevision: workspaceRevision(saved.binding.repositoryId, archive.records, archive.manifest.files), archiveSha256: saved.binding.archiveSha256, rescue: rescue.backupId, phase: 'prepared', result: null }; await saveJournal();
         journal.phase = 'activating'; await saveJournal(); activationAttempted = true; await this.deps.lifecycle.activate(stagedRoot);
         if (path.resolve(await w.activeRoot()) !== path.resolve(stagedRoot)) throw new WorkbenchHttpError(422, 'INTEGRITY_MISMATCH', 'Workspace activation did not switch the staged directory');
         await w.healthcheck(); await w.invalidateAdmission();
@@ -149,7 +168,7 @@ export class RestoreService {
           const journal = journalSchema.parse(JSON.parse((await readPrivate(this.deps.artifactRoot, 'journals/' + name, 100000)).toString()));
           if (name !== journal.id + '.json') throw recoveryRequired();
           await assertOwnedWorkspaceRoot(w.managedRoot, path.join(w.managedRoot, journal.previousName)); await assertOwnedWorkspaceRoot(w.managedRoot, path.join(w.managedRoot, journal.stagedName));
-          if (journal.phase === 'committed') { if (!journal.result) throw recoveryRequired(); const saved = savedTokenSchema.parse(JSON.parse((await readPrivate(this.deps.artifactRoot, `tokens/${journal.token}/metadata.json`, 100000)).toString())); if (saved.binding.archiveSha256 !== journal.archiveSha256) throw recoveryRequired(); saved.result = journal.result; saved.binding.consumedBy ??= journal.id; await this.saveToken(saved); }
+          if (journal.phase === 'committed') { if (!journal.result) throw recoveryRequired(); const saved = savedTokenSchema.parse(JSON.parse((await readPrivate(this.deps.artifactRoot, `tokens/${journal.token}/metadata.json`, 100000)).toString())); if (saved.binding.archiveSha256 !== journal.archiveSha256) throw recoveryRequired(); if(journal.version===2){if(saved.binding.installationId!==journal.installationId||saved.personId!==journal.personId||saved.binding.consumedBy&&saved.binding.consumedBy!==journal.commandId)throw recoveryRequired();this.reconcileCommitted(journal,saved);} saved.result = journal.result; saved.binding.consumedBy ??= journal.version===2?journal.commandId:journal.id; await this.saveToken(saved); }
           else if (journal.phase !== 'rolled_back') { await this.safeRollback(journal); journal.phase = 'rolled_back'; await durableWrite(this.deps.artifactRoot, 'journals/' + name, JSON.stringify(journal)); }
         }
         await this.deps.lifecycle.recover(); await w.healthcheck();

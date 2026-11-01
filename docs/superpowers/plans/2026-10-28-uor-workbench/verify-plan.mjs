@@ -27,7 +27,7 @@ for(const name of planFiles){
     if(tasks.has(id))problems.push('Duplicate task T'+id);
     tasks.set(id,{name,title:m[2]});
     for(const [label,ok] of [
-      ['checkbox steps',block.includes('- [ ]')],
+      ['checkbox steps',/- \[[ x]\]/i.test(block)],
       ['assertions',block.includes('expect(')],
       ['files',/\*\*Files:/.test(block)],
       ['verification',block.includes('npm test')||block.includes('probe:readiness')],

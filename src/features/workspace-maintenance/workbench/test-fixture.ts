@@ -10,13 +10,25 @@ import type { CommandContext } from '../../../server/workbench/command-registry'
 import type { ArchiveDependencies, WorkspaceArchiveCodec, WorkspaceArchiveFileSource } from './contracts';
 import { RestoreService } from './restore-service';
 import { WorkbenchHttpError } from '../../../server/workbench/protocol';
+import { createStableWorkbenchRepository } from '../../../server/storage/workbench-runtime-repository';
+import { captureLocalOperations, restoreLocalOperations, type LocalOperationHandoff } from '../../../server/workbench/local-operation-handoff';
 
 export const digest = (b: Uint8Array | string) => createHash('sha256').update(b).digest('hex');
-export async function fixture(initial: string | null = null) {
+export async function fixture(initial: string | null = null, options: { stable?: boolean } = {}) {
   const root = await mkdtemp(path.join(realpathSync.native(tmpdir()), 'uor-t28-'));
   const managed = path.join(root, 'managed'); const artifacts = path.join(root, 'archives');
   let active = path.join(managed, 'initial'); await mkdir(active, { recursive: true });
   let repository = createWorkbenchRepository({ filename: path.join(active, 'workspace.sqlite'), artifactRoot: path.join(active, 'files') });
+  let nativeRepository = repository;
+  const stable = options.stable ? createStableWorkbenchRepository(repository) : null;
+  if (stable) repository = stable.repository;
+  let handoff: LocalOperationHandoff | null = null;
+  const openActive = (restoreOperations = false) => {
+    const next = createWorkbenchRepository({ filename: path.join(active, 'workspace.sqlite'), artifactRoot: path.join(active, 'files') });
+    if (restoreOperations && handoff) restoreLocalOperations(next, handoff, deps.clock);
+    if (stable) stable.rebind(next); else repository = next;
+    nativeRepository = next;
+  };
   const init = (r: WorkbenchRepository) => r.sqlForModule('personal').execMigration('v1', 'CREATE TABLE IF NOT EXISTS wb_personal_values (key TEXT PRIMARY KEY, payload TEXT NOT NULL)');
   const put = (value: string, ownerPersonId?: string) => repository.transaction(() => { init(repository); repository.sqlForModule('personal').run('INSERT OR REPLACE INTO wb_personal_values VALUES (?,?)', ['same-id', JSON.stringify({ value, ...(ownerPersonId ? { ownerPersonId } : {}) })]); });
   init(repository); if (initial !== null) put(initial);
@@ -43,7 +55,7 @@ export async function fixture(initial: string | null = null) {
     get repository() { return repository; }, artifactRoot: artifacts,
     files: createFileStore({ directory: path.join(root, 'uploads'), limits: defaultFileLimits }),
     sessionId: () => session, modules: new Map([['core', core], ['personal', personal]]), clock: { now: () => now },
-    lifecycle: { async quiesce() {}, async resume() {}, async recover() {}, async activate(staged) { activations++; await switchFiles(staged); repository.close(); active = staged; repository = createWorkbenchRepository({ filename: path.join(active, 'workspace.sqlite'), artifactRoot: path.join(active, 'files') }); } },
+    lifecycle: { async quiesce() { if(stable) handoff=captureLocalOperations(repository); }, async resume() {}, async recover() {}, async activate(staged) { activations++; await switchFiles(staged); nativeRepository.close(); active = staged; openActive(true); } },
     workspace: {
       repositoryId: () => repoId, applicationVersion: '0.4.1', storageSchemaVersion: 1, requiredModuleIds: ['core', 'personal'], managedRoot: managed,
       async activeRoot() { return active; }, async files() { return Promise.all(files.map(async f => ({ ...f, bytesValue: new Uint8Array(await readFile(path.join(active, f.path))) }))); },
@@ -56,7 +68,7 @@ export async function fixture(initial: string | null = null) {
       },
       async openStagedRepository(staged) { return createWorkbenchRepository({ filename: path.join(staged, 'workspace.sqlite'), artifactRoot: path.join(staged, 'files') }); },
       async healthcheck() { personal.exportRecords(repository); },
-      async rollback(previous) { await switchFiles(previous); repository.close(); active = previous; repository = createWorkbenchRepository({ filename: path.join(active, 'workspace.sqlite'), artifactRoot: path.join(active, 'files') }); },
+      async rollback(previous) { await switchFiles(previous); nativeRepository.close(); active = previous; openActive(); },
       async invalidateAdmission() { invalidations++; }, async freezeWrites() { frozen = true; },
     },
   };
@@ -64,5 +76,5 @@ export async function fixture(initial: string | null = null) {
   const context: CommandContext = { requestId: randomUUID(), commandId: randomUUID(), installationId, actor, get repository() { return repository; }, clock: deps.clock, ownAccess: { role: 'viewer', displayName: null, personId: null, policyState: 'unavailable', checkedAt: null } };
   const service = new RestoreService(deps);
   const upload = async (bytes: Uint8Array, owner = installationId) => deps.files.stage({ installationId: owner, purpose: 'workspace-restore', name: 'backup.zip', mediaType: 'application/zip', stream: (async function* () { yield bytes; })() });
-  return { root, deps, context, service, files, addFile, put, upload, get: () => personal.exportRecords(repository).map(r => r.value), setNow: (v: string) => { now = v; }, setSession: () => { session = randomUUID(); }, setRepo: () => { repoId = 'repo-two'; }, activations: () => activations, invalidations: () => invalidations, frozen: () => frozen, async archiveBytes(id: string) { return readFile(path.join(artifacts, 'backups', id, 'archive.zip')); }, async dispose() { repository.close(); await rm(root, { recursive: true, force: true }); } };
+  return { root, deps, context, service, files, addFile, put, upload, reopen() { nativeRepository.close(); openActive(); }, get: () => personal.exportRecords(repository).map(r => r.value), setNow: (v: string) => { now = v; }, setSession: () => { session = randomUUID(); }, setRepo: () => { repoId = 'repo-two'; }, activations: () => activations, invalidations: () => invalidations, frozen: () => frozen, async archiveBytes(id: string) { return readFile(path.join(artifacts, 'backups', id, 'archive.zip')); }, async dispose() { repository.close(); await rm(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }); } };
 }

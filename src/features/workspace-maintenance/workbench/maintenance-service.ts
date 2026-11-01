@@ -2,7 +2,7 @@ import type { CommandContext } from '../../../server/workbench/command-registry'
 import type { QueryContext } from '../../../server/workbench/query-registry';
 import { WorkbenchHttpError } from '../../../server/workbench/protocol';
 import type { CodeUpdateInput, CodeUpdateCheckInput, CodeUpdateCheckResult, CodeUpdateApplyResult } from '../../system/workbench/code-update-service';
-import type { BackupCreateInput, BackupCreateResult, BackupFile, MaintenanceDependencies, RestoreApplyInput, RestoreApplyResult, RestorePreviewInput, RestorePreviewResult, UUIDv4 } from './contracts';
+import type { BackupCreateInput, BackupCreateResult, BackupFile, BackupIndexRecord, MaintenanceDependencies, RestoreApplyInput, RestoreApplyResult, RestorePreviewInput, RestorePreviewResult, UUIDv4 } from './contracts';
 import { RestoreService } from './restore-service';
 import JSZip from 'jszip';
 import { archiveManifestSchema,archiveRecordSchema,type WorkspaceArchiveRecord,type WorkspaceArchiveFileSource } from './contracts';
@@ -10,11 +10,12 @@ import { snapshotWorkspace,requireArchiveWorkspace,archiveHash,privateExclusions
 
 export class MaintenanceService {
   private readonly restore: RestoreService;
-  constructor(private readonly deps: MaintenanceDependencies) { this.restore = new RestoreService(deps.archive); }
+  constructor(private readonly deps: MaintenanceDependencies) { this.restore = new RestoreService(deps.archive,deps.jobs); }
   createBackup(context: CommandContext, input: BackupCreateInput): Promise<BackupCreateResult> { return this.restore.createBackup(context, input); }
   previewRestore(context: CommandContext, input: RestorePreviewInput): Promise<RestorePreviewResult> { return this.restore.previewRestore(context, input); }
   applyRestore(context: CommandContext, input: RestoreApplyInput): Promise<RestoreApplyResult> { return this.restore.applyRestore(context, input); }
   getBackupFile(context: QueryContext, backupId: UUIDv4): Promise<BackupFile> { return this.restore.getBackupFile(context, backupId); }
+  listOwnBackups(context: QueryContext): Promise<BackupIndexRecord[]> { return this.restore.listOwnBackups(context); }
   recover(): Promise<void> { return this.restore.recover(); }
   migrationSessionBinding(context:CommandContext):string {
     if(context.repository!==this.deps.archive.repository||context.actor.installationId!==context.installationId||context.actor.profilePersonId!==context.ownAccess.personId)throw new WorkbenchHttpError(409,'COMMAND_CONTEXT_MISMATCH','Migration context changed');

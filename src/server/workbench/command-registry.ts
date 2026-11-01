@@ -92,9 +92,9 @@ export function createCommandRegistry({ repository, jobs, accessPolicy, maxConcu
       uuidSchema.parse(commandId);
       const intent = store.assertAccess(context.installationId, commandId, context.ownAccess.personId);
       if (!intent) return { commandId, name: null, status: 'not_found', job: null, result: null };
-      if (intent.owner_scope !== 'person') throw new WorkbenchHttpError(404, 'COMMAND_NOT_FOUND', 'Own command not found');
       const name = commandRequestSchema.parse(JSON.parse(intent.request_json)).name;
-      if (intent.receipt_json) return { commandId, name, status: 'completed', job: null, result: (JSON.parse(intent.receipt_json) as CommandOutcome<unknown>).result };
+      if (intent.owner_scope !== 'person' && !(descriptors.get(name)?.ownership==='person-if-present' && context.ownAccess.personId===null && intent.owner_person_id===null)) throw new WorkbenchHttpError(404, 'COMMAND_NOT_FOUND', 'Own command not found');
+      if (intent.receipt_json) return { commandId, name, status: 'completed', job: intent.accepted_json ? JSON.parse(intent.accepted_json) as JobAccepted : null, result: (JSON.parse(intent.receipt_json) as CommandOutcome<unknown>).result };
       if (intent.accepted_json) return { commandId, name, status: 'accepted', job: JSON.parse(intent.accepted_json) as JobAccepted, result: null };
       const active = inflight.has(context.installationId + '/' + commandId + '/' + context.ownAccess.personId);
       return { commandId, name, status: intent.phase === 'interrupted' || !active ? 'interrupted' : 'pending', job: null, result: null };
