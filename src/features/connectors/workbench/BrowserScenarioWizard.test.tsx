@@ -11,7 +11,7 @@ it.each([false,true])('reading an existing recording never auto-submits a finish
   ctx.session.role='viewer';ctx.run.mockResolvedValue(null);
   ctx.current={...workflow(),recording:{...workflow().recording,state:'completed',recordingId:'another-tab-recording',steps:saved?[{action:'download',locator:{kind:'css',selector:'#export'}}]:[]}};
   const {rerender}=render(<WorkbenchBrowserScenarioWizard/>);
-  await screen.findByText('Запись завершена. Шаги и образец файла получены.');
+  await screen.findByText(saved ? 'Запись завершена. Шаги и образец файла получены.' : 'Скачивание завершено. Нажмите «Получить записанные шаги», чтобы принять шаги и столбцы файла.');
   rerender(<WorkbenchBrowserScenarioWizard/>);
   expect(ctx.run).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button',{name:'Получить записанные шаги'}));
