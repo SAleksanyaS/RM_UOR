@@ -1,7 +1,8 @@
 import { commandResultSchema, jobAcceptedSchema } from '../../../server/workbench/protocol';
 import type { SessionView, JobSnapshot, JobAccepted, CommandReconciliation } from '../../../server/workbench/protocol';
-import type { OkoWorkflowView, OkoWorkspaceView } from '../workbench-workflow-contracts';
+import type { OkoWorkflowView, OkoWorkspaceView, OkoExportsView } from '../workbench-workflow-contracts';
 import { personalWorkflowAlias, personalWorkflowName, type PersonalWorkflowPrefix } from '../workbench-workflow-names';
+import type { BrowserEnvironment } from '../../system/workbench/environment-query';
 
 export class OkoClientError extends Error {
   readonly name = 'OkoClientError';
@@ -27,6 +28,8 @@ export class OkoClient {
   }
   async session(): Promise<SessionView> { const value = await this.request<SessionView>('/session'); this.csrf = value.csrfToken; return this.prefix === 'source.browser' ? value : { ...value, allowedCommands: value.allowedCommands.map(name => personalWorkflowAlias(this.prefix, name)).filter((name): name is string => name !== null) }; }
   workspace(workflowId?: string): Promise<OkoWorkspaceView> { return this.request('/queries/' + personalWorkflowName(this.prefix, 'source.browser.workspace'), { context: null, filter: workflowId ? { workflowId } : {}, sort: [], page: { limit: 50, cursor: null } }); }
+  browserEnvironment(): Promise<BrowserEnvironment> { return this.request('/queries/environment.browser', { context: null, filter: {}, sort: [], page: { limit: 50, cursor: null } }); }
+  exports(filter: { workflowId?: string; includeHidden?: boolean } = {}): Promise<OkoExportsView> { return this.request('/queries/' + personalWorkflowName(this.prefix, 'source.browser.exports'), { context: null, filter, sort: [], page: { limit: 100, cursor: null } }); }
   async command<T = OkoWorkflowView>(name: string, payload: Record<string, unknown>, commandId: string = crypto.randomUUID()): Promise<T | JobAccepted> {
     const value = await this.request<unknown>('/commands', { commandId, name: personalWorkflowName(this.prefix, name), baseRevision: null, payload });
     const accepted = jobAcceptedSchema.safeParse(value);

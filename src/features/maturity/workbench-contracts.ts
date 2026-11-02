@@ -1,0 +1,25 @@
+import { z } from 'zod';
+import { decimalSchema, uuidSchema } from '../../domain/workbench/primitives';
+export const materialSourceRefSchema=z.union([
+ z.strictObject({kind:z.literal('xlsx'),sheet:z.literal('Sheet1'),row:z.number().int().positive(),cell:z.string().regex(/^[A-O][1-9]\d*$/)}),
+ z.strictObject({kind:z.literal('pptx'),slide:z.number().int().min(1).max(500),shapeId:z.string().min(1)}),
+]);
+export type MaterialSourceRef=z.infer<typeof materialSourceRefSchema>;
+const org=z.strictObject({id:uuidSchema,kind:z.enum(['block','tribe','cluster']),name:z.string().min(1),parentId:uuidSchema.nullable(),source:materialSourceRefSchema});
+const team=z.strictObject({id:uuidSchema,code:z.string().min(1),name:z.string().min(1),sourceName:z.string().min(1),clusterId:uuidSchema,source:materialSourceRefSchema});
+const metric=z.strictObject({id:uuidSchema,name:z.string().min(1),target:decimalSchema,source:materialSourceRefSchema});
+const leader=z.strictObject({id:uuidSchema,name:z.string().min(1),teamIds:z.array(uuidSchema),source:materialSourceRefSchema});
+export const maturityObservationSchema=z.strictObject({id:uuidSchema,teamId:uuidSchema,metricId:uuidSchema,state:z.enum(['numeric','exception','no_event','missing']),value:decimalSchema.nullable(),target:decimalSchema,raw:z.string(),source:materialSourceRefSchema,targetCell:z.string()}).refine(o=>o.state==='numeric'?o.value!==null:o.value===null);
+export type MaturityObservation=z.infer<typeof maturityObservationSchema>;
+export const reportedMaturityClaimSchema=z.strictObject({period:z.string(),teamsMet:z.number().int(),teamsAvailable:z.number().int(),metricsMet:z.number().int(),metricsAvailable:z.number().int(),authority:z.literal('source_reported'),source:materialSourceRefSchema});
+export type ReportedMaturityClaim=z.infer<typeof reportedMaturityClaimSchema>;
+export const maturityMaterialBundleSchema=z.strictObject({schemaVersion:z.literal(1),importVersion:z.literal('maturity-ooxml-v1'),id:uuidSchema,period:z.string(),sources:z.array(z.strictObject({kind:z.enum(['xlsx','pptx']),path:z.string(),sha256:z.string().regex(/^[a-f0-9]{64}$/),bytes:z.number().int()})),organizations:z.array(org),teams:z.array(team),metrics:z.array(metric),leaders:z.array(leader),verifiedMappings:z.array(z.strictObject({teamId:uuidSchema,leaderId:uuidSchema,source:materialSourceRefSchema,xlsxCell:z.string(),verified:z.literal('exact_unique_name_match'),previousReportedFraction:z.string(),currentReportedFraction:z.string()})),observations:z.array(maturityObservationSchema),rollups:z.array(z.strictObject({grain:z.enum(['block','tribe','cluster','team','app_stage','practice_group']),source:materialSourceRefSchema,cells:z.record(z.string(),z.string())})),reportedClaims:z.array(reportedMaturityClaimSchema),declaredGoal:z.strictObject({target:decimalSchema,authority:z.literal('source_declared_unverified'),source:materialSourceRefSchema}),limitations:z.array(z.string())});
+export type MaturityMaterialBundle=z.infer<typeof maturityMaterialBundleSchema>;
+export const maturityDefinitionSchema=z.strictObject({id:uuidSchema,revision:z.number().int().positive(),period:z.string(),policyVersion:z.literal('strict-unapproved-applicability-v1'),teamIds:z.array(uuidSchema).min(1),metrics:z.array(metric).min(1),teamSuccess:z.literal('all_expected_metrics_met'),authority:z.literal('application_conservative')});
+export type MaturityDefinition=z.infer<typeof maturityDefinitionSchema>;
+export const maturitySlotSchema=z.strictObject({teamId:uuidSchema,metricId:uuidSchema,state:z.enum(['met','not_met','exception','no_event','missing','conflict']),value:decimalSchema.nullable(),target:decimalSchema,source:materialSourceRefSchema.nullable(),reason:z.string().nullable()});
+export const maturityCountsSchema=z.strictObject({expected:z.number().int(),numeric:z.number().int(),met:z.number().int(),notMet:z.number().int(),exception:z.number().int(),noEvent:z.number().int(),missing:z.number().int(),conflict:z.number().int(),teamsMet:z.number().int(),teamsNotMet:z.number().int(),teamsIncomplete:z.number().int()});
+export const maturityEvaluationSchema=z.strictObject({definition:maturityDefinitionSchema,counts:maturityCountsSchema,slots:z.array(maturitySlotSchema),complete:z.boolean(),canConfirm:z.literal(false),achievement:z.enum(['not_met','unknown','met']),reportedClaims:z.array(reportedMaturityClaimSchema),qualityFlags:z.array(z.string())});
+export type MaturityEvaluation=z.infer<typeof maturityEvaluationSchema>;
+export const maturitySnapshotSchema=z.strictObject({schemaVersion:z.literal(1),kind:z.literal('dit-maturity-2026-10-v1'),period:z.string(),definition:maturityDefinitionSchema,teams:z.array(team),metrics:z.array(metric),leaders:z.array(leader),evaluation:maturityEvaluationSchema,reportedClaims:z.array(reportedMaturityClaimSchema),sources:z.array(z.strictObject({kind:z.enum(['xlsx','pptx']),path:z.string(),sha256:z.string(),bytes:z.number().int()})),limitations:z.array(z.string()),comparableHistory:z.literal(false)});
+export type MaturitySnapshot=z.infer<typeof maturitySnapshotSchema>;

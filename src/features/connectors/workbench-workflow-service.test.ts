@@ -20,6 +20,8 @@ import { createOkoWorkflowModule } from './workbench-workflow-module';
 import { personalWorkflowName, type PersonalWorkflowPrefix } from './workbench-workflow-names';
 import type { OkoWorkflowView, OkoDictionaryMapping } from './workbench-workflow-contracts';
 import { createSourceArchiveOwners } from '../workspace-maintenance/workbench/source-archive-owners';
+import { WorkbenchHttpError } from '../../server/workbench/protocol';
+const replayBytes=Buffer.from('Key;Amount;Date\r\nP1;12,5;28.10.2026\r\nP2;7;28.10.2026'),replayLength=replayBytes.length;
 const closes:Array<()=>Promise<void>>=[];
 afterEach(async()=>{for(const close of closes.splice(0).reverse())await close();});
 async function fixture(prefix: PersonalWorkflowPrefix = 'source.browser'){
@@ -30,10 +32,10 @@ async function fixture(prefix: PersonalWorkflowPrefix = 'source.browser'){
  let replayBytes=Buffer.from('Key;Amount;Date\r\nP1;12,5;28.10.2026\r\nP2;7;28.10.2026'), failReplay=false, duringReplay:()=>Promise<void>=async()=>{}, duringGuard:()=>Promise<void>=async()=>{};
  const closedOwners:string[]=[],closedHandles:Array<{owner:string;handleId:string}>=[];
  const handle=randomUUID(),steps=[{action:'download' as const,locator:{kind:'css' as const,selector:'#export'}}];
- const runtime:BrowserWorkflowRuntimePort={openLogin:async()=>({handleId:randomUUID(),state:'open',mode:'login'}),cancelRecording:async({owner,handleId})=>{closedHandles.push({owner:owner.installationId+'/'+owner.profilePersonId,handleId});},startRecording:async()=>({handleId:handle,state:'open',mode:'record'}),finish:async()=>({recordingId:handle,startUrl:'https://report.example/report',authenticatedSelector:'#report',steps,parameterNames:[],screenshotHandles:[],hasDownload:true}),readRecordingStatus:async()=>({state:'completed',problem:null}),readRecordingDownload:async()=>({bytes:replayBytes,name:'report.csv',contentType:'text/csv'}),selectMarker:async()=>({selector:'#report',label:'Synthetic report'}),replay:async()=>{await duringReplay();if(failReplay)throw Error('Replay failed');return{bytes:replayBytes,name:'report.csv',contentType:'text/csv'};},screenshot:async()=>{throw Error('Unused');},waitForCompletion:async()=>{throw Error('Unused');},closeOwned:async(owner)=>{closedOwners.push(owner.installationId+'/'+owner.profilePersonId);}};
+ const runtime:BrowserWorkflowRuntimePort={openLogin:async()=>({handleId:randomUUID(),state:'open',mode:'login'}),observeLogin:async()=>true,cancelRecording:async({owner,handleId})=>{closedHandles.push({owner:owner.installationId+'/'+owner.profilePersonId,handleId});},startRecording:async()=>({handleId:handle,state:'open',mode:'record'}),finish:async()=>({recordingId:handle,startUrl:'https://report.example/report',authenticatedSelector:'#report',steps,parameterNames:[],screenshotHandles:[],hasDownload:true}),readRecordingStatus:async()=>({state:'completed',problem:null}),readRecordingDownload:async()=>({bytes:replayBytes,name:'report.csv',contentType:'text/csv'}),selectMarker:async()=>({selector:'#report',label:'Synthetic report'}),replay:async()=>{await duringReplay();if(failReplay)throw Error('Replay failed');return{bytes:replayBytes,name:'report.csv',contentType:'text/csv'};},screenshot:async()=>{throw Error('Unused');},waitForCompletion:async()=>{throw Error('Unused');},closeOwned:async(owner)=>{closedOwners.push(owner.installationId+'/'+owner.profilePersonId);}};
  const files=createFileStore({directory:path.join(root,'files'),limits:defaultFileLimits}),profiles=createBrowserProfileService({runtimeRoot:root,repository,clock}),service=createOkoWorkflowService({repository,runtime,profiles,files,jobs,clock,preparationCapability:prefix==='oko.workflow'?'personal.write':'uor.prepare',recheckGuard:async(context)=>{await duringGuard();if(prefix==='source.browser'&&own.role==='viewer'||own.personId!==context.ownAccess.personId)throw Error('Access revoked');}}),commands=createCommandRegistry({repository,jobs,accessPolicy});
  const module=createOkoWorkflowModule({service,prefix});
- const app=await createWorkbenchApp({hostname:()=> 'SYNTHETIC-HOST',repository,clock,accessPolicy,commands,queries:new QueryRegistry(),jobs,modules:[module],sessions:createLocalSessionStore({clock}),allowedOrigins:['http://localhost:5173'],installationId,files,browserResults:{read:service.readResult}});
+ const app=await createWorkbenchApp({hostname:()=> 'SYNTHETIC-HOST',repository,clock,accessPolicy,commands,queries:new QueryRegistry(),jobs,modules:[module],sessions:createLocalSessionStore({clock}),allowedOrigins:['http://localhost:5173'],installationId,files,browserResults:{read:service.readResult},browserExport:{async read(context,id){if(!service.hasExport(context,id))throw new WorkbenchHttpError(404,'EXPORT_NOT_FOUND','Export not found');return service.readExport(context,id);}}});
  closes.push(async()=>{await app.close();repository.close();if(!path.basename(root).startsWith('uor-oko-workflow-'))throw Error('Unsafe cleanup');rmSync(root,{recursive:true,force:true});});
 
  const session=await app.inject({method:'GET',url:'/api/v1/session',headers:{host:'localhost'}}),headers={host:'localhost',origin:'http://localhost:5173',cookie:String(session.headers['set-cookie']).split(';')[0],'x-csrf-token':session.json().data.csrfToken};
@@ -43,18 +45,25 @@ async function fixture(prefix: PersonalWorkflowPrefix = 'source.browser'){
  const context=()=>({requestId:randomUUID(),installationId,repository,clock,ownAccess:own});
  return{app,headers,service,profiles,runtime,closedOwners,closedHandles,command,result,prepare,files,installationId,context,repository,root,commands,jobs,restart:()=>createOkoWorkflowService({repository,runtime,profiles,files,jobs,clock}),setReplayFailure:(v:boolean)=>{failReplay=v;},setDuringReplay:(v:()=>Promise<void>)=>{duringReplay=v;},setDuringGuard:(v:()=>Promise<void>)=>{duringGuard=v;},setOwn:(v:Partial<OwnAccessProfile>)=>{own={...own,...v};}};
 }
-it('a recorded file with a wrong delimiter returns a known validation error and preserves the previous result',async()=>{
+it('a recorded file with a wrong delimiter returns a known validation error, keeps the raw file in the own list and preserves the previous result',async()=>{
  const f=await fixture('oko.workflow');f.setOwn({role:'viewer'});
  let view=await f.prepare();view=await f.result('source.browser.record.test',{workflowId:view.workflowId,expectedRevision:view.revision});
- const previous=view.result;
+ const previous=view.result,exportsBefore=view.exports.length;
  view=await f.result('source.browser.record.start',{workflowId:view.workflowId,expectedRevision:view.revision,reportUrl:view.reportUrl,parsingProfile:{...view.parsingProfile,csvDelimiter:','}});
  const response=await f.app.inject({method:'POST',url:'/api/v1/commands',headers:f.headers,payload:{commandId:randomUUID(),name:'oko.workflow.record.finish',baseRevision:null,payload:{workflowId:view.workflowId,recordingId:view.recording.recordingId}}});
  expect(response.statusCode,response.body).toBe(422);
  expect(response.json().error).toMatchObject({code:'INVALID_TABLE',details:[{path:'/parsingProfile',code:'INVALID_TABLE',message:'Row width differs from the header'}]});
  expect(response.json().error.message).toContain('разделитель CSV');
+ expect(response.json().error.message).toContain('Мои выгрузки');
  const current=(await f.service.workspace(f.context(),view.workflowId)).current!;
- expect(current.recording).toMatchObject({state:'failed',problem:{code:'INVALID_TABLE'}});
  expect(current.result).toEqual(previous);
+ // The unreadable table never loses the download: it is saved and listed before parsing.
+ const listed=(await f.service.exports(f.context())).items;
+ expect(listed).toHaveLength(exportsBefore+1);
+ const saved=listed.find(item=>!view.exports.some(before=>before.exportId===item.exportId))!;
+ expect(saved).toMatchObject({workflowId:view.workflowId,origin:'record',rowCount:null});
+ expect(saved.fileName).toMatch(/^ОКО_.+_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}\.csv$/);
+ expect(Buffer.from((await f.service.readExport(f.context(),saved.exportId)).bytes).toString()).toContain('12,5');
  expect(f.repository.exportWorkspaceCore()).toEqual([]);
 });
 it('personal directory preview accepts only the own dedicated upload purpose',async()=>{
@@ -96,6 +105,42 @@ it('full v1 own recording → mapping → real SQLite result + verified private 
  const download=await f.app.inject({method:'GET',url:v.result!.originalDownload,headers:f.headers});expect(download.statusCode,download.body).toBe(200);expect(download.headers['x-content-type-options']).toBe('nosniff');expect(download.body).toContain('12,5');
  const previous=structuredClone(v.result);f.setReplayFailure(true);const failed=await f.command('source.browser.record.test',{workflowId:v.workflowId,expectedRevision:v.revision});expect(failed.status).toBe('failed');expect((await f.service.workspace(f.context(),v.workflowId)).current!.result).toEqual(previous);
  f.setOwn({personId:randomUUID()});await expect(f.service.readResult(f.context(),previous!.resultId,'original')).rejects.toThrow(/not found/);expect((await f.service.workspace(f.context())).workflows).toEqual([]);
+});
+it('saves the raw report without any column mapping or directory and lists it for its owner only',async()=>{
+ const f=await fixture('oko.workflow');f.setOwn({role:'viewer'});
+ let v=await f.result('source.browser.workflow.open',{title:'Продажи за неделю'});
+ v=await f.result('source.browser.profile.set',{workflowId:v.workflowId,expectedRevision:v.revision,reportUrl:'https://report.example/report',profile:{allowedOrigins:['https://report.example'],maxBytes:100000,timeoutMs:10000,retries:0,browser:{channel:'msedge',profileDirectory:'synthetic',headless:false}}});
+ v=await f.result('source.browser.marker.select',{workflowId:v.workflowId,reportUrl:v.reportUrl});
+ v=await f.result('source.browser.record.start',{workflowId:v.workflowId,expectedRevision:v.revision,reportUrl:v.reportUrl,parsingProfile:{...v.parsingProfile,decimalSeparator:',',csvDelimiter:';',dateFormat:'dd.mm.yyyy'}});
+ v=await f.result('source.browser.record.finish',{workflowId:v.workflowId,recordingId:v.recording.recordingId!});
+ expect(v.mapping).toBeNull();expect(v.dictionary.origin).toBe('none');
+ // Recording alone already listed the downloaded file under a readable name with its source extension.
+ expect(v.exports).toHaveLength(1);expect(v.exports[0]).toMatchObject({origin:'record',rowCount:2,bytes:replayLength,mimeType:'text/csv'});
+ expect(v.exports[0].fileName).toMatch(/^ОКО_Продажи за неделю_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}\.csv$/);
+ const revision=v.revision;v=await f.result('source.browser.record.test',{workflowId:v.workflowId,expectedRevision:v.revision});
+ // No mapping means no enrichment result, but the repeated download is saved and listed too.
+ expect(v.result).toBeNull();expect(v.exports).toHaveLength(2);expect(v.exports[0].origin).toBe('repeat');expect(v.exports.map(item=>item.rowCount)).toEqual([2,2]);expect(v.revision).not.toBe(revision);
+ expect(v.result?.enrichedDownload ?? null).toBeNull();
+ const download=await f.app.inject({method:'GET',url:v.exports[0].downloadUrl,headers:f.headers});
+ expect(download.statusCode,download.body).toBe(200);expect(download.body).toContain('12,5');expect(download.headers['x-content-type-options']).toBe('nosniff');
+ expect(download.headers['content-disposition']).toContain("attachment;");expect(download.headers['content-disposition']).toContain("filename*=UTF-8''");expect(download.headers['content-disposition']).toContain(encodeURIComponent('ОКО_'));
+ const listed=await f.service.exports(f.context());expect([...listed.items.map(item=>item.exportId)].sort()).toEqual([...v.exports.map(item=>item.exportId)].sort());expect(listed.hiddenCount).toBe(0);
+ const draft=await f.repository.sqlForModule('oko_workflow').get<{payload_json:string}>('SELECT payload_json FROM wb_oko_workflow_drafts WHERE id=?',[v.workflowId]),value=JSON.parse(draft!.payload_json);expect(value.view.mapping).toBeNull();
+ // Hiding hides the row but keeps the bytes for a later enrichment; another owner sees neither list nor file.
+ expect(await f.service.deleteExport(directContext(f),{exportId:v.exports[0].exportId})).toEqual({hidden:true});
+ expect((await f.service.exports(f.context())).items.map(item=>item.exportId)).toEqual([v.exports[1].exportId]);expect((await f.service.exports(f.context())).hiddenCount).toBe(1); expect((await f.service.readExport(f.context(),v.exports[0].exportId)).bytes.length).toBe(replayLength);
+ f.setOwn({personId:randomUUID()});expect((await f.service.exports(f.context())).items).toEqual([]);expect(f.service.hasExport(f.context(),v.exports[0].exportId)).toBe(false);
+ await expect(f.service.readExport(f.context(),v.exports[0].exportId)).rejects.toMatchObject({code:'EXPORT_NOT_FOUND'});
+ expect((await f.app.inject({method:'GET',url:v.exports[1].downloadUrl,headers:f.headers})).statusCode).toBe(404);
+});
+it('rejects a corrupt export row and an unauthenticated export download',async()=>{
+ const f=await fixture('oko.workflow');f.setOwn({role:'viewer'});let v=await f.prepare();v=await f.result('source.browser.record.test',{workflowId:v.workflowId,expectedRevision:v.revision});
+ const exportId=v.exports[0].exportId,url=(id:string)=>'/api/v1/browser/exports/'+id;
+ expect((await f.app.inject({method:'GET',url:url(exportId)})).statusCode).toBe(401);
+ expect((await f.app.inject({method:'GET',url:url('not-a-uuid'),headers:f.headers})).statusCode).toBe(404);
+ const sql=f.repository.sqlForModule('oko_workflow'),owner=`${f.installationId}/${f.context().ownAccess.personId}`;
+ sql.run('UPDATE wb_oko_workflow_exports SET payload_json=? WHERE owner=? AND id=?',[JSON.stringify({artifact:{name:'ОКО_Отчёт.csv',mimeType:'text/csv',base64:Buffer.from('tampered').toString('base64'),hash:'0'.repeat(64)}}),owner,exportId]);
+ const corrupt=await f.app.inject({method:'GET',url:url(exportId),headers:f.headers});expect(corrupt.statusCode,corrupt.body).toBe(422);expect(corrupt.json().error.code).toBe('INTEGRITY_MISMATCH');
 });
 it('archives full personal recipes and every result while excluding embedded profile configuration',async()=>{
  const f=await fixture();let view=await f.prepare();view=await f.result('source.browser.record.test',{workflowId:view.workflowId,expectedRevision:view.revision});const first=view.result!.resultId;
@@ -280,4 +325,45 @@ it.each(['revoked','changed-person'])('late directory parse/read %s cannot save 
 it('cancel closes a human picker before waiting for its mutation lock, then persists cancellation',async()=>{
  const f=await fixture(),v=await f.prepare();let enter!:()=>void,rejectPicker!:(error:unknown)=>void;const entered=new Promise<void>(resolve=>{enter=resolve;});f.runtime.selectMarker=async()=>{enter();return new Promise((_,reject)=>{rejectPicker=reject;});};let closed=false;const close=f.runtime.closeOwned;f.runtime.closeOwned=async owner=>{closed=true;rejectPicker?.(new DOMException('Cancelled','AbortError'));await close(owner);};
  const marker=f.service.marker(directContext(f),{workflowId:v.workflowId,reportUrl:v.reportUrl});const observed=marker.catch(error=>error);await entered;const cancelled=await f.service.cancel(directContext(f),{workflowId:v.workflowId});expect(closed).toBe(true);expect(await observed).toMatchObject({name:'AbortError'});expect(cancelled.recording).toEqual(v.recording);
+});
+it('finishing manual login retains its exact workflow window for marker selection without closing a running recording',async()=>{
+ const f=await fixture(),v=await f.prepare();const loginHandle=randomUUID();f.runtime.openLogin=async()=>({handleId:loginHandle,state:'open',mode:'login'});
+ const opened=(await f.command('source.browser.login.open',{workflowId:v.workflowId}) as unknown as {result:{loginId:string}}).result;expect(opened).toEqual({loginId:expect.any(String),windowOpened:true});
+ const loginId=opened.loginId;
+ const another=await f.result('source.browser.workflow.open',{title:'Other own workflow'});
+ await expect(f.service.loginFinish(directContext(f),{workflowId:another.workflowId,loginId})).rejects.toMatchObject({code:'BROWSER_HANDLE_NOT_FOUND'});
+ f.runtime.observeLogin=async()=>false;
+ await expect(f.service.loginFinish(directContext(f),{workflowId:v.workflowId,loginId})).rejects.toMatchObject({code:'manual_login_required'});
+ expect(f.closedHandles).toEqual([]);
+ f.runtime.observeLogin=async()=>true;
+ const finished=(await f.command('source.browser.login.finish',{workflowId:v.workflowId,loginId}) as unknown as {result:unknown}).result;expect(finished).toEqual({completed:true,windowRetained:true});
+ expect(f.closedHandles).toEqual([]);expect(f.closedOwners).toEqual([]);
+ let markerInput:Parameters<BrowserWorkflowRuntimePort['selectMarker']>[0]|undefined;
+ f.runtime.selectMarker=async input=>{markerInput=input;return{selector:'#report',label:'Report'};};
+ await f.service.marker(directContext(f),{workflowId:v.workflowId,reportUrl:v.reportUrl});
+ expect(markerInput).toMatchObject({preparationId:v.workflowId,loginHandleId:loginHandle,startUrl:v.reportUrl});
+ expect(JSON.stringify((await f.service.workspace(f.context(),v.workflowId)).current)).not.toContain(loginHandle);
+ await expect(f.service.loginFinish(directContext(f),{workflowId:v.workflowId,loginId})).rejects.toMatchObject({code:'BROWSER_HANDLE_NOT_FOUND'});
+});
+it('opening a login window without a report URL asks for the address instead of guessing an origin',async()=>{
+ const f=await fixture(),created=await f.result('source.browser.workflow.open',{title:'Отчёт'});
+ const inMemory={revision:null,configured:true,profile:{allowedOrigins:['https://report.example'],maxBytes:100000,timeoutMs:10000,retries:0,browser:{channel:'chrome',profileDirectory:'synthetic',headless:false}}};
+ f.profiles.getOwn=async()=>({...inMemory,sessionState:'closed',sourceId:created.workflowId,profileId:'oko-'+created.workflowId} as never);
+ await expect(f.service.loginOpen(directContext(f),{workflowId:created.workflowId})).rejects.toMatchObject({code:'REPORT_URL_REQUIRED'});expect(f.closedHandles).toEqual([]);
+});
+it('repeats a verified raw recipe after parser refusal without inferring CSV or accepting facts',async()=>{
+ const f=await fixture('oko.workflow');let v=await f.prepare();f.runtime.readRecordingDownload=async()=>({bytes:Buffer.from([1,2,3]),name:'report.bin',contentType:'application/octet-stream',formatStatus:'unsupported'});f.runtime.replay=async input=>{expect(input.scenario.expectedExport).toEqual({format:'raw',requiredColumns:[]});return{bytes:Buffer.from([1,2,3]),name:'report.bin',contentType:'application/octet-stream',formatStatus:'unsupported'};};
+ v=await f.result('source.browser.record.start',{workflowId:v.workflowId,expectedRevision:v.revision,reportUrl:v.reportUrl,parsingProfile:v.parsingProfile});
+ await expect(f.service.finish(directContext(f),{workflowId:v.workflowId,recordingId:v.recording.recordingId!})).rejects.toThrow();
+ v=(await f.service.workspace(f.context(),v.workflowId)).current!;expect(v.recording.steps.some(s=>s.action==='download')).toBe(true);
+ const repeated=await f.result('source.browser.record.test',{workflowId:v.workflowId,expectedRevision:v.revision});expect(repeated.exports[0]).toMatchObject({formatStatus:'unsupported',rowCount:null});expect(f.repository.exportWorkspaceCore()).toEqual([]);
+});
+
+it('raw replay keeps quarantined attachment bytes but fails report acquisition and preserves the previous file',async()=>{
+ const f=await fixture('oko.workflow');let v=await f.prepare();f.runtime.readRecordingDownload=async()=>({bytes:Buffer.from([1,2,3]),name:'report.bin',contentType:'application/octet-stream',formatStatus:'unsupported'});v=await f.result('source.browser.record.start',{workflowId:v.workflowId,expectedRevision:v.revision,reportUrl:v.reportUrl,parsingProfile:v.parsingProfile});await expect(f.service.finish(directContext(f),{workflowId:v.workflowId,recordingId:v.recording.recordingId!})).rejects.toThrow();v=(await f.service.workspace(f.context(),v.workflowId)).current!;const previous=(await f.service.exports(f.context())).items;
+ const bytes=Buffer.from('<html>Sign in</html>');f.runtime.replay=async()=>({bytes,name:'report.bin',contentType:'application/octet-stream',formatStatus:'quarantined'});const job=await f.command('source.browser.record.test',{workflowId:v.workflowId,expectedRevision:v.revision});expect(job.status).toBe('failed');const listed=(await f.service.exports(f.context())).items;expect(listed).toHaveLength(previous.length+1);const retained=listed.find(i=>!previous.some(p=>p.exportId===i.exportId))!;expect(retained.formatStatus).toBe('quarantined');expect(Buffer.from((await f.service.readExport(f.context(),retained.exportId)).bytes)).toEqual(bytes);
+});
+it('explicitly selects a recorded JS export click and requires a successful test before replayable status',async()=>{
+ const f=await fixture('oko.workflow');let v=await f.prepare();const original=f.runtime.finish;f.runtime.finish=async input=>({...await original(input),steps:[{action:'click',locator:{kind:'css',selector:'#js-export'}}]});v=await f.result('source.browser.record.start',{workflowId:v.workflowId,expectedRevision:v.revision,reportUrl:v.reportUrl,parsingProfile:v.parsingProfile});v=await f.result('source.browser.record.finish',{workflowId:v.workflowId,recordingId:v.recording.recordingId});expect(v.recording.replayable).toBe(false);
+ v=await f.result('source.browser.export.action.set',{workflowId:v.workflowId,expectedRevision:v.revision,stepIndex:0});expect(v.recording).toMatchObject({replayable:false,replayabilityProblem:'EXPORT_ACTION_NEEDS_TEST',steps:[{action:'download',locator:{kind:'css',selector:'#js-export'}}]});v=await f.result('source.browser.record.test',{workflowId:v.workflowId,expectedRevision:v.revision});expect(v.recording).toMatchObject({replayable:true,replayabilityProblem:null});expect(v.warnings.some(w=>w.startsWith('Сценарий завершится выбранным действием.'))).toBe(false);
 });

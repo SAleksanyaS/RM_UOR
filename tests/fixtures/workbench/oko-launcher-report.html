@@ -6,11 +6,11 @@
 <section id="export-panel" hidden><button id="download-data">Download as Data</button><a id="export" href="/export" hidden>Download ready file</a></section></main>
 <script>
 // Test-only report controls let the harness drive the production-owned browser
-// without a launcher hook, remote-debugging flag or an application fixture import.
+// without a launcher hook or an application fixture import. Native tests use
+// the owned browser endpoint for trusted input; polling still reports mode.
 function showReport() { document.querySelector('[data-authentication]')?.remove(); document.querySelector('#ready').hidden = false; }
 document.querySelector('#login').onclick = async () => { await fetch('/login'); showReport(); };
-document.querySelector('#download-data').onclick = async () => { await fetch('/prepare-export'); document.querySelector('#export').hidden = false; };
-document.querySelector('#export').onclick = event => { event.currentTarget.href = '/export?period=' + encodeURIComponent(document.querySelector('#period').value) + '&scope=' + encodeURIComponent(document.querySelector('#scope').value); };
+document.querySelector('#download-data').onclick = async () => { await fetch('/prepare-export'); const link = document.querySelector('#export'); link.href = '/export?period=' + encodeURIComponent(document.querySelector('#period').value) + '&scope=' + encodeURIComponent(document.querySelector('#scope').value); link.hidden = false; };
 window.addEventListener('error', event => fetch('/telemetry', { method: 'POST', body: JSON.stringify({ error: event.message }) }));
 (async () => {
   if (await (await fetch('/auth')).json()) showReport();

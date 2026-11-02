@@ -16,6 +16,7 @@ it('keeps edited mapping B unsaved after recovering lost A and only announces su
   const client = {
     session: async () => ({ personId: 'person-1', role: 'curator', allowedCommands: ['source.browser.record.start'] }),
     workspace: async () => ({ current: view, workflows: [view], setup: {} }),
+    exports: async () => ({ items: [], hiddenCount: 0 }),
     command: async (_name: string, payload: any, id: string) => {
       sent.push({ id, payload }); view = { ...view, revision: `r${sent.length + 1}`, mapping: payload.mapping, parameters: payload.parameters }; receipts.set(id, view);
       if (sent.length === 1) throw new OkoClientError('NETWORK_ERROR', 'Response lost');
@@ -48,6 +49,7 @@ it.each(['retry', 'reload'])('preserves both uncertain identities and never dupl
   const client = {
     session: async () => ({ personId: 'person-1', role: 'curator', allowedCommands: ['source.browser.record.start'] }),
     workspace: async () => ({ current: view, workflows: [view], setup: {} }),
+    exports: async () => ({ items: [], hiddenCount: 0 }),
     command: async (name: string, _payload: unknown, id: string) => { sent.push({ name, id }); if (name.endsWith('.cancel')) releaseSeen = true; throw new OkoClientError('NETWORK_ERROR', 'Response lost'); },
     reconcileCommand: async (id: string) => { const command = sent.find(item => item.id === id)!; return { commandId: id, name: command.name, status: command.name.endsWith('.cancel') ? 'completed' : 'pending', result: command.name.endsWith('.cancel') ? view : null, job: null }; },
   };

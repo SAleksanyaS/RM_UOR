@@ -1,3 +1,5 @@
+import { recordedBrowserStepSchema } from '../../domain/workbench/browser-scenario';
+import type { BrowserCapture } from './workbench-capture-contracts';
 import { createHash, randomUUID } from 'node:crypto';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { Clock, Header } from '../../domain/workbench/primitives';
@@ -17,11 +19,12 @@ import type { BrowserProfileService } from './workbench-browser-profile';
 import type { BrowserWorkflowRuntimePort, BrowserOwner } from './workbench-browser-runtime';
 import { checkedUrl, type Downloaded } from './transport';
 import { ConnectorError } from './contracts';
-import type { OkoWorkflowView, OkoWorkspaceView, OkoMapping, OkoDictionaryMapping } from './workbench-workflow-contracts';
+import type { OkoWorkflowView, OkoWorkspaceView, OkoMapping, OkoDictionaryMapping, OkoExport, OkoExportsView } from './workbench-workflow-contracts';
 import { createOkoWorkflowStore } from './workbench-workflow-store';
 import { buildOkoPreviewDirectory, previewOkoTable, serializeOkoEnrichedCsv, type OkoPreviewDirectory } from './workbench-workflow-enrichment';
 type Row = Record<string, string | null>;
 type Draft = {
+    captureId?: string;
     view: OkoWorkflowView;
     revision: string;
     sample: ParsedSourceTable | null;
@@ -60,12 +63,24 @@ const issue = (path: string, code: string, message: string) => ({ path, code, me
 const fail = (code: string, message: string, status = 422): never => { throw new WorkbenchHttpError(status, code, message); };
 const rawRows = (table: ParsedSourceTable): Row[] => table.rows.map(row => Object.fromEntries(table.columns.map(column => [column, row.cells[column]?.original ?? null])));
 const artifact = (download: Downloaded): Artifact => ({ name: download.name, mimeType: download.contentType ?? 'application/octet-stream', base64: Buffer.from(download.bytes).toString('base64'), hash: createHash('sha256').update(download.bytes).digest('hex') });
+/** Readable download name: `ОКО_<report>_<YYYY-MM-DD_HH-mm>.<ext>`; the source extension is always kept. */
+export function okoExportFileName(title: string, capturedAt: string, sourceName: string): string {
+    // The report itself decides the format (csv, xlsx, xls, tsv, ...), so the extension is copied
+    // instead of being narrowed to the two formats the parser handles.
+    const extension = /\.([a-z0-9]{1,8})$/i.exec(sourceName)?.[1]?.toLowerCase() ?? 'csv';
+    const stamp = new Date(capturedAt);
+    const at = Number.isNaN(stamp.getTime()) ? new Date().toISOString() : stamp.toISOString();
+    const safe = title.replace(/[\x00-\x1f\x7f/\\:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60).trim() || 'Отчёт';
+    return `ОКО_${safe}_${at.slice(0, 10)}_${at.slice(11, 16).replace(':', '-')}.${extension}`;
+}
 export function createOkoWorkflowService(deps: OkoWorkflowDependencies) {
     const { repository, runtime, profiles, files, jobs, clock } = deps, store = createOkoWorkflowStore(repository);
     const live = new Set<string>(), logins = new Map<string, {
         owner: string;
+        workflowId: string;
         handleId: string;
     }>();
+    const readyLogins = new Map<string, { handleId: string; owner: BrowserOwner }>();
     const browserOwners = new Map<string, BrowserOwner>(), controllers = new Map<AbortController, string>();
     const authWindows = new Map<string, { handleId: string; owner: BrowserOwner }>();
     const closeAuthWindow = async (auth: { handleId: string; owner: BrowserOwner }) => {
@@ -74,6 +89,12 @@ export function createOkoWorkflowService(deps: OkoWorkflowDependencies) {
     };
     let shuttingDown = false;
     const owner = (context: QueryContext) => `${context.installationId}/${context.ownAccess.personId ?? 'unassigned'}`;
+    const clearPreparation = async (context: QueryContext, workflowId: string) => {
+        await runtime.discardPreparation?.({ owner: browserOwner(context), preparationId: workflowId });
+        const key = owner(context) + '/' + workflowId, ready = readyLogins.get(key); readyLogins.delete(key);
+        if (ready) await closeAuthWindow(ready);
+        for (const [id, login] of logins) if (login.owner === owner(context) && login.workflowId === workflowId) { logins.delete(id); await closeAuthWindow({ owner: browserOwner(context), handleId: login.handleId }); }
+    };
     const cancellationGenerations = new Map<string, number>();
     const mutationScope = new AsyncLocalStorage<{ ownerKey: string; generation: number }>();
     const assertMutationActive = (context: QueryContext) => {
@@ -113,9 +134,33 @@ export function createOkoWorkflowService(deps: OkoWorkflowDependencies) {
         return { ...draft.localMapping.header, sourceId: draft.view.sourceId, rowKeyFields: input.rowKeyColumns, productKeyField: input.productKeyColumn, fixedScope: null, dimensionFields: input.dimensionColumns,
             metricFields: Object.entries(input.numberColumns).map(([field, column]) => ({ metricId: draft.localMapping!.metricIds[field], fields: { [field]: column } })), dateField: input.dateColumn, periodStartField: null, periodEndField: null, unitField: input.unitColumn, fixedUnitCode: input.fixedUnitCode, parsingProfile: draft.view.parsingProfile };
     };
+    const confirmReplay=(draft:Draft)=>{draft.view.recording.replayable=true;draft.view.recording.replayabilityProblem=null;draft.view.warnings=draft.view.warnings.filter(w=>!w.startsWith('Сценарий завершится выбранным действием.'));};
+    const prepareCapture=(context:CommandContext,draft:Draft,origin:'record'|'repeat',maxBytes=10*1024*1024):BrowserCapture=>{
+        const intent=store.beginCapture(owner(context),{schemaVersion:1,captureId:randomUUID(),operationId:context.commandId,workflowId:draft.view.workflowId,sourceId:draft.view.sourceId,title:draft.view.title,origin,...(draft.view.sourceKind?{sourceKind:draft.view.sourceKind}:{}),...(draft.view.sourceMetadata?{sourceMetadata:draft.view.sourceMetadata}:{}),maxBytes,createdAt:clock.now()});
+        return {intent,sink:{read(){const receipt=store.captureReceipt(owner(context),intent.captureId);if(!receipt)return null;const saved=store.getExport<{artifact:Artifact}>(owner(context),receipt.exportId);if(!saved)return null;const bytes=Buffer.from(saved.payload.artifact.base64,'base64');if(bytes.length!==receipt.bytes||createHash('sha256').update(bytes).digest('hex')!==receipt.sha256)fail('CAPTURE_INTEGRITY','Capture integrity mismatch');return{bytes,name:receipt.sourceName,contentType:receipt.mimeType,captureReceipt:receipt,formatStatus:receipt.formatStatus};},stage(binding){store.stageCapture(owner(context),intent.captureId,binding);},async commit(download){return store.commitCapture(owner(context),intent.captureId,download);}}};
+    };
+    const storeRawExport = (context:CommandContext,draft:Draft,download:Downloaded,origin:OkoExport['origin']):{meta:OkoExport;artifact:Artifact}=>{
+        const capture=origin==='record'&&draft.captureId?store.captureIntent(owner(context),draft.captureId):null;
+        const selected=capture?{intent:capture,sink:{commit:async(d:Downloaded)=>store.commitCapture(owner(context),capture.captureId,d)}}:prepareCapture(context,draft,origin);
+        const receipt=download.captureReceipt??store.commitCapture(owner(context),selected.intent.captureId,download);
+        const saved=store.getExport<{artifact:Artifact}>(owner(context),receipt.exportId);if(!saved)fail('EXPORT_NOT_FOUND','Own capture missing',404);
+        return {meta:{...exportView(saved!.meta),captureId:receipt.captureId,sourceName:receipt.sourceName,formatStatus:receipt.formatStatus,acquisitionState:'stored',processingState:'unprocessed'},artifact:saved!.payload.artifact};
+    };
+    const exportView = (meta: { id: string; workflowId: string; title: string; fileName: string; mimeType: string; bytes: number; sha256: string; capturedAt: string; sourceDate: string | null; rowCount: number | null; origin: string }): OkoExport => ({ exportId: meta.id, workflowId: meta.workflowId, title: meta.title, fileName: meta.fileName, mimeType: meta.mimeType, bytes: meta.bytes, sha256: meta.sha256, capturedAt: meta.capturedAt, sourceDate: meta.sourceDate, rowCount: meta.rowCount, origin: meta.origin === 'repeat' ? 'repeat' : 'record', downloadUrl: '/api/v1/browser/exports/' + meta.id });
+    // Every stored export is visible in «Мои выгрузки»; the payload reuses the list store so both callers agree.
+    const mergeExport = (saved: OkoExport, ...lists: OkoExport[][]): OkoExport[] => [saved, ...lists.flat()].filter((item, index, all) => all.findIndex(candidate => candidate.exportId === item.exportId) === index).slice(0, 20);
+    /** The raw file is listed durably before parsing; only the row count is unknown until the table is read. */
+    const countExport = (exports: OkoExport[], exportId: string, rowCount: number | null): OkoExport[] => exports.map(item => item.exportId === exportId ? { ...item, rowCount } : item);
     const view = async (context: QueryContext, draft: Draft): Promise<OkoWorkflowView> => {
         const result = structuredClone(draft.view);
         result.profile = await profiles.getOwn(context, result.sourceId);
+        result.recordingPreparation = { state: 'missing', expiresAt: null };
+        if (result.profile.profile && result.marker && result.reportUrl) result.recordingPreparation = await runtime.readPreparation?.({ owner: browserOwner(context), preparationId: result.workflowId, profile: result.profile.profile, startUrl: result.reportUrl, authenticatedSelector: result.marker.selector }) ?? result.recordingPreparation;
+        const readyLoginKey = owner(context) + '/' + result.workflowId, readyLogin = readyLogins.get(readyLoginKey);
+        if (readyLogin) {
+            if (await runtime.observeLogin?.({ handleId: readyLogin.handleId, owner: readyLogin.owner }).catch(() => false)) result.recordingPreparation = { state: 'login', expiresAt: null };
+            else readyLogins.delete(readyLoginKey);
+        }
         if (result.recording.state === 'recording' && result.recording.recordingId) {
             const key = owner(context) + '/' + result.workflowId;
             if (!live.has(key))
@@ -162,54 +207,70 @@ export function createOkoWorkflowService(deps: OkoWorkflowDependencies) {
         throw error;
     } finally { controllers.delete(controller); if (auth && resumeLogin) await closeAuthWindow(auth); } };
     const service = {
-        async shutdown():Promise<void>{shuttingDown=true;for(const controller of controllers.keys())controller.abort();await Promise.all([...browserOwners.values()].map(value=>runtime.closeOwned(value)));live.clear();logins.clear();authWindows.clear();},
-        async workspace(context: QueryContext, workflowId?: string): Promise<OkoWorkspaceView> { const drafts = store.list<Draft>(owner(context)); return { workflows: drafts.map(d => ({ workflowId: d.view.workflowId, title: d.view.title, revision: d.revision })), current: workflowId ? await view(context, load(context, workflowId)) : drafts.length ? await view(context, drafts[0]) : null, setup: deps.setup?.() ?? { hostname: '', registryConfigured: false, message: 'Hostname registry setup is unavailable' } }; },
+        async shutdown():Promise<void>{shuttingDown=true;for(const controller of controllers.keys())controller.abort();await Promise.all([...browserOwners.values()].map(value=>runtime.closeOwned(value)));live.clear();logins.clear();readyLogins.clear();authWindows.clear();},
+        async workspace(context: QueryContext, workflowId?: string): Promise<OkoWorkspaceView> { store.recoverCaptures();const drafts = store.list<Draft>(owner(context)); return { workflows: drafts.map(d => ({ workflowId: d.view.workflowId, title: d.view.title, revision: d.revision })), current: workflowId ? await view(context, load(context, workflowId)) : drafts.length ? await view(context, drafts[0]) : null, setup: deps.setup?.() ?? { hostname: '', registryConfigured: false, message: 'Hostname registry setup is unavailable' } }; },
         async open(context: CommandContext, input: {
             workflowId?: string;
             title?: string;
+            sourceKind?:'oko'|'confluence';
+            sourceMetadata?:OkoWorkflowView['sourceMetadata'];
         }) { requirePrepare(context); if (input.workflowId)
-            return view(context, load(context, input.workflowId)); const workflowId = randomUUID(), sourceId = randomUUID(), revision = randomUUID(); const draft: Draft = { revision, sample: null, dictionaryTable: null, dictionaryRows: [], format: null, view: { workflowId, sourceId, revision, title: input.title ?? 'Новый сценарий ОКО', reportUrl: '', marker: null, parsingProfile: { ...defaultSourceParsingProfile }, profile: { sourceId, profileId: null, profile: null, revision: null, configured: false, sessionState: 'closed' }, recording: { recordingId: null, state: 'idle', steps: [], parameterNames: [], problem: null }, columns: [], sampleRows: [], parameters: {}, mapping: null, dictionary: { columns: [], sampleRows: [], mapping: null, origin: 'none', issues: [] }, result: null, warnings: ['Личный предварительный просмотр: факты и общий источник не создаются.'] } }; store.save(owner(context), workflowId, null, draft); return view(context, draft); },
+            return view(context, load(context, input.workflowId)); const workflowId = randomUUID(), sourceId = randomUUID(), revision = randomUUID(); const draft: Draft = { revision, sample: null, dictionaryTable: null, dictionaryRows: [], format: null, view: { workflowId, sourceId, revision, title: input.title ?? (input.sourceKind==='confluence'?'Вложение Confluence':'Новый сценарий ОКО'), ...(input.sourceKind?{sourceKind:input.sourceKind}:{}), ...(input.sourceMetadata?{sourceMetadata:input.sourceMetadata}:{}), reportUrl: '', marker: null, parsingProfile: { ...defaultSourceParsingProfile }, profile: { sourceId, profileId: null, profile: null, revision: null, configured: false, sessionState: 'closed' }, recording: { recordingId: null, state: 'idle', steps: [], parameterNames: [], problem: null }, columns: [], sampleRows: [], parameters: {}, mapping: null, dictionary: { columns: [], sampleRows: [], mapping: null, origin: 'none', issues: [] }, result: null, exports: [], warnings: ['Личный предварительный просмотр: факты и общий источник не создаются.'] } }; store.save(owner(context), workflowId, null, draft); return view(context, draft); },
         async setProfile(context: CommandContext, input: {
             workflowId: string;
             expectedRevision: string;
             reportUrl: string;
             profile: Parameters<BrowserProfileService['set']>[1]['profile'];
         }) { const draft = load(context, input.workflowId); cas(draft, input.expectedRevision); checkedUrl(input.reportUrl, input.profile); const current = await profiles.getOwn(context, draft.view.sourceId); assertMutationActive(context);
+            await clearPreparation(context, input.workflowId); assertMutationActive(context);
             await profiles.set(context, { sourceId: draft.view.sourceId, profileId: 'oko-' + draft.view.workflowId, profile: input.profile, expectedRevision: current.revision });
             // A committed private write must finish its workflow bookkeeping while
             // retaining the mutation slot, even if release arrived during that write.
             draft.view.reportUrl = input.reportUrl; saveDraft(context, draft);
-            return { ...structuredClone(draft.view), profile: await profiles.getOwn(context, draft.view.sourceId) }; },
+            return view(context, draft); },
         async loginOpen(context: CommandContext, input: {
             workflowId: string;
-        }) { const draft = load(context, input.workflowId), profile = await ownProfile(context, draft); const startUrl = draft.view.reportUrl || profile.profile!.allowedOrigins[0]; const handle = await runtime.openLogin({ owner: browserOwner(context), profile: profile.profile!, startUrl, authenticatedSelector: draft.view.marker?.selector ?? 'html' }, new AbortController().signal); const loginId = randomUUID(); logins.set(loginId, { owner: owner(context), handleId: handle.handleId }); return { loginId, windowOpened: true as const }; },
+        }) { const draft = load(context, input.workflowId), profile = await ownProfile(context, draft); if (!draft.view.reportUrl) fail('REPORT_URL_REQUIRED', 'Сначала укажите адрес отчёта и сохраните личный профиль.'); await clearPreparation(context, input.workflowId); const startUrl = draft.view.reportUrl; const loginOwner = browserOwner(context); const handle = await runtime.openLogin({ owner: loginOwner, profile: profile.profile!, startUrl, authenticatedSelector: draft.view.marker?.selector ?? 'html' }, new AbortController().signal); try { await freshPrepare(context); } catch (error) { await closeAuthWindow({ owner: loginOwner, handleId: handle.handleId }); throw error; } const loginId = randomUUID(); logins.set(loginId, { owner: owner(context), workflowId: input.workflowId, handleId: handle.handleId }); return { loginId, windowOpened: true as const }; },
         async loginFinish(context: CommandContext, input: {
             workflowId: string;
             loginId: string;
-        }) { load(context, input.workflowId); if (logins.get(input.loginId)?.owner !== owner(context))
-            fail('BROWSER_HANDLE_NOT_FOUND', 'Own login window not found', 404); await runtime.closeOwned(browserOwner(context)); logins.delete(input.loginId); return { closed: true as const }; },
+        }) { load(context, input.workflowId); const login = logins.get(input.loginId);
+            if (!login || login.owner !== owner(context) || login.workflowId !== input.workflowId) return fail('BROWSER_HANDLE_NOT_FOUND', 'Own login window not found', 404);
+            const loginOwner = browserOwner(context);
+            if (!await runtime.observeLogin?.({ handleId: login.handleId, owner: loginOwner })) throw new ConnectorError('manual_login_required', 'Завершите вход в нужный отчёт и вернитесь в приложение. Окно остаётся открытым.');
+            await freshPrepare(context);
+            // Finishing the human step does not end the native session. Marker
+            // selection and recording consume this same process-local window.
+            logins.delete(input.loginId); readyLogins.set(owner(context) + '/' + input.workflowId, { handleId: login.handleId, owner: loginOwner });
+            return { completed: true as const, windowRetained: true as const }; },
         async marker(context: CommandContext, input: {
             workflowId: string;
             reportUrl: string;
-        }) { requirePrepare(context); const draft = load(context, input.workflowId), profile = await ownProfile(context, draft); return runControlled(context, input.workflowId, async (signal) => { const marker = await runtime.selectMarker({ owner: browserOwner(context), profile: profile.profile!, startUrl: input.reportUrl }, signal); cancelled(context, signal); await deps.recheckGuard?.(context); cancelled(context, signal); draft.view.reportUrl = input.reportUrl; draft.view.marker = marker; persist(context, draft); return view(context, draft); }); },
+        }) { requirePrepare(context); const draft = load(context, input.workflowId), profile = await ownProfile(context, draft); return runControlled(context, input.workflowId, async (signal, loginHandleId) => { const key = owner(context) + '/' + input.workflowId, ready = readyLogins.get(key); readyLogins.delete(key); const selectedLogin = loginHandleId ?? ready?.handleId; let marker; try { marker = await runtime.selectMarker({ owner: browserOwner(context), profile: profile.profile!, startUrl: input.reportUrl, preparationId: input.workflowId, ...(selectedLogin ? { loginHandleId: selectedLogin } : {}) }, signal); cancelled(context, signal); await freshPrepare(context); cancelled(context, signal); } catch (error) { await runtime.discardPreparation?.({ owner: browserOwner(context), preparationId: input.workflowId }); if (ready) await closeAuthWindow(ready); throw error; } draft.view.reportUrl = input.reportUrl; draft.view.marker = marker; persist(context, draft); return view(context, draft); }, true); },
         async start(context: CommandContext, input: {
             workflowId: string;
             expectedRevision: string;
             reportUrl: string;
             parsingProfile: OkoWorkflowView['parsingProfile'];
         }) { requirePrepare(context); const draft = load(context, input.workflowId); cas(draft, input.expectedRevision); if (!draft.view.marker || draft.view.reportUrl !== input.reportUrl)
-            fail('MARKER_REQUIRED', 'Select the report marker for this URL first', 409); const profile = await ownProfile(context, draft), runOwner = browserOwner(context); return runControlled(context, input.workflowId, async signal => { const handle = await runtime.startRecording({ owner: runOwner, profile: profile.profile!, startUrl: input.reportUrl, authenticatedSelector: draft.view.marker!.selector }, signal); try { cancelled(context, signal); await freshPrepare(context); cancelled(context, signal); } catch (error) { await runtime.closeOwned(runOwner); throw error; } draft.view.parsingProfile = input.parsingProfile; draft.view.recording = { recordingId: handle.handleId, state: 'recording', steps: [], parameterNames: [], problem: null }; live.add(owner(context) + '/' + input.workflowId); persist(context, draft); return view(context, draft); }); },
+            fail('MARKER_REQUIRED', 'Select the report marker for this URL first', 409); const profile = await ownProfile(context, draft), runOwner = browserOwner(context); const capture=prepareCapture(context,draft,'record',profile.profile!.maxBytes);draft.captureId=capture.intent.captureId; return runControlled(context, input.workflowId, async (signal, loginHandleId) => { const handle = await runtime.startRecording({capture, owner: runOwner, profile: profile.profile!, startUrl: input.reportUrl, authenticatedSelector: draft.view.marker!.selector, preparationId: input.workflowId, ...(loginHandleId ? { loginHandleId } : {}) }, signal); try { cancelled(context, signal); await freshPrepare(context); cancelled(context, signal); } catch (error) { await runtime.closeOwned(runOwner); throw error; } draft.format=null;draft.view.parsingProfile = input.parsingProfile; draft.view.recording = { recordingId: handle.handleId, state: 'recording', steps: [], parameterNames: [], problem: null }; live.add(owner(context) + '/' + input.workflowId); persist(context, draft); return view(context, draft); }, true); },
         async finish(context: CommandContext, input: {
             workflowId: string;
             recordingId: string;
         }) { requirePrepare(context); const draft = load(context, input.workflowId); if (draft.view.recording.recordingId !== input.recordingId)
             fail('RECORDING_NOT_FOUND', 'Own recording not found', 404); if (draft.view.recording.state === 'completed')
-            return view(context, draft); try { return await runControlled(context, input.workflowId, async signal => {
+            return view(context, draft); try { const result = await runControlled(context, input.workflowId, async signal => {
             const recorded = await runtime.finish({ owner: browserOwner(context), handleId: input.recordingId, save: false });
             if (!recorded.hasDownload)
                 fail('EXPORT_REQUIRED', 'Finish by downloading a report');
             const download = await runtime.readRecordingDownload({ owner: browserOwner(context), handleId: input.recordingId });
             cancelled(context, signal);
+            // The raw report is kept first: a later parsing or dictionary problem must not lose it.
+            // This write stays out of the draft so the recording revision is not advanced mid-command.
+            const saved = storeRawExport(context, draft, download, 'record').meta;
+            await freshPrepare(context);cancelled(context,signal);
+            draft.view.recording={recordingId:input.recordingId,state:'completed',steps:recorded.steps,parameterNames:recorded.parameterNames,replayable:recorded.steps.some(s=>s.action==='download'),replayabilityProblem:recorded.steps.some(s=>s.action==='download')?null:'EXPORT_ACTION_NOT_RECORDED',problem:null};
+            draft.view.exports=mergeExport(saved,draft.view.exports??[]);persist(context,draft);
             const table = await parseWorkbenchTable({ bytes: download.bytes, name: download.name, parsingProfile: draft.view.parsingProfile });
             await freshPrepare(context);
             cancelled(context, signal);
@@ -217,25 +278,39 @@ export function createOkoWorkflowService(deps: OkoWorkflowDependencies) {
             draft.format = table.format;
             draft.view.columns = table.columns;
             draft.view.sampleRows = rawRows(table).slice(0, 50);
-            draft.view.recording = { recordingId: input.recordingId, state: 'completed', steps: recorded.steps, parameterNames: recorded.parameterNames, problem: null };
+            draft.view.recording = { recordingId: input.recordingId, state: 'completed', steps: recorded.steps, parameterNames: recorded.parameterNames,replayable:recorded.steps.some(s=>s.action==='download'),replayabilityProblem:recorded.steps.some(s=>s.action==='download')?null:'EXPORT_ACTION_NOT_RECORDED', problem: null };
             draft.view.parameters = Object.fromEntries(recorded.parameterNames.map(name => [name, draft.view.parameters[name] ?? '']));
+            draft.view.exports = mergeExport(saved, draft.view.exports ?? []);
+            store.updateExportOutcome(owner(context), saved.exportId, { rowCount: table.rows.length, sourceDate: null });
+            draft.view.exports = countExport(draft.view.exports, saved.exportId, table.rows.length);
             persist(context, draft);
             return view(context, draft);
-        }); }
+        }); return result; }
         catch (error) {
             if (error instanceof Error && error.name === 'AbortError') throw error;
-            const failure = error instanceof WorkbenchParserError
-                ? new WorkbenchHttpError(422, error.code, 'Не удалось прочитать файл отчёта. Проверьте формат, разделитель CSV, кодировку и выбранный лист XLSX; затем повторите запись.', [{ path: '/parsingProfile', code: error.code, message: error.message, ref: null }])
-                : error;
+            // The raw file is already listed before parsing, so a parser refusal is a
+            // recoverable warning about columns, not a lost download.
+            if (error instanceof WorkbenchParserError)
+                throw new WorkbenchHttpError(422, error.code, 'Файл сохранён в «Мои выгрузки», но не удалось прочитать строки. Проверьте формат, разделитель CSV, кодировку и выбранный лист XLSX; затем повторите запись.', [{ path: '/parsingProfile', code: error.code, message: error.message, ref: null }]);
+            if (error instanceof WorkbenchHttpError && error.statusCode === 409 && error.code === 'WORKFLOW_RELEASED') throw error;
             await freshPrepare(context);
             draft.view.recording.state = 'failed';
-            draft.view.recording.problem = { code: failure instanceof WorkbenchHttpError ? failure.code : 'RECORDING_FAILED', message: failure instanceof WorkbenchHttpError ? failure.message : 'Запись или выгрузка не завершена. Повторите запись.' };
+            draft.view.recording.problem = { code: error instanceof WorkbenchHttpError ? error.code : 'RECORDING_FAILED', message: error instanceof WorkbenchHttpError ? error.message : 'Запись или выгрузка не завершена. Повторите запись.' };
             persist(context, draft);
-            throw failure;
+            throw error;
+        } finally {
+            live.delete(owner(context) + '/' + input.workflowId);
         } },
         async cancel(context: CommandContext, input: {
             workflowId: string;
-        }) { const draft = load(context, input.workflowId); live.delete(owner(context) + '/' + input.workflowId); if (draft.view.recording.state !== 'completed') { draft.view.recording = { ...draft.view.recording, state: 'idle', problem: null }; persist(context, draft); } return view(context, draft); },
+        }) { const draft = load(context, input.workflowId); live.delete(owner(context) + '/' + input.workflowId); if (draft.view.recording.state === 'recording') { draft.view.recording = { ...draft.view.recording, state: 'idle', problem: null }; persist(context, draft); } return view(context, draft); },
+        async exportActionSet(context:CommandContext,input:{workflowId:string;expectedRevision:string;stepIndex:number}){
+            requirePrepare(context);const draft=load(context,input.workflowId);cas(draft,input.expectedRevision);
+            if(draft.view.recording.state!=='completed'||!Number.isInteger(input.stepIndex)||input.stepIndex<0||input.stepIndex>=draft.view.recording.steps.length)fail('EXPORT_ACTION_INVALID','Выберите записанное действие экспорта');
+            const selected=recordedBrowserStepSchema.parse(draft.view.recording.steps[input.stepIndex]);if(selected.action!=='click')return fail('EXPORT_ACTION_INVALID','Выберите записанный щелчок по кнопке выгрузки');
+            draft.view.recording.steps=[...draft.view.recording.steps.slice(0,input.stepIndex),{...selected,action:'download'}];draft.view.recording.replayable=false;draft.view.recording.replayabilityProblem='EXPORT_ACTION_NEEDS_TEST';
+            draft.view.warnings=[...draft.view.warnings.filter(w=>!w.startsWith('Сценарий завершится выбранным действием.')),'Сценарий завершится выбранным действием. Проверьте получение файла, чтобы подтвердить выбранную кнопку экспорта.'];await freshPrepare(context);persist(context,draft);return view(context,draft);
+        },
         async saveMapping(context: CommandContext, input: {
             workflowId: string;
             expectedRevision: string;
@@ -264,51 +339,83 @@ export function createOkoWorkflowService(deps: OkoWorkflowDependencies) {
         }) {
             requirePrepare(context);
             const draft = load(context, input.workflowId);
+            const expectedRevision = draft.revision;
             cas(draft, input.expectedRevision);
-            if (!draft.view.mapping || !draft.view.marker || !draft.format || draft.view.recording.state !== 'completed')
-                fail('SCENARIO_REVIEW_REQUIRED', 'Complete the recording and mapping first', 409);
+            // Column mapping and the directory are optional: without them the raw file is still saved.
+            if (!draft.view.marker || draft.view.recording.state !== 'completed'||!draft.view.recording.steps.some(s=>s.action==='download'))
+                fail('SCENARIO_REVIEW_REQUIRED', 'Complete the recording first', 409);
             const profile = await ownProfile(context, draft);
             return runControlled(context, input.workflowId, async (signal, loginHandleId) => {
                 // This private runtime DTO is never appended as a shared/published entity.
-                const scenario = { schemaVersion: 1 as const, id: draft.view.workflowId, revision: 1, recordedAt: clock.now(), actor: context.actor, publicationAnchorId: null, sourceId: draft.view.sourceId, startUrl: draft.view.reportUrl, authenticatedSelector: draft.view.marker!.selector, steps: draft.view.recording.steps, parameters: draft.view.parameters, expectedExport: { format: draft.format!, requiredColumns: draft.view.columns } };
-                const download = await runtime.replay({ owner: browserOwner(context), profile: profile.profile!, scenario, ...(loginHandleId ? { loginHandleId } : {}) }, signal);
+                const scenario = { schemaVersion: 1 as const, id: draft.view.workflowId, revision: 1, recordedAt: clock.now(), actor: context.actor, publicationAnchorId: null, sourceId: draft.view.sourceId, startUrl: draft.view.reportUrl, authenticatedSelector: draft.view.marker!.selector, steps: draft.view.recording.steps, parameters: draft.view.parameters, expectedExport: { format: draft.format??'raw' as const, requiredColumns: draft.format?draft.view.columns:[] } };
+                const capture=prepareCapture(context,draft,'repeat',profile.profile!.maxBytes);
+                const download = await runtime.replay({capture, owner: browserOwner(context), profile: profile.profile!, scenario, ...(loginHandleId ? { loginHandleId } : {}) }, signal);
                 cancelled(context, signal);
+                const stored = storeRawExport(context, draft, download, 'repeat'), saved = stored.meta;
+                if(download.formatStatus==='quarantined'||saved.formatStatus==='quarantined')fail('EXPORT_QUARANTINED','Файл сохранён для проверки, но содержимое не является подтверждённой выгрузкой отчёта');
+                if(!draft.format){confirmReplay(draft);await freshPrepare(context);cancelled(context,signal);draft.view.exports=mergeExport(saved,draft.view.exports??[]);draft.view.warnings=[...draft.view.warnings.filter(w=>w!=='Получен исходный файл; обработка ещё не выполнена.'),'Получен исходный файл; обработка ещё не выполнена.'];persist(context,draft);return view(context,draft);}
                 const table = await parseWorkbenchTable({ bytes: download.bytes, name: download.name, parsingProfile: draft.view.parsingProfile });
                 if (table.format !== draft.format || draft.view.columns.some(column => !table.columns.includes(column)))
                     fail('SOURCE_SCHEMA_CHANGED', 'Downloaded columns or format changed');
+                store.updateExportOutcome(owner(context), saved.exportId, { rowCount: table.rows.length, sourceDate: null });
+                const listed = (source: OkoExport[] | undefined): OkoExport[] => countExport(mergeExport(saved, source ?? [], draft.view.exports ?? []), saved.exportId, table.rows.length);
+                if (!draft.view.mapping) {
+                    // Raw-only run: nothing to map or enrich, the file is already listed and the revision is untouched.
+                    await freshPrepare(context);
+                    cancelled(context, signal);
+                    draft.view.exports = listed(draft.view.exports);confirmReplay(draft);
+                    persist(context, draft);
+                    return view(context, draft);
+                }
                 const mapping = draft.view.mapping!;
                 ensureColumns(table.columns, mapping);
                 const directory = draft.dictionaryGraph ?? buildOkoPreviewDirectory({ rows: draft.dictionaryRows.length ? draft.dictionaryRows : await deps.getDirectory?.(context, draft.view.sourceId) ?? [], sourceId: draft.view.sourceId, header: privateHeader(context), newId: randomUUID });
                 const preview = previewOkoTable({ table, mapping: localSourceMapping(context, draft), directory });
                 const { rows, issues, unresolvedRows } = preview;
-                const resultId = randomUUID(), columns = [...new Set([...table.columns, ...rows.flatMap(row => Object.keys(row))])], enriched = artifact({ name: 'oko-enriched.csv', bytes: serializeOkoEnrichedCsv(rows, columns), contentType: 'text/csv; charset=utf-8' }), original = artifact(download);
+                const resultId = randomUUID(), columns = [...new Set([...table.columns, ...rows.flatMap(row => Object.keys(row))])], enriched = artifact({ name: 'oko-enriched.csv', bytes: serializeOkoEnrichedCsv(rows, columns), contentType: 'text/csv; charset=utf-8' }), original = stored.artifact;
                 cancelled(context, signal);
                 const current = load(context, input.workflowId);
-                cas(current, input.expectedRevision);
-                const result: NonNullable<OkoWorkflowView['result']> = { resultId, rowCount: rows.length, unresolvedRows, issues, previewRows: rows.slice(0, 50), originalDownload: `/api/v1/browser/results/${resultId}/original`, enrichedDownload: `/api/v1/browser/results/${resultId}/enriched`, capturedAt: clock.now(), sourceDate: preview.sourceDate };
+                cas(current, expectedRevision);
+                current.view.exports = listed(current.view.exports);
+                const result: NonNullable<OkoWorkflowView['result']> = { resultId, rowCount: rows.length, unresolvedRows, issues, previewRows: rows.slice(0, 50), originalDownload: `/api/v1/browser/results/${resultId}/original`, enrichedDownload: `/api/v1/browser/results/${resultId}/enriched`, capturedAt: clock.now(), sourceDate: preview.sourceDate, exportId: saved.exportId };
                 const safeProfile = await profiles.getOwn(context, draft.view.sourceId);
                 await deps.recheckGuard?.(context);
                 cancelled(context, signal);
-                return commitCommandEffect(context, () => { cancelled(context, signal); store.putResult(owner(context), resultId, { original, enriched }); draft.view.result = result; persist(context, draft); return { result: { ...structuredClone(draft.view), profile: safeProfile }, changedRefs: [], editToken: null }; }).result;
+                return commitCommandEffect(context, () => { cancelled(context, signal); store.putResult(owner(context), resultId, { original, enriched }); current.view.result = result;confirmReplay(current); persist(context, current); return { result: { ...structuredClone(current.view), profile: safeProfile }, changedRefs: [], editToken: null }; }).result;
             }, true);
         },
         hasResult(context: QueryContext, resultId: string):boolean { return uuidSchema.safeParse(resultId).success && store.hasResult(owner(context),resultId); },
+        async exports(context:QueryContext,filter:{workflowId?:string;includeHidden?:boolean;text?:string;formatStatus?:'supported'|'unsupported'|'quarantined'}={},query?:{sort:Array<{field:'capturedAt'|'fileName'|'bytes'|'title';direction:'asc'|'desc'}>;page:{limit:number;cursor:string|null}}):Promise<OkoExportsView>{
+            store.recoverCaptures();let items=store.listExports(owner(context),filter).map(meta=>{const receipt=store.captureReceipt(owner(context),meta.id);return{...exportView(meta),deletedAt:meta.deletedAt,...(receipt?{captureId:receipt.captureId,sourceName:receipt.sourceName,formatStatus:receipt.formatStatus,acquisitionState:'stored' as const,processingState:meta.rowCount===null?'unprocessed' as const:'parsed' as const}:{})};});
+            if(filter.text){const needle=filter.text.toLocaleLowerCase();items=items.filter(i=>(i.fileName+' '+i.title).toLocaleLowerCase().includes(needle));}if(filter.formatStatus)items=items.filter(i=>i.formatStatus===filter.formatStatus);
+            const sort=query?.sort[0];if(sort)items.sort((a,b)=>{const l=a[sort.field],r=b[sort.field],comp=typeof l==='number'&&typeof r==='number'?l-r:String(l).localeCompare(String(r),'ru');return(sort.direction==='asc'?comp:-comp)||a.exportId.localeCompare(b.exportId);});
+            const total=items.length;let offset=0;if(query?.page.cursor){if(!/^\d+$/.test(query.page.cursor))fail('INVALID_CURSOR','Invalid export cursor');offset=Number(query.page.cursor);if(!Number.isSafeInteger(offset))fail('INVALID_CURSOR','Invalid export cursor');}const limit=query?.page.limit??total;return{items:items.slice(offset,offset+limit),hiddenCount:store.countHiddenExports(owner(context)),total,nextCursor:offset+limit<total?String(offset+limit):null};
+        },
+        async unhideExport(context:CommandContext,input:{exportId:string}) {if(!store.unhideExport(owner(context),input.exportId))fail('EXPORT_NOT_FOUND','Own export not found',404);return{hidden:false as const};},
+        async deleteExport(context: CommandContext, input: {
+            exportId: string;
+        }) { const exportOwner = owner(context); if (!store.markExportDeleted(exportOwner, input.exportId, clock.now()))
+            fail('EXPORT_NOT_FOUND', 'Own export not found', 404); return { hidden: true as const }; },
+        hasExport(context: QueryContext, exportId: string): boolean { return uuidSchema.safeParse(exportId).success && store.hasExport(owner(context), exportId); },
+        async readExport(context: QueryContext, exportId: string) { uuidSchema.parse(exportId); const stored = store.getExport<{ artifact: Artifact }>(owner(context), exportId); if (!stored?.payload.artifact)
+            fail('EXPORT_NOT_FOUND', 'Own export not found', 404); const value = stored!.payload.artifact, bytes = Buffer.from(value.base64, 'base64'); if (createHash('sha256').update(bytes).digest('hex') !== value.hash)
+            fail('INTEGRITY_MISMATCH', 'Stored export failed integrity verification'); return { bytes, name: value.name, mimeType: value.mimeType, hash: value.hash, sha256: value.hash }; },
         async readResult(context: QueryContext, resultId: string, kind: 'original' | 'enriched') { uuidSchema.parse(resultId); const stored = store.getResult<StoredResult>(owner(context), resultId); if (!stored || !['original', 'enriched'].includes(kind) || kind==='original'&&store.originalOmitted(owner(context),resultId))
             fail('RESULT_NOT_FOUND', 'Own result not found', 404); const value = stored![kind], bytes = Buffer.from(value.base64, 'base64'); if (createHash('sha256').update(bytes).digest('hex') !== value.hash)
             fail('INTEGRITY_MISMATCH', 'Stored result failed integrity verification'); return { bytes, name: value.name, mimeType: value.mimeType, hash: value.hash, sha256: value.hash }; },
     };
     // All workflow writes share one owner/workflow slot across awaited private I/O.
     // Cancellation first closes owned browser work without waiting for a human-held slot.
-    const prepareMethods = new Set<string>(['open', 'marker', 'start', 'finish', 'saveMapping', 'directoryPreview', 'directoryApply', 'test']);
-    for (const name of ['open', 'setProfile', 'loginOpen', 'loginFinish', 'marker', 'start', 'finish', 'saveMapping', 'directoryPreview', 'directoryApply', 'test'] as const) {
+    const prepareMethods = new Set<string>(['open', 'marker', 'start', 'finish','exportActionSet', 'saveMapping', 'directoryPreview', 'directoryApply', 'test']);
+    for (const name of ['open', 'setProfile', 'loginOpen', 'loginFinish', 'marker', 'start', 'finish','exportActionSet', 'saveMapping', 'directoryPreview', 'directoryApply', 'test'] as const) {
         const original = service[name] as (context: CommandContext, input: { workflowId?: string }) => Promise<unknown>;
         (service as unknown as Record<string, unknown>)[name] = (context: CommandContext, input: { workflowId?: string }) => serializeMutation(context, input, async () => {
             try { if (prepareMethods.has(name)) await freshPrepare(context); return await original(context, input); }
-            catch (error) { const auth = authWindows.get(context.commandId); if (auth && name === 'test') { authWindows.delete(context.commandId); await closeAuthWindow(auth); } throw error; }
+            catch (error) { const auth = authWindows.get(context.commandId); if (auth && ['test', 'start', 'marker'].includes(name)) { authWindows.delete(context.commandId); await closeAuthWindow(auth); } throw error; }
         });
     }
     const cancel = service.cancel;
-    service.cancel = async (context, input) => { load(context, input.workflowId); const ownerKey = owner(context); cancellationGenerations.set(ownerKey, (cancellationGenerations.get(ownerKey) ?? 0) + 1); for (const [controller, key] of controllers) if (key === ownerKey) controller.abort(); await runtime.closeOwned(browserOwner(context)); return serializeMutation(context, input, () => cancel(context, input)); };
+    service.cancel = async (context, input) => { load(context, input.workflowId); const ownerKey = owner(context); cancellationGenerations.set(ownerKey, (cancellationGenerations.get(ownerKey) ?? 0) + 1); for (const [controller, key] of controllers) if (key === ownerKey) controller.abort(); await runtime.closeOwned(browserOwner(context)); for (const [key, ready] of readyLogins) if (ready.owner.installationId === context.installationId && ready.owner.profilePersonId === context.ownAccess.personId) readyLogins.delete(key); for (const [id, login] of logins) if (login.owner === ownerKey) logins.delete(id); return serializeMutation(context, input, () => cancel(context, input)); };
     return service;
 }
 export type OkoWorkflowService = ReturnType<typeof createOkoWorkflowService>;

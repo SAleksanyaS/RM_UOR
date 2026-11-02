@@ -5,7 +5,7 @@ export type RawSourceRow = { rowKey: string; cells: Record<string, RawCell> };
 export type CanonicalSourceRow = { rowKey: string; dimensions: Record<string, string | null>; numbers: Record<string, Decimal | null>; businessTime: BusinessTime; unitCode: string | null };
 export type SourceParsingProfile = { sheetName: string | null; csvDelimiter: ',' | ';' | '\t'; csvEncoding: 'utf8' | 'windows1251'; dateFormat: 'iso' | 'dd.mm.yyyy' | 'excel-serial'; decimalSeparator: '.' | ','; groupSeparator: 'none' | 'space' | 'nbsp' | 'comma' | 'dot' };
 export type SourceFieldMapping = Header & {
-  sourceId: UUIDv4; rowKeyFields: string[]; dimensionFields: Record<string, string>; productKeyField: string | null; fixedScope: ScopeRef | null;
+  sourceId: UUIDv4; rowKeyFields: string[]; dimensionFields: Record<string, string>; productKeyField: string | null; teamKeyField?: string | null; fixedScope: ScopeRef | null;
   metricFields: { metricId: UUIDv4; fields: Record<string, string> }[]; dateField: string | null; periodStartField: string | null; periodEndField: string | null; unitField: string | null; fixedUnitCode: string | null;
   parsingProfile?: SourceParsingProfile;
 };

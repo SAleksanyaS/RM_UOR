@@ -196,7 +196,7 @@ export function createBrowserScenarioService({ repository, drafts, runtime, prof
         if (download.bytes.length > defaultFileLimits.goalImportBytes) return fail('SOURCE_SCHEMA_CHANGED');
         const bytes = Buffer.from(download.bytes); result.downloadedBytes = bytes.length;
         try { assertFileName(download.name); } catch { return fail('SOURCE_SCHEMA_CHANGED'); }
-        if (!download.name.toLowerCase().endsWith('.' + scenario.expectedExport.format)) return fail('SOURCE_SCHEMA_CHANGED');
+        if (scenario.expectedExport.format==='raw'||!download.name.toLowerCase().endsWith('.' + scenario.expectedExport.format)) return fail('SOURCE_SCHEMA_CHANGED');
         payloadHash = 'sha256:' + createHash('sha256').update(bytes).digest('hex');
         const table = await parser({ bytes, name: download.name, parsingProfile: cfg.mapping.parsingProfile });
         if (scenario.expectedExport.requiredColumns.some(column => !table.columns.includes(column))) return fail('SOURCE_SCHEMA_CHANGED');
@@ -231,7 +231,7 @@ export function createBrowserScenarioService({ repository, drafts, runtime, prof
       } catch (error) {
         if (error instanceof WorkbenchHttpError) { if (!result.problems.some(p => p.code === error.code)) result.problems.push(problem(error.code)); }
         else if (error instanceof WorkbenchParserError || error instanceof z.ZodError) result.problems.push(problem('SOURCE_SCHEMA_CHANGED'));
-        else if (error instanceof ConnectorError) result.problems.push(problem(({ configuration_required: 'BROWSER_CONFIGURATION_REQUIRED', manual_required: 'AUTH_REQUIRED', manual_login_required: 'AUTH_REQUIRED', access_denied: 'SOURCE_ACCESS_DENIED', network: 'SOURCE_UNAVAILABLE', certificate: 'SOURCE_CERTIFICATE_REQUIRED', timeout: 'SOURCE_TIMEOUT', format: 'SOURCE_SCHEMA_CHANGED', incomplete: 'EXPORT_COVERAGE_UNVERIFIED', cancelled: 'SOURCE_CANCELLED' } as const)[error.code]));
+        else if (error instanceof ConnectorError) result.problems.push(problem(({ configuration_required: 'BROWSER_CONFIGURATION_REQUIRED', manual_required: 'AUTH_REQUIRED', manual_login_required: 'AUTH_REQUIRED', access_denied: 'SOURCE_ACCESS_DENIED', network: 'SOURCE_UNAVAILABLE', certificate: 'SOURCE_CERTIFICATE_REQUIRED', timeout: 'SOURCE_TIMEOUT', format: 'SOURCE_SCHEMA_CHANGED', incomplete: 'EXPORT_COVERAGE_UNVERIFIED', cancelled: 'SOURCE_CANCELLED', browser_launch: 'BROWSER_LAUNCH_FAILED' } as const)[error.code]));
         else result.problems.push(problem(error instanceof DOMException && error.name === 'AbortError' ? 'SOURCE_CANCELLED' : 'BROWSER_TEST_FAILED'));
       }
       // Awaited browser/parser work cannot bless edits or a changed published configuration.

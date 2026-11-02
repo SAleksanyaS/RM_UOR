@@ -1,0 +1,115 @@
+import { afterEach, it, expect } from 'vitest';
+import { draftFixture, draftCleanups } from '../../../../tests/fixtures/workbench/drafts';
+import { loadMaturityMaterials } from '../../maturity/workbench-materials';
+import { createReportService } from './service';
+import { registerReportCommands } from './commands';
+import { defaultReportDefinition } from './contracts';
+import { reportRows, reportXlsx, reportPptx, reportHtml } from './exports';
+import ExcelJS from 'exceljs';
+import JSZip from 'jszip';
+afterEach(async () => { while (draftCleanups.length)
+    await draftCleanups.pop()!(); });
+function fixture() { const f = draftFixture(), materials = loadMaturityMaterials(), reports = createReportService({ repository: f.repository, clock: f.clock, materials }); registerReportCommands(f.registry, reports); return { ...f, reports, materials }; }
+it('creates, edits a section, reopens immutable versions and rejects two-window CAS and readers', async () => {
+    const f = fixture(), definition = defaultReportDefinition(f.materials.period);
+    const first = await f.execute('report.save', { id: null, definition }, { baseRevision: null });
+    const id = String(first.result.id);
+    const saved = f.reports.detail(f.context, id, 1);
+    expect(saved.definition.sections).toHaveLength(4);
+    const changed = { ...definition, title: 'Reviewed report', sections: definition.sections.slice(0, 2) };
+    const second = await f.execute('report.save', { id, definition: changed }, { baseRevision: first.editToken });
+    expect(f.reports.detail(f.context, id).definition).toEqual(changed);
+    expect(f.reports.detail(f.context, id, 1)).toEqual(saved);
+    await expect(f.execute('report.save', { id, definition }, { baseRevision: first.editToken })).rejects.toMatchObject({ code: 'REVISION_CONFLICT' });
+    f.context.ownAccess.role = 'viewer';
+    await expect(f.execute('report.save', { id, definition }, { baseRevision: second.editToken })).rejects.toMatchObject({ statusCode: 403 });
+    expect(() => f.reports.detail(f.context, id)).toThrow();
+});
+it('freezes names, values, rules, template and lineage in one snapshot used by actual XLSX/PPTX/HTML', async () => {
+    const f = fixture(), r = await f.execute('report.save', { id: null, definition: defaultReportDefinition(f.materials.period) }, { baseRevision: null });
+    const s = f.reports.detail(f.context, String(r.result.id));
+    const old = s.maturity!.teams[0].name;
+    f.materials.teams[0].name = 'LATER';
+    expect(f.reports.detail(f.context, s.id).maturity!.teams[0].name).toBe(old);
+    expect(s.maturity!.evaluation.counts).toMatchObject({ expected: 290, met: 271, missing: 1 });
+    const rows = reportRows(s);
+    expect(rows.some(row => row.includes('271 / 290'))).toBe(true);
+    const book = new ExcelJS.Workbook();
+    await book.xlsx.load(await reportXlsx(s) as any);
+    expect(book.worksheets.flatMap(w => { const a: string[] = []; w.eachRow(r => a.push(JSON.stringify(r.values))); return a; }).join(' ')).toContain('271 / 290');
+    const zip = await JSZip.loadAsync(await reportPptx(s));
+    const xml = (await Promise.all(Object.keys(zip.files).filter(p => /^ppt\/slides\/slide\d+\.xml$/.test(p)).map(p => zip.file(p)!.async('string')))).join(' ');
+    const visible = xml.replace(/<[^>]+>/g, '');
+    expect(visible.includes('271 / 290')).toBe(true);
+    expect(visible.includes(old.replace(/&/g, '&amp;'))).toBe(true);
+    expect(reportHtml(s)).toContain('271 / 290');
+    expect(reportHtml(s)).toContain(s.digest);
+});
+it('freezes ordinary goal results from the authorized read model with exact historical basis and missing labels', async () => {
+    const f = draftFixture();
+    const prepared = await f.prepare();
+    const basis = f.repository.readVersion<any>(prepared.basisRef)!;
+    const result = f.repository.readVersion<any>(prepared.resultRef!)!;
+    const { schemaVersion, id, revision, recordedAt, actor, publicationAnchorId, ...numericResult } = result;
+    const row = { ref: { entityType: 'goal_assignment', id: f.input.assignment.id, revision: 1 }, goal: f.input.goal, assignment: f.input.assignment, scopeName: null, leader: null, basisRef: prepared.basisRef, resultRef: prepared.resultRef, numericResult, manualStatus: null, needs_calculation: false, unavailableReason: null, displayValue: '920/9', unit: '%', publication: null, warnings: ['HISTORICAL_DIRECTORY_LABELS_UNAVAILABLE'], attestation: null, snapshot: null, nextActions: [] };
+    const detail = { goal: f.input.goal, rows: [row], tabs: { state: [row], work: [], method: [f.input.method], calculation: [basis], enriched: [], raw: [], history: [] } };
+    const service = createReportService({ repository: f.repository, clock: f.clock, materials: loadMaturityMaterials(), readGoal: async () => structuredClone(detail) });
+    registerReportCommands(f.registry, service);
+    const context = { scopePath: { ditId: f.input.assignment.scope.id, clusterId: null, productId: null, teamId: null }, goalId: f.input.goal.id, time: f.input.context.businessTime, resultMode: 'current' as const, snapshotId: null };
+    const definition = { ...defaultReportDefinition(f.input.context.businessTime.kind === 'as_of' ? f.input.context.businessTime.date : f.input.context.businessTime.kind === 'period' ? f.input.context.businessTime.endExclusive : ''), template: 'goal-management-v1' as const, context, sections: [{ kind: 'summary' as const, title: 'Результат цели', comment: '' }, { kind: 'quality' as const, title: 'Основание', comment: '' }] };
+    const saved = await f.execute('report.save', { id: null, definition }, { baseRevision: null });
+    const snapshot = service.detail(f.context, String(saved.result.id));
+    expect(snapshot.goalData!.tabs.calculation[0]).toEqual(basis);
+    expect(snapshot.maturity).toBeNull();
+    expect(reportRows(snapshot).flat().join(' ')).toContain('Историческое имя не сохранено');
+    const actualRows = reportRows(snapshot).flat().join(' ');
+    expect(actualRows).toContain('920/9');
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(await reportXlsx(snapshot) as any);
+    expect(String(workbook.worksheets[0].getRow(5).values)).toContain('920/9');
+    const slides = await JSZip.loadAsync(await reportPptx(snapshot));
+    const slideText = (await Promise.all(Object.keys(slides.files).filter(p => /^ppt\/slides\/slide\d+\.xml$/.test(p)).map(p => slides.file(p)!.async('string')))).join('').replace(/<[^>]+>/g, '');
+    expect(slideText.includes('920/9')).toBe(true);
+    expect(reportHtml(snapshot)).toContain('920/9');
+    const title = detail.goal.title;
+    detail.goal.title = 'Renamed after save';
+    expect(service.detail(f.context, snapshot.id).goalData!.goal.title).toBe(title);
+});
+it('archives every immutable version and validates digests and exact ownership before restore', async () => {
+    const { createReportArchiveOwner } = await import('./archive');
+    const f = fixture();
+    const first = await f.execute('report.save', { id: null, definition: defaultReportDefinition(f.materials.period) }, { baseRevision: null });
+    await f.execute('report.save', { id: first.result.id, definition: { ...defaultReportDefinition(f.materials.period), title: 'Second' } }, { baseRevision: first.editToken });
+    const owner = createReportArchiveOwner(), records = owner.exportRecords(f.repository);
+    expect(records).toHaveLength(2);
+    for (const record of records)
+        expect(() => owner.validate(record)).not.toThrow();
+    expect(() => owner.authorize(records, '00000000-0000-4000-8000-000000000099', f.context.installationId)).toThrow();
+    const changed = structuredClone(records[0]);
+    (changed.value as any).definition.title = 'tampered';
+    expect(() => owner.validate(changed)).toThrow();
+    const other = fixture();
+    other.repository.transaction(() => owner.restoreRecords(other.repository, records, { personId: f.context.ownAccess.personId, installationId: f.context.installationId } as any));
+    expect(other.reports.detail(other.context, String(first.result.id), 1).digest).toBe(first.result.digest);
+});
+it('passes the current owner context to the shared recipe provider',()=>{
+ const f=fixture();const service=createReportService({repository:f.repository,clock:f.clock,materials:f.materials,recipes:context=>[{...defaultReportDefinition(f.materials.period),title:'Owner '+context.ownAccess.personId}]});
+ expect(service.recipes(f.context).at(-1)!.title).toBe('Owner '+f.context.ownAccess.personId);
+ const other={...f.context,ownAccess:{...f.context.ownAccess,personId:'00000000-0000-4000-8000-000000000099'}};expect(service.recipes(other).at(-1)!.title).toBe('Owner '+other.ownAccess.personId);
+});
+it('uses the current owners common materials for new reports and keeps saved evidence frozen', async () => {
+ const f = draftFixture(), materials = loadMaturityMaterials(), shared = structuredClone(materials);
+ shared.teams[0].name = 'Название из выбранного общего пакета';
+ const service = createReportService({ repository:f.repository, clock:f.clock, materials,
+   materialsFor:context => context.ownAccess.personId === f.context.ownAccess.personId ? shared : materials });
+ registerReportCommands(f.registry,service);
+ const definition=defaultReportDefinition(materials.period);
+ const saved=await f.execute('report.save',{id:null,definition},{baseRevision:null});
+ const id=String(saved.result.id);
+ expect(service.detail(f.context,id).maturity!.teams[0].name).toBe('Название из выбранного общего пакета');
+ shared.teams[0].name='Следующая редакция пакета';
+ expect(service.detail(f.context,id).maturity!.teams[0].name).toBe('Название из выбранного общего пакета');
+ expect((await service.prepare(f.context,definition)).maturity!.teams[0].name).toBe('Следующая редакция пакета');
+ const other={...f.context,ownAccess:{...f.context.ownAccess,personId:'00000000-0000-4000-8000-000000000099'}};
+ expect((await service.prepare(other,definition)).maturity!.teams[0].name).toBe(materials.teams[0].name);
+});

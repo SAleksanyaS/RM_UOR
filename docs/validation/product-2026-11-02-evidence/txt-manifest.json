@@ -1,0 +1,523 @@
+{
+  "report_sha256": "5b4cbf627dcb58cfd6f14f6dfeae7e9f4f5b9c0a1631499f42ec551f3bbd6576",
+  "main_sha": "50678454ff1685bec951718f1fe919d94c8ef52e",
+  "reported_modified": 38,
+  "reported_new": 17,
+  "header_count": 55,
+  "unique_paths": 55,
+  "counts": {
+    "modified": 38,
+    "new": 17
+  },
+  "extraction_note": "Exact decoded text between 70-hyphen header boundaries; one separating blank line may be report formatting. No report content executed. Private config remains outside repository.",
+  "base_line_count_check": {
+    "matched_summary_entries": 38,
+    "mismatches": [],
+    "limitation": "Report does not supply hashes or complete old versions, so initial-tree identity cannot be proven from matching counts."
+  },
+  "structural_checks": {
+    "duplicate_paths": [],
+    "unsafe_paths": [],
+    "headers_with_missing_delimiter": [],
+    "expected_unique_paths": 55,
+    "actual_unique_paths": 55,
+    "eof_note": "Last block ends cleanly at report EOF; byte-level fidelity to original project files including added separator blank lines cannot be proven."
+  },
+  "files": [
+    {
+      "path": "src/features/connectors/browser.ts",
+      "private": false,
+      "report_bytes": 32175,
+      "report_lines": 290,
+      "report_sha256": "1f21fce05f7834b4def6e995271596ce6362a6d1e0a7cecda53d2152678d739b",
+      "main_sha256": "bb9e2de6e42617fca2169307519c347b81e4c76b07ebf85d67900d9418b2ec58",
+      "comparison": "modified"
+    },
+    {
+      "path": "src/features/connectors/browser-launch-policy.test.ts",
+      "private": false,
+      "report_bytes": 1943,
+      "report_lines": 32,
+      "report_sha256": "b743ab689f270d75b022852a8b4782ca122a55bcb8f4f2e61326fb4a93e0d30b",
+      "main_sha256": "92ae6b1787adfba0ae33de4dfd2aaf0003d3983162e9ee057e6b7f62a848f74f",
+      "comparison": "modified"
+    },
+    {
+      "path": "src/features/connectors/contracts.ts",
+      "private": false,
+      "report_bytes": 4627,
+      "report_lines": 48,
+      "report_sha256": "69a83ea6e6fbda39000ce81042691b7e6f873f2de08a608160d60ae6eec979e1",
+      "main_sha256": "d10af151e35f77c624241c99114af33d440ab59e15b425eaa42da86d39254766",
+      "comparison": "modified"
+    },
+    {
+      "path": "src/features/connectors/transport.ts",
+      "private": false,
+      "report_bytes": 9307,
+      "report_lines": 103,
+      "report_sha256": "f201c6bad878bdc8d40f17c7ae92cdc5636dda3e7ed3a87016cc4123a4cec42d",
+      "main_sha256": "ca1544352ca3fc6b8a1f0b00c3a5abfebdf3cd834f598af05b601cfcee4d9efd",
+      "comparison": "modified"
+    },
+    {
+      "path": "src/features/connectors/workbench-browser-commands.ts",
+      "private": false,
+      "report_bytes": 9094,
+      "report_lines": 69,
+      "report_sha256": "ca2d0f2c3267cb0818b5ae6ad89a0cf7212a74448b82ce90b6ead5904e172914",
+      "main_sha256": "3bd7143b6a9c146cd9f71f4a2efc6066b399ad9e60be1c1a0f8976baef2b6b84",
+      "comparison": "modified"
+    },
+    {
+      "path": "src/features/connectors/workbench-browser-recorder.ts",
+      "private": false,
+      "report_bytes": 50182,
+      "report_lines": 590,
+      "report_sha256": "e1282ff12c6ddd8cbe142f6b8a96c5765d15aa81f08dae9cf18549d85e08bc53",
+      "main_sha256": "19a9baa1ffdc719b8bfc6e92239ed3700e2476742cbccfdd0eb91a280db1de3e",
+      "comparison": "modified"
+    },
+    {
+      "path": "src/features/connectors/workbench-browser-recorder.test.ts",
+      "private": false,
+      "report_bytes": 23834,
+      "report_lines": 236,
+      "report_sha256": "43dd7601a8b6c3508e38e519830edac8b05a5a1fe164dbb2a3024faed7e79fef",
+      "main_sha256": "303977da467c2c38736a43226d2d0fcd9e0ed9bc290e3abac8f6257d3748c8e6",
+      "comparison": "modified"
+    },
+    {
+      "path": "src/features/connectors/workbench-browser-scenarios.ts",
+      "private": false,
+      "report_bytes": 30117,
+      "report_lines": 254,
+      "report_sha256": "a75fa613a2b32a23121386ae7f57affac500aca2126981635672069751c17b16",
+      "main_sha256": "d776c635cb0a23fd83b5d6eb41cafc69094667ab667525ba65e9fb1dc850df34",
+      "comparison": "modified"
+    },
+    {
+      "path": "src/features/connectors/workbench-browser-source.ts",
+      "private": false,
+      "report_bytes": 15143,
+      "report_lines": 144,
+      "report_sha256": "c691f002fee51d4768b3f257bef447e2948af983b00a1ef3e36fdde0fe97ace9",
+      "main_sha256": "b13cbcd6e0f8ccc9a1cc6ab00f07541ae3e690ac532734da509b13e80d88e6b7",
+      "comparison": "modified"
+    },
+    {
+      "path": "tests/workbench-browser-source-security.test.ts",
+      "private": false,
+      "report_bytes": 4153,
+      "report_lines": 51,
+      "report_sha256": "9774e84c238e28c7708600d30d078a393d0df7ef9a4121c40711697dd1019f97",
+      "main_sha256": "d2ed23e50ddc4312bb164faed74c63e821a38f4ea600a7f58734d97451b3fb69",
+      "comparison": "modified"
+    },
+    {
+      "path": "src/features/connectors/workbench/BrowserScenarioWizard.tsx",
+      "private": false,
+      "report_bytes": 28340,
+      "report_lines": 128,
+      "report_sha256": "b9c35037d2775b9c4ea0aaba0d427501066fe272095faf0a60c1d6bf66a80376",
+      "main_sha256": "b1685e1d29e46278dcee5d67f2b64883a0b0cb3c612272df0c25933caa029b01",
+      "comparison": "modified"
+    },
+    {
+      "path": "src/features/connectors/workbench/BrowserScenarioWizard.test.tsx",
+      "private": false,
+      "report_bytes": 6485,
+      "report_lines": 64,
+      "report_sha256": "a6bc0d2a607f118a7ae9c0605ef9a1410a6f5feed26fe16a0ad0d46828198981",
+      "main_sha256": "7d7b1bc236863ef33a0e372d42a4a0e3f405fb1ef2e8a0287cc8b0288edafb91",
+      "comparison": "modified"
+    },
+    {
+      "path": "src/features/connectors/workbench/client.ts",
+      "private": false,
+      "report_bytes": 5526,
+      "report_lines": 50,
+      "report_sha256": "6c5a98f9e00782072da9ff7c0f1bf2d19c3361493d420288ab690bbd91e4f77b",
+      "main_sha256": "1f003f8a9771b1ccfedffc9417c9b80f76026ebdd1bd9763beee3f36df3053d9",
+      "comparison": "modified"
+    },
+    {
+      "path": "src/features/connectors/workbench/PersonalOkoWorkspace.tsx",
+      "private": false,
+      "report_bytes": 18638,
+      "report_lines": 83,
+      "report_sha256": "07804bc744b606d80459a6fdf6546ec2a535e15ce0ade2b42b817bc75cce1894",
+      "main_sha256": "71c376be7c811ea9093f4476681e3047395d9dd7d5197428b884ef5b51e2ab5b",
+      "comparison": "modified"
+    },
+    {
+      "path": "src/features/connectors/workbench/PersonalOperationStatus.tsx",
+      "private": false,
+      "report_bytes": 7368,
+      "report_lines": 58,
+      "report_sha256": "363e0cdf8e3f94376d8b3c14afa933e79b8117166f7b62a273ea24aec187f4c2",
+      "main_sha256": "d63bba7f3723864150db29dbe346317bc875169a7434c47f61d961996953e0a6",
+      "comparison": "modified"
+    },
+    {
+      "path": "src/features/connectors/workbench/personal-workspace-states.test.tsx",
+      "private": false,
+      "report_bytes": 15222,
+      "report_lines": 169,
+      "report_sha256": "a35597fa7d204bae2ef12417008712739f78d18927daf049563290e64368a41d",
+      "main_sha256": "22aafba625ab1732ae0049564476caf712de1cba80d09a548db92a5327ab8249",
+      "comparison": "modified"
+    },
+    {
+      "path": "src/features/connectors/workbench/WorkbenchProvider.tsx",
+      "private": false,
+      "report_bytes": 19935,
+      "report_lines": 150,
+      "report_sha256": "39337f0910abe94fb084f39ce7e9ec8c75224e1f31bf66ca37ab04dd2b4c9387",
+      "main_sha256": "e35a76cc64f9379035a0124dd126d1b6e68d2a1a6910ddc19243cbfdd4ca9cf9",
+      "comparison": "modified"
+    },
+    {
+      "path": "src/features/connectors/workbench/WorkbenchProvider.test.tsx",
+      "private": false,
+      "report_bytes": 17403,
+      "report_lines": 194,
+      "report_sha256": "7da9bee32d213788e11e0a28e147ae07c608d155df95d80c90592a338d25e038",
+      "main_sha256": "dc2c4316dada90a94972beba7e275e100ad5888917c883d045cdb4d14c735c3f",
+      "comparison": "modified"
+    },
+    {
+      "path": "src/features/connectors/workbench/WorkbenchProvider.recovery-ui.test.tsx",
+      "private": false,
+      "report_bytes": 6555,
+      "report_lines": 67,
+      "report_sha256": "f77200a11ce4567776130a66edef1610a2499c44edd29803606cae1530dbaba4",
+      "main_sha256": "05aa37563ded6602a9053e2ca5ff51ed6ebf2b4b4c9df8bbae4988cb7b8b7c1a",
+      "comparison": "modified"
+    },
+    {
+      "path": "src/features/connectors/workbench-workflow-contracts.ts",
+      "private": false,
+      "report_bytes": 5424,
+      "report_lines": 39,
+      "report_sha256": "6e1646d3f8705a23778a82aa1a608fe5abf811ee5261995c132e6391125529b0",
+      "main_sha256": "63e18f2ba870c9fd0f58caf5f23137249e98924669599aa0d3a56fd3ed48a79c",
+      "comparison": "modified"
+    },
+    {
+      "path": "src/features/connectors/workbench-workflow-module.ts",
+      "private": false,
+      "report_bytes": 5036,
+      "report_lines": 34,
+      "report_sha256": "fff2b6daaefdbe2d36bd4457bf3ce56c82913519e3d2055773cd023f91b4f700",
+      "main_sha256": "267b9902fb51b16bac490c8a6cfcf7ee16469a7785cebda6756fbf02502ba572",
+      "comparison": "modified"
+    },
+    {
+      "path": "src/features/connectors/workbench-workflow-service.ts",
+      "private": false,
+      "report_bytes": 39957,
+      "report_lines": 372,
+      "report_sha256": "1518ed9e7c5cdb27873e30c58429ea61a831472b25227b0e4c52ce8620b358ae",
+      "main_sha256": "cc600b8a21c7231411238fbe0564e22c0302cb44ec9c7d8a02ddefe4ac8eae61",
+      "comparison": "modified"
+    },
+    {
+      "path": "src/features/connectors/workbench-workflow-service.test.ts",
+      "private": false,
+      "report_bytes": 56647,
+      "report_lines": 342,
+      "report_sha256": "4ba08fdc0f79c79f2a6f139d000be1f9f9d74f4e762bcd9d10790892da56ecd5",
+      "main_sha256": "83261ae5e23842c8fb7911af0a733aaaf915840367b98923f2a110ee0e3d4d57",
+      "comparison": "modified"
+    },
+    {
+      "path": "src/features/connectors/workbench-workflow-store.ts",
+      "private": false,
+      "report_bytes": 8273,
+      "report_lines": 71,
+      "report_sha256": "1db5238293ffcf26dc677cb6b476ba62de34ab539c49729bcd989455e93074e0",
+      "main_sha256": "95061882c8774956ec040d8900a01c3499d26487081c4b405fc7dac90cd0caba",
+      "comparison": "modified"
+    },
+    {
+      "path": "src/features/connectors/workbench-workflow-store.test.ts",
+      "private": false,
+      "report_bytes": 4546,
+      "report_lines": 55,
+      "report_sha256": "b258d245a7a85b24304bbdbf2e7a2d5364b4755272bd9b834112ab1ae29a02e8",
+      "main_sha256": "5781dfe59b1f43ee84631501cf92f81919c79c4d7c4563678a15cd5f23d23ee4",
+      "comparison": "modified"
+    },
+    {
+      "path": "src/app/workbench/production-ui.css",
+      "private": false,
+      "report_bytes": 39297,
+      "report_lines": 442,
+      "report_sha256": "685dde79e3995510c5413e3f31d688cdde1a8cb9bcfa7dab662ecf6c70c79306",
+      "main_sha256": "ab2e2e822a3ef97da1e739acb2ba5ee9dd646223bfd7f225e3596cc7af0b4593",
+      "comparison": "modified"
+    },
+    {
+      "path": "src/server/main.ts",
+      "private": false,
+      "report_bytes": 1273,
+      "report_lines": 19,
+      "report_sha256": "be5a50f5ca200575758a748bd9e59ba0e39540a2a19efd7e8e6e2972d22b2da5",
+      "main_sha256": "d74363c6cc823b9b1594710bca35e77edc3e64f8a1e3a551dec546cfc380bf81",
+      "comparison": "modified"
+    },
+    {
+      "path": "src/server/workbench/application.ts",
+      "private": false,
+      "report_bytes": 10073,
+      "report_lines": 126,
+      "report_sha256": "84476a67d5ede5ca5d85d93332b2a2a02d8cfed14be943540edd4d0fdd0261f8",
+      "main_sha256": "19593ffbe452225a2b68516ae1f6372e12a42f70779da5fac42da406abe4f375",
+      "comparison": "modified"
+    },
+    {
+      "path": "src/server/workbench/bootstrap.ts",
+      "private": false,
+      "report_bytes": 31780,
+      "report_lines": 245,
+      "report_sha256": "488175b498f29c9ba40588b97782f1b642162e57546fe476ba4863ec89b7a4dd",
+      "main_sha256": "a89504248e8b800d325081e21210ea9d33113208ea7b432380bccbd88cd3b5c3",
+      "comparison": "modified"
+    },
+    {
+      "path": "src/server/workbench/command-registry.ts",
+      "private": false,
+      "report_bytes": 25328,
+      "report_lines": 212,
+      "report_sha256": "b8bc259b84e8cb755d36f5eb39d4067906eda2cba8ea12efb14228d8fef346ce",
+      "main_sha256": "68fc5dc6114dc0ab99eb6fa29f83cce8a376e202973853be17b8bc392a25d2e1",
+      "comparison": "modified"
+    },
+    {
+      "path": "src/server/workbench/jobs.ts",
+      "private": false,
+      "report_bytes": 13619,
+      "report_lines": 98,
+      "report_sha256": "d126623e0b693c3b67be92840f104f404225a51c3a3602059ddd95fe4a1b1a8e",
+      "main_sha256": "97be689ef12fedc3549e3c2ced67bf342b0a19e611072979a0fac4ee10875c50",
+      "comparison": "modified"
+    },
+    {
+      "path": "src/server/workbench/oko-application.ts",
+      "private": false,
+      "report_bytes": 10081,
+      "report_lines": 105,
+      "report_sha256": "ceefdd8d217a33ade84f7e27b26794254d6f4256ed87f299accd84330b0215f9",
+      "main_sha256": "7f85b185f64597d97ed66ff260c03e9635abaad7be87e8a5a75159ce878528a0",
+      "comparison": "modified"
+    },
+    {
+      "path": "src/server/workbench/routes.ts",
+      "private": false,
+      "report_bytes": 18322,
+      "report_lines": 192,
+      "report_sha256": "6726420057090e364e9264cf6fc38acb992c8056709886da209364fe381328f1",
+      "main_sha256": "0547912aac54daaecc2a30afeb9da469cb13aada7de1adb808d103f7154b7e9f",
+      "comparison": "modified"
+    },
+    {
+      "path": "src/server/workbench/runtime-layout-adoption.ts",
+      "private": false,
+      "report_bytes": 19228,
+      "report_lines": 126,
+      "report_sha256": "67aeb70ba87f01b8770819bf1084fd10cb33e2ef81b83177348f1f899feff980",
+      "main_sha256": "1288afc8fd33b36686e405139360ce98b0441c683b9f390ce6ac4a3852b2f41c",
+      "comparison": "modified"
+    },
+    {
+      "path": "src/features/workspace-maintenance/zip.ts",
+      "private": false,
+      "report_bytes": 5669,
+      "report_lines": 31,
+      "report_sha256": "5607d792832bef2ec2e4bce5e81e7ae953a6effa40f9fb8d0cc683ebe8119ec2",
+      "main_sha256": "2a387d52034c1bd5a16fda0f51e384f0aa754c43840637857d5fe287e8d2ea0a",
+      "comparison": "modified"
+    },
+    {
+      "path": "package.json",
+      "private": false,
+      "report_bytes": 2267,
+      "report_lines": 74,
+      "report_sha256": "26c090c33aa57a88ffca9c6991c5580e1e5321f6ebff421aa5bb944c4c439813",
+      "main_sha256": "41711a74e3d9d6678e07af5d8f870da1c132e7ea0299f848680b7009bdcbc959",
+      "comparison": "modified"
+    },
+    {
+      "path": "scripts/dev.mjs",
+      "private": false,
+      "report_bytes": 13132,
+      "report_lines": 55,
+      "report_sha256": "da9313855bc7fcbaa1c9584afa405d87c6b58365cbf8dffda3da4e70ea9377bf",
+      "main_sha256": "61c8a9c52b601914d6d1fb4ac4e813c4ec3cb5e4937f9e46d324cde229609d5a",
+      "comparison": "modified"
+    },
+    {
+      "path": "scripts/oko.ts",
+      "private": false,
+      "report_bytes": 3411,
+      "report_lines": 47,
+      "report_sha256": "176e0cc631ffc101a410ecfce12335873a196329a74c4ba25beea025507aad53",
+      "main_sha256": "1cfbb25fcda35a01fc91b67ea0b1182e5d2ed3c02519f1603713d7371bded35e",
+      "comparison": "modified"
+    },
+    {
+      "path": "src/features/connectors/workbench-browser-diagnostics.ts",
+      "private": false,
+      "report_bytes": 8072,
+      "report_lines": 94,
+      "report_sha256": "53d29fb68137f09314e39f7ce3d676de4116cf00a2323024445d5bfbf1f312a0",
+      "main_sha256": null,
+      "comparison": "new"
+    },
+    {
+      "path": "src/features/connectors/workbench-browser-diagnostics.test.ts",
+      "private": false,
+      "report_bytes": 3580,
+      "report_lines": 44,
+      "report_sha256": "1cc885b0a984509a9720fde933c3dee144c929ba9066cfaf413b9cf9c794cb37",
+      "main_sha256": null,
+      "comparison": "new"
+    },
+    {
+      "path": "src/features/connectors/workbench-browser-profile-locks.ts",
+      "private": false,
+      "report_bytes": 4561,
+      "report_lines": 99,
+      "report_sha256": "75c383a4591a4ef3fe337675a41f7af813d038b701c545fbe8f88f8eaa5227bf",
+      "main_sha256": null,
+      "comparison": "new"
+    },
+    {
+      "path": "src/features/connectors/workbench-browser-profile-locks.test.ts",
+      "private": false,
+      "report_bytes": 2164,
+      "report_lines": 44,
+      "report_sha256": "4e441799b158b919729d2312db9a730e0cbc16b166d6470a9a8f51e78c9ab274",
+      "main_sha256": null,
+      "comparison": "new"
+    },
+    {
+      "path": "src/features/connectors/login-origins.test.ts",
+      "private": false,
+      "report_bytes": 1669,
+      "report_lines": 32,
+      "report_sha256": "72d2fe604d519b210ba98ea4ad0b6d31aa7756be77c192b91f96568bfe44ada1",
+      "main_sha256": null,
+      "comparison": "new"
+    },
+    {
+      "path": "src/features/connectors/workbench/PersonalExportsList.tsx",
+      "private": false,
+      "report_bytes": 5251,
+      "report_lines": 52,
+      "report_sha256": "cf6b26ca178191260b5bd093a3f29ad4ea959b71cf153520682dbaf7443a185d",
+      "main_sha256": null,
+      "comparison": "new"
+    },
+    {
+      "path": "src/features/connectors/workbench/PersonalExportsList.test.tsx",
+      "private": false,
+      "report_bytes": 6052,
+      "report_lines": 78,
+      "report_sha256": "2ab36f65a6de462963a3ffb51e426a3c912b8da711e8e22ff691826137dc54f9",
+      "main_sha256": null,
+      "comparison": "new"
+    },
+    {
+      "path": "src/server/workbench/problem-from-error.ts",
+      "private": false,
+      "report_bytes": 5972,
+      "report_lines": 64,
+      "report_sha256": "15fc6f99ad0389a9ab45699713944db9a44a679ea05640af7a49cc9b4242b701",
+      "main_sha256": null,
+      "comparison": "new"
+    },
+    {
+      "path": "src/server/workbench/problem-from-error.test.ts",
+      "private": false,
+      "report_bytes": 3063,
+      "report_lines": 44,
+      "report_sha256": "8a71a1283540fa3a6bf3843beeecb88a4956cfaa0a84a3c44045efed86cda0eb",
+      "main_sha256": null,
+      "comparison": "new"
+    },
+    {
+      "path": "src/server/log-capture-bootstrap.ts",
+      "private": false,
+      "report_bytes": 583,
+      "report_lines": 12,
+      "report_sha256": "a8841857878e835d998be5a5ad6145af1d3bab582470934c4a1631901b221256",
+      "main_sha256": null,
+      "comparison": "new"
+    },
+    {
+      "path": "scripts/log-capture.mjs",
+      "private": false,
+      "report_bytes": 4209,
+      "report_lines": 86,
+      "report_sha256": "aeaab499ec729affa64c39af289b2bffc469bb8a30e7ec791350ce073cc9b81d",
+      "main_sha256": null,
+      "comparison": "new"
+    },
+    {
+      "path": "scripts/log-capture.d.mts",
+      "private": false,
+      "report_bytes": 644,
+      "report_lines": 7,
+      "report_sha256": "7da5338b926aa912147edfafb93df5162ce0772e80cc10ba33761b3ce92f2c10",
+      "main_sha256": null,
+      "comparison": "new"
+    },
+    {
+      "path": "scripts/logs.mjs",
+      "private": false,
+      "report_bytes": 1372,
+      "report_lines": 25,
+      "report_sha256": "90eabd53ffc17b8621ef7d77ec814acd8ed4d9367b27c8c365c719a3e12225cf",
+      "main_sha256": null,
+      "comparison": "new"
+    },
+    {
+      "path": "scripts/probes/sberbrowser-diagnose.ts",
+      "private": false,
+      "report_bytes": 3727,
+      "report_lines": 57,
+      "report_sha256": "690afbe175618b7e37d9b16e3f957e6476a34a2111611d25a52a19713e3fbe3a",
+      "main_sha256": null,
+      "comparison": "new"
+    },
+    {
+      "path": "config/site.local.json",
+      "private": true,
+      "report_bytes": 288,
+      "report_lines": 13,
+      "report_sha256": "075dd58edc71e99b8f791a24dea6a51d526a69db306001209f0897a763dc3c64",
+      "main_sha256": null,
+      "comparison": "new"
+    },
+    {
+      "path": "docs/validation/oko-login-window-fix.md",
+      "private": false,
+      "report_bytes": 22590,
+      "report_lines": 163,
+      "report_sha256": "177d3005f09c795311c0a3edbccee6688660a0d2c083de856faa05c6a673ae58",
+      "main_sha256": null,
+      "comparison": "new"
+    },
+    {
+      "path": "docs/validation/oko-raw-exports.md",
+      "private": false,
+      "report_bytes": 24820,
+      "report_lines": 163,
+      "report_sha256": "3b8aa657f246b6e7faa2104c1e2cfa91e716d79642565f39d2cc4a779096c726",
+      "main_sha256": null,
+      "comparison": "new"
+    }
+  ]
+}

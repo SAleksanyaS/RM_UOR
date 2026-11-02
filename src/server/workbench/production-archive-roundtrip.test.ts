@@ -141,8 +141,9 @@ it('an unrelated person cannot preview the whole archive and unknown legacy stor
     const a = await fixture(randomUUID()), b = await fixture(randomUUID()), ctx = await a.context(), artifact = { name: 'data.csv', mimeType: 'text/csv', base64: Buffer.from('synthetic').toString('base64'), hash: createHash('sha256').update('synthetic').digest('hex') };
     createOkoWorkflowStore(a.runtime.deps.repository).putResult(ctx.installationId + '/' + ctx.ownAccess.personId, randomUUID(), { original: artifact, enriched: artifact });
     const bytes = await a.backupBytes(true), bctx = await b.context(), upload = await b.runtime.services.files.stage({ installationId: bctx.installationId, profilePersonId: bctx.ownAccess.personId, purpose: 'workspace-restore', name: 'archive.zip', mediaType: 'application/zip', stream: (async function* () { yield bytes; })() });
+    const beforeRefusal = await snapshotWorkspace(b.runtime.services.archive);
     await expect(b.runtime.services.maintenance.previewRestore(bctx, { fileHandle: upload.fileHandle })).rejects.toMatchObject({ code: 'ACCESS_DENIED' });
-    expect((await snapshotWorkspace(b.runtime.services.archive)).empty).toBe(true);
+    expect(await snapshotWorkspace(b.runtime.services.archive)).toEqual(beforeRefusal);
     const root = await mkdtemp(path.join(realpathSync.native(tmpdir()), 't39-unknown-'));
     cleanups.push(() => rm(root, { recursive: true, force: true }));
     await mkdir(path.join(root, 'config'));
@@ -154,4 +155,17 @@ it('an unrelated person cannot preview the whole archive and unknown legacy stor
     for (const file of ['identity.json', 'active.json', 'subject/initial/workbench.sqlite'])
         await expect(readFile(path.join(root, '.runtime/workbench', file))).rejects.toMatchObject({ code: 'ENOENT' });
     expect(await readFile(path.join(root, '.runtime/workbench/workbench.sqlite'))).toEqual(old);
+});
+it('full raw archive includes hidden browser receipt and manual source across restore, restart and exact HTTP download', async()=>{
+ const personId=randomUUID(),a=await fixture(personId),b=await fixture(personId),ctx=await a.context(),rawId=randomUUID(),bytes=Buffer.from('Команда\tЗначение\r\nA\t0\r\n'),store=createOkoWorkflowStore(a.runtime.deps.repository),owner=ctx.installationId+'/'+personId;
+ store.beginCapture(owner,{schemaVersion:1,captureId:rawId,operationId:randomUUID(),workflowId:randomUUID(),sourceId:randomUUID(),title:'Synthetic raw',origin:'record',createdAt:ctx.clock.now()});store.commitCapture(owner,rawId,{name:'raw.tsv',contentType:'text/tab-separated-values',bytes});store.markExportDeleted(owner,rawId,ctx.clock.now());
+ const manual=await a.execute('raw.capture.manual',{title:'Manual',columns:['Team','Value'],rows:[['A','0']]});const before=await snapshotWorkspace(a.runtime.services.archive);await b.restore(await a.backupBytes(true));expect((await snapshotWorkspace(b.runtime.services.archive)).records).toEqual(before.records);
+ await b.app.close();await b.runtime.close();const restarted=await createWorkbenchRuntime({projectRoot:b.root,providers:{accessPolicy:({clock,capabilityFor})=>createLocalPreviewPolicy({directory:path.join(b.root,'.runtime/workbench'),personId,clock,capabilityFor})}});cleanups.push(restarted.close);const app=await createWorkbenchApp(restarted.deps,{configure:restarted.configure,deferActivation:true});cleanups.push(()=>app.close());await restarted.activate();
+ const session=await app.inject({url:'/api/v1/session',headers:{host:'127.0.0.1:4174'}}),cookie=String(session.headers['set-cookie']).split(';')[0],headers={host:'127.0.0.1:4174',cookie,origin:'http://127.0.0.1:5173'};
+ const downloaded=await app.inject({url:'/api/v1/raw-files/'+rawId+'/download',headers});expect(downloaded.statusCode,downloaded.body).toBe(200);expect(downloaded.rawPayload).toEqual(bytes);expect(downloaded.headers['content-type']).toContain('text/tab-separated-values');expect(downloaded.headers['content-disposition']).toContain('raw-file.tsv');expect(downloaded.headers['x-content-type-options']).toBe('nosniff');
+ const listed=await app.inject({method:'POST',url:'/api/v1/queries/raw.files.list',headers,payload:{context:null,filter:{includeHidden:true},sort:[]}});expect(listed.statusCode,listed.body).toBe(200);expect(listed.json().data.items).toHaveLength(2);expect(listed.json().data.hiddenCount).toBe(1);expect(listed.json().data.items.find((f:any)=>f.id===manual.result.id).parseState).toBe('parsed');expect((await snapshotWorkspace(restarted.services.archive)).records).toEqual(before.records);
+});
+it('first real knowledge package is reviewable over own-scope HTTP before a published catalog exists',async()=>{
+ const f=await fixture(randomUUID()),prepared=await f.execute('knowledge.materials.prepare',{packageId:null,curatorPersonId:null});const session=await f.app.inject({url:'/api/v1/session',headers:{host:'127.0.0.1:4174'}});expect(session.json().data.defaultContext).toBeNull();const headers={host:'127.0.0.1:4174',origin:'http://127.0.0.1:5173',cookie:String(session.headers['set-cookie']).split(';')[0]};
+ const result=await f.app.inject({method:'POST',url:'/api/v1/queries/uor.package',headers,payload:{context:null,filter:{packageRef:{entityType:'publication_package',id:prepared.result.packageId}},sort:[]}});expect(result.statusCode,result.body).toBe(200);expect(result.json().data.entries.length).toBeGreaterThan(150);expect(f.runtime.deps.repository.readPublishedCatalog()).toHaveLength(0);
 });

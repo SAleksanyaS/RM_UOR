@@ -16,9 +16,10 @@ export async function testHeadlessBrowserSelection(directory: string) {
   const quote = (value: string) => "'" + value.replace(/'/g, "'\\''") + "'";
   const executablePath = path.join(directory, 'owned-native-headless.sh');
   const argumentsPath = path.join(directory, 'owned-native-arguments.txt');
+  const syntheticSandbox = process.env.UOR_SYNTHETIC_CI === '1' && process.env.UOR_TEST_CI_NO_SANDBOX === '1' ? '--no-sandbox' : '';
   await writeFile(executablePath, '#!/bin/sh\n' +
-    `printf '%s\\n' ${quote('BEGIN LEGACY NATIVE TEST')} ${quote(selection.executablePath)} '--headless' "$@" >> ${quote(argumentsPath)}\n` +
-    `exec ${quote(selection.executablePath)} --headless "$@"\n`, { mode: 0o700, flag: 'wx' });
+    `printf '%s\\n' ${quote('BEGIN LEGACY NATIVE TEST')} ${quote(selection.executablePath)} '--headless' ${quote(syntheticSandbox)} "$@" >> ${quote(argumentsPath)}\n` +
+    `exec ${quote(selection.executablePath)} --headless ${syntheticSandbox} "$@"\n`, { mode: 0o700, flag: 'wx' });
   return { executablePath, channel: undefined };
 }
 
@@ -28,7 +29,9 @@ export async function verifyLegacyNativeArguments(directory: string, label: stri
   const args = await readFile(path.join(directory, 'owned-native-arguments.txt'), 'utf8');
   assert.ok(args.includes(process.env.UOR_TEST_BROWSER_EXECUTABLE));
   assert.ok(args.includes('--headless\n'));
-  assert.doesNotMatch(args, /--no-sandbox|--ignore-certificate-errors/);
+  assert.doesNotMatch(args, /--ignore-certificate-errors/);
+  if (process.env.UOR_SYNTHETIC_CI === '1' && process.env.UOR_TEST_CI_NO_SANDBOX === '1') assert.match(args, /--no-sandbox/);
+  else assert.doesNotMatch(args, /--no-sandbox/);
   const proof = path.resolve('.runtime/validation/workbench/continuation/native-legacy');
   await mkdir(proof, { recursive: true });
   await writeFile(path.join(proof, label + '.txt'), args);

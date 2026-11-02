@@ -10,7 +10,7 @@ import type { EnrichedRow, EnrichmentResult } from '../connectors/workbench-sour
 const entityRef = (id: string): EntityRef => ({ entityType: 'directory_entity', id });
 const version = (entityType: string, value: { id: string; revision: number }): VersionRef => ({ entityType, id: value.id, revision: value.revision });
 const normalizedKey = (key: string): string => key.normalize('NFC').trim();
-const edgeKinds = { dit_cluster: ['dit', 'cluster'], cluster_product: ['cluster', 'product'], cluster_team: ['cluster', 'team'], product_team: ['product', 'team'] } as const;
+const edgeKinds = { block_tribe: ['block', 'tribe'], tribe_cluster: ['tribe', 'cluster'], dit_cluster: ['dit', 'cluster'], cluster_product: ['cluster', 'product'], cluster_team: ['cluster', 'team'], product_team: ['product', 'team'] } as const;
 const problem = (path: string, code: string, ref: EntityRef | null): FieldProblem => ({ path, code, message: code, ref });
 export type SourceRowsForEnrichment = Pick<Capture, 'sourceId' | 'mappingRef' | 'rawRows' | 'canonicalRows'>;
 const sourceRowsSchema = captureSchema.pick({ sourceId: true, mappingRef: true, rawRows: true, canonicalRows: true });
@@ -108,18 +108,19 @@ export function validateDirectoryChanges({ entities, links, previousLinks = [] }
       else valid.push(link);
     }
   });
-  const parents = (id: string, kind: 'dit_cluster' | 'cluster_product' | 'cluster_team') => valid.filter((l): l is Extract<DirectoryLink, { from: EntityRef }> => l.kind === kind && l.to.id === id);
+  const parents = (id: string, kind: 'block_tribe' | 'tribe_cluster' | 'dit_cluster' | 'cluster_product' | 'cluster_team') => valid.filter((l): l is Extract<DirectoryLink, { from: EntityRef }> => l.kind === kind && l.to.id === id);
   for (const [i, entity] of entities.entries()) {
     if (!directoryEntitySchema.safeParse(entity).success) continue;
     const check = (count: number, missing: string, multiple: string) => { if (count !== 1) issues.push(problem(`/entities/${i}`, count ? multiple : missing, entityRef(entity.id))); };
-    if (entity.kind === 'cluster') check(parents(entity.id, 'dit_cluster').length, 'CLUSTER_DIT_REQUIRED', 'MULTIPLE_CLUSTER_DITS');
+    if (entity.kind === 'tribe') check(parents(entity.id,'block_tribe').length,'TRIBE_BLOCK_REQUIRED','MULTIPLE_TRIBE_BLOCKS');
+    if (entity.kind === 'cluster') check(parents(entity.id, 'dit_cluster').length + parents(entity.id,'tribe_cluster').length, 'CLUSTER_DIT_REQUIRED', 'MULTIPLE_CLUSTER_DITS');
     if (entity.kind === 'product') check(parents(entity.id, 'cluster_product').length, 'PRODUCT_CLUSTER_REQUIRED', 'MULTIPLE_PRODUCT_CLUSTERS');
     if (entity.kind === 'team') {
       const current = parents(entity.id, 'cluster_team'); check(current.length, 'TEAM_CLUSTER_REQUIRED', 'TEAM_CLUSTER_MOVE_UNSUPPORTED');
       const old = previousLinks.filter((l): l is Extract<DirectoryLink, { from: EntityRef }> => l.kind === 'cluster_team' && l.to.id === entity.id);
       if (current.length === 1 && old.some(l => l.from.id !== current[0].from.id)) issues.push(problem(`/entities/${i}`, 'TEAM_CLUSTER_MOVE_UNSUPPORTED', entityRef(entity.id)));
     }
-    if (entity.kind === 'cluster' || entity.kind === 'product') check(valid.filter(l => l.kind === 'leader' && l.scope.id === entity.id).length, 'LEADER_REQUIRED', 'MULTIPLE_LEADERS');
+    if ((entity.kind === 'cluster' && !parents(entity.id,'tribe_cluster').length) || entity.kind === 'product') check(valid.filter(l => l.kind === 'leader' && l.scope.id === entity.id).length, 'LEADER_REQUIRED', 'MULTIPLE_LEADERS');
     else if (entity.kind === 'team' && valid.filter(l => l.kind === 'leader' && l.scope.id === entity.id).length > 1) issues.push(problem(`/entities/${i}`, 'MULTIPLE_LEADERS', entityRef(entity.id)));
   }
   for (const [i, link] of valid.entries()) if (link.kind === 'product_team') {
@@ -145,12 +146,14 @@ export function enrichSourceRows({ capture: unparsedCapture, mapping: unparsedMa
     const raw = rawByKey.get(row.rowKey); if (!raw) { issues.push(problem(path, 'SOURCE_ROW_MISSING', null)); return row; }
     let scope: ScopeRef | null = mapping.fixedScope;
     if (!scope) {
-      const key = mapping.productKeyField ? raw.cells[mapping.productKeyField]?.original : null;
-      const aliases = key === undefined || key === null ? [] : entities.filter(e => e.kind === 'product' && e.externalKeys.some(k => k.sourceId === capture.sourceId && normalizedKey(k.key) === normalizedKey(key)));
-      const matches = key === undefined || key === null ? [] : entities.filter(e => e.kind === 'product' && e.externalKeys.some(k => k.sourceId === capture.sourceId && k.key === key));
-      if (aliases.length > 1) { issues.push(problem(path, 'AMBIGUOUS_PRODUCT', null)); return row; }
-      if (matches.length !== 1) { issues.push(problem(path, 'UNMAPPED_PRODUCT', null)); return row; }
-      scope = { kind: 'product', id: matches[0].id };
+      if(mapping.productKeyField && mapping.teamKeyField) { issues.push(problem(path,'AMBIGUOUS_SCOPE_MAPPING',null)); return row; }
+      const keyField=mapping.teamKeyField??mapping.productKeyField; const scopeKind=mapping.teamKeyField?'team':'product';
+      const key = keyField ? raw.cells[keyField]?.original : null;
+      const aliases = key === undefined || key === null ? [] : entities.filter(e => e.kind === scopeKind && e.externalKeys.some(k => k.sourceId === capture.sourceId && normalizedKey(k.key) === normalizedKey(key)));
+      const matches = key === undefined || key === null ? [] : entities.filter(e => e.kind === scopeKind && e.externalKeys.some(k => k.sourceId === capture.sourceId && k.key === key));
+      if (aliases.length > 1) { issues.push(problem(path, scopeKind==='team'?'AMBIGUOUS_TEAM':'AMBIGUOUS_PRODUCT', null)); return row; }
+      if (matches.length !== 1) { issues.push(problem(path, scopeKind==='team'?'UNMAPPED_TEAM':'UNMAPPED_PRODUCT', null)); return row; }
+      scope = { kind: scopeKind, id: matches[0].id };
     }
     if (byId.get(scope.id)?.kind !== scope.kind) { issues.push(problem(path, 'UNMAPPED_SCOPE', entityRef(scope.id))); return row; }
     const included = new Set([scope.id]); const relevant = new Map<string, DirectoryLink>();

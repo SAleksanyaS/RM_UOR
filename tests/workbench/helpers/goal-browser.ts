@@ -1,9 +1,10 @@
 import { createServer } from 'node:http';
 import { createHash } from 'node:crypto';
-import { writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 import { chromium, type BrowserContext, type Page } from 'playwright';
 import { expect } from 'vitest';
-import { chromeExecutable, createLocalBrowserRun, downloadedBytes } from './browser';
+import { chromeExecutable, createLocalBrowserRun } from './browser';
 import { fixtureId, makeEntityGraph, makeHeader, makeNumericFixture, makePublicationAnchor } from '../../fixtures/workbench/factories';
 import type { DirectoryEntity, DirectoryLink, SourceDefinition, SourceFieldMapping, WorkbenchEntity } from '../../../src/domain/workbench/entities';
 import type { WorkbenchRepository } from '../../../src/server/storage/workbench-repository';
@@ -32,7 +33,7 @@ async function startGoalReport() {
   })().catch(() => response.destroy()); });
   await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
   origin = 'http://127.0.0.1:' + (server.address() as { port: number }).port;
-  return { origin, count: () => exports, wait(after: number) { return exports > after ? Promise.resolve() : new Promise<void>(resolve => waiters.push({ after, resolve })); }, release() { const resolve = gates.shift(); if (!resolve) throw Error('No actual export waiting'); resolve(); }, async close() { closed = true; for (const resolve of gates.splice(0)) resolve(); await new Promise<void>((resolve, reject) => { server.close(error => error ? reject(error) : resolve()); server.closeAllConnections(); }); } };
+  return { origin, count: () => exports, wait(after: number) { return exports > after ? Promise.resolve() : new Promise<void>((resolve, reject) => { const timer = setTimeout(() => reject(Error('No actual goal export after count ' + after)), 20000); waiters.push({ after, resolve() { clearTimeout(timer); resolve(); } }); }); }, release() { const resolve = gates.shift(); if (!resolve) throw Error('No actual export waiting'); resolve(); }, async close() { closed = true; for (const resolve of gates.splice(0)) resolve(); await new Promise<void>((resolve, reject) => { server.close(error => error ? reject(error) : resolve()); server.closeAllConnections(); }); } };
 }
 
 /** Only published organization/catalog fixtures enter through this trusted repository port. */
@@ -70,6 +71,7 @@ export async function responsiveProof(page: Page, artifact: (name: string) => st
 export async function createGoalBrowserRun() {
   const executablePath = await chromeExecutable();
   const report = await startGoalReport(), contexts = new Set<BrowserContext>(), launches: BrowserContext[] = [];
+  const downloadDirectories = new Map<BrowserContext, string>();
   const launchWaiters: Array<{ after: number; resolve(context: BrowserContext): void; reject(error: unknown): void }> = [];
   let launchFailure: unknown = null;
   const mainFiles = new Map<string, Uint8Array>();
@@ -77,7 +79,19 @@ export async function createGoalBrowserRun() {
   let f: Awaited<ReturnType<typeof createLocalBrowserRun>>;
   try { f = await createLocalBrowserRun({ git, classification: { mode: 'demo-only', classifyRecord: () => true }, browserLauncher: { async launchPersistent(_profile, folder, options) {
     try {
-    const context = await chromium.launchPersistentContext(folder, { ...options, executablePath, channel: undefined, headless: true }); contexts.add(context); launches.push(context); context.once('close', () => contexts.delete(context));
+    const context = await chromium.launchPersistentContext(folder, { ...options, executablePath, channel: undefined, headless: true, chromiumSandbox: process.env.UOR_SYNTHETIC_CI !== '1' }); contexts.add(context); launches.push(context); context.once('close', () => contexts.delete(context));
+    // Observe the actual engine directory: a retained context can rebind CDP
+    // downloads while Playwright still reports its original launch directory.
+    const originalSession = context.newCDPSession.bind(context);
+    context.newCDPSession = async target => {
+      const session = await originalSession(target), send = session.send.bind(session);
+      session.send = (async (method: string, parameters?: { downloadPath?: string }) => {
+        const result = await send(method as never, parameters as never);
+        if (method === 'Browser.setDownloadBehavior' && typeof parameters?.downloadPath === 'string') downloadDirectories.set(context, parameters.downloadPath);
+        return result;
+      }) as typeof session.send;
+      return session;
+    };
     for (let index = launchWaiters.length - 1; index >= 0; index--) if (launches.length > launchWaiters[index].after) { const waiter = launchWaiters.splice(index, 1)[0]; waiter.resolve(launches[waiter.after]); } return context;
     } catch (error) { launchFailure = error; for (const waiter of launchWaiters.splice(0)) waiter.reject(error); throw error; }
   } } }); } catch (error) { await report.close(); throw error; }
@@ -86,7 +100,7 @@ export async function createGoalBrowserRun() {
   const ownPackage = async () => { const ctx = await context(); const queue = await f.request.query<WorkbenchReadModels['uor.queue']>('uor.queue', {}, ctx); expect(queue.items).toHaveLength(1); return f.request.query<WorkbenchReadModels['uor.package']>('uor.package', { packageRef: queue.items[0].packageRef }, ctx); };
   const commands: Array<{ commandId: string; name: string; baseRevision: string | null; payload: any }> = [];
   page.on('request', request => { if (request.url().endsWith('/api/v1/commands') && request.method() === 'POST') commands.push(request.postDataJSON()); });
-  const launched = (after: number) => launches.length > after ? Promise.resolve(launches[after]) : launchFailure ? Promise.reject(launchFailure) : new Promise<BrowserContext>((resolve, reject) => launchWaiters.push({ after, resolve, reject }));
+  const launched = (after: number) => launches.length > after ? Promise.resolve(launches[after]) : launchFailure ? Promise.reject(launchFailure) : new Promise<BrowserContext>((resolve, reject) => { const timer = setTimeout(() => reject(Error('No actual goal browser launch after count ' + after)), 20000); launchWaiters.push({ after, resolve(value) { clearTimeout(timer); resolve(value); }, reject(error) { clearTimeout(timer); reject(error); } }); });
   const nativePage = () => { const value = launches.at(-1)?.pages()[0]; if (!value) throw Error('No actual native page'); return value; };
   const refreshMain = () => { mainFiles.clear(); for (const entry of f.runtime.deps.repository.readPublishedCatalog()) mainFiles.set(`records/${entry.entityType}/${entry.value.id}/${entry.value.revision}.json`, Buffer.from(JSON.stringify(entry.value))); };
   refreshMain();
@@ -134,12 +148,21 @@ export async function createGoalBrowserRun() {
   }
   async function recordTestAndSaveThroughUI() {
     const wizard = page.getByRole('region', { name: 'Мастер сценария ОКО', exact: true });
-    await wizard.getByLabel('Установленный браузер').selectOption('chrome'); await wizard.getByRole('button', { name: 'Сохранить личный профиль', exact: true }).click(); await wizard.getByText('Личный профиль сохранён.', { exact: true }).waitFor({ state: 'attached' });
+    await wizard.getByLabel('Путь к СберБраузеру').fill(executablePath); await wizard.getByRole('button', { name: 'Сохранить личный профиль', exact: true }).click(); await wizard.getByText('Личный профиль сохранён.', { exact: true }).waitFor({ state: 'attached' });
     let before = launches.length; await wizard.getByRole('button', { name: 'Выбрать признак открытого отчёта', exact: true }).click(); await launched(before); await nativePage().locator('[data-testid="goal-ready"]').click(); await wizard.getByText(/Признак отчёта:/).waitFor();
-    before = launches.length; await wizard.getByRole('button', { name: 'Открыть СберБраузер и записать действия', exact: true }).click(); await launched(before);
+    const preparedPage = nativePage(); before = launches.length; await wizard.getByRole('button', { name: 'Открыть СберБраузер и записать действия', exact: true }).click();
+    await wizard.getByText('Запись в отдельном окне браузера.', { exact: true }).waitFor(); expect(launches.length).toBe(before); expect(nativePage()).toBe(preparedPage);
     await nativePage().getByLabel('Период').fill('2026-09'); await nativePage().getByLabel('Период').press('Tab'); await nativePage().getByLabel('Период').fill('2026-10'); await nativePage().getByLabel('Период').press('Tab');
-    const exportBefore = report.count(), downloadEvent = nativePage().waitForEvent('download'); await nativePage().getByRole('button', { name: 'Выгрузить CSV', exact: true }).click({ noWaitAfter: true }); await report.wait(exportBefore); report.release(); const actualDownload = await downloadedBytes(await downloadEvent); expect(actualDownload).toEqual(goalReportBytes);
+    const exportBefore = report.count(), downloadEvent = nativePage().waitForEvent('download'); await nativePage().getByRole('button', { name: 'Выгрузить CSV', exact: true }).click({ noWaitAfter: true }); await report.wait(exportBefore); report.release();
+    const nativeDownload = await downloadEvent, reportedPath = await nativeDownload.path(), directory = downloadDirectories.get(preparedPage.context());
+    expect(await nativeDownload.failure()).toBeNull(); expect(reportedPath).toBeTruthy(); expect(directory).toBeTruthy();
+    const guid = path.basename(reportedPath!); expect(guid).toMatch(/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i);
+    // Read only this completed native Download's exact GUID, never a latest file
+    // or the fixture response body. The production recorder is not used to read it.
+    const actualDownload = await readFile(path.join(directory!, guid)); expect(actualDownload).toEqual(goalReportBytes);
     await wizard.getByRole('heading', { name: 'Проверка шагов и фильтров', exact: true }).waitFor(); for (const input of await wizard.getByLabel(/Значение фильтра/).all()) await input.fill('2026-10'); await wizard.getByLabel('Обязательные столбцы').fill('RowId,ProductAlias,Amount,Date');
+    const finishCommand = [...commands].reverse().find(command => command.name === 'source.browser.record.finish')!;
+    expect(await f.request.reconcile(finishCommand.commandId)).toMatchObject({ status: 'completed', result: { hasDownload: true } });
     const beforeTest = await ownPackage(), assignment = beforeTest.entries.find(entry => entry.entityRef.entityType === 'goal_assignment')!;
     const testResponse = page.waitForResponse(async response => response.url().endsWith('/api/v1/commands') && response.request().postDataJSON()?.name === 'source.browser.record.test');
     const replayBefore = report.count(); await wizard.getByRole('button', { name: 'Проверить сценарий', exact: true }).click(); await report.wait(replayBefore); report.release(); await testResponse;
@@ -148,7 +171,7 @@ export async function createGoalBrowserRun() {
     const receipt = await f.request.reconcile(testCommand.commandId); if (receipt.status !== 'completed') throw Error('Browser test command not completed: ' + JSON.stringify(receipt)); result = receipt.result as BrowserScenarioTestResult;
     expect(result.problems.map(problem => problem.code)).toContain('EXPORT_COVERAGE_UNVERIFIED');
     await responsiveProof(page, f.artifact, 'new-goal-data'); await wizard.getByRole('button', { name: 'Сохранить сценарий в черновик', exact: true }).click(); await wizard.getByText(/Сценарий сохранён|Черновик сохранён с замечаниями/).waitFor();
-    await writeFile(f.artifact('new-goal-native-proof.json'), JSON.stringify({ browser: f.browser.version(), nativeLaunches: launches.length, actualReportDownloads: report.count(), downloadedSha256: createHash('sha256').update(actualDownload).digest('hex'), assignmentRef: assignment.versionRef, testCommand, result, realBankRequests: 0 }, null, 2));
+    await writeFile(f.artifact('new-goal-native-proof.json'), JSON.stringify({ browser: f.browser.version(), nativeLaunches: launches.length, actualReportDownloads: report.count(), nativeDownloadGuid: guid, finishedCommandId: finishCommand.commandId, downloadedSha256: createHash('sha256').update(actualDownload).digest('hex'), assignmentRef: assignment.versionRef, testCommand, result, realBankRequests: 0 }, null, 2));
     return result;
   }
   async function previewPackageThroughUI() {
@@ -181,7 +204,7 @@ export async function createFileImportBrowserRun() {
     const commands: Array<{ commandId: string; name: string; payload: any }> = [];
     page.on('request', request => { if (request.url().endsWith('/api/v1/commands') && request.method() === 'POST') commands.push(request.postDataJSON()); });
     async function importThroughUI() { await f.request.session();
-      await page.goto(f.origin + '/data'); await page.getByRole('button', { name: input.goal.title, exact: true }).click();
+      await page.goto(f.origin + '/data#goal-data'); await page.getByRole('button', { name: input.goal.title, exact: true }).click();
       const upload = page.getByRole('region', { name: 'Загрузка файла', exact: true });
       const inspect = async () => { await upload.getByLabel('Файл данных', { exact: true }).setInputFiles({ name: 'goal-import.csv', mimeType: 'text/csv', buffer: goalReportBytes }); await upload.getByRole('button', { name: 'Проверить файл', exact: true }).click(); await page.getByRole('region', { name: 'Предпросмотр импорта', exact: true }).waitFor(); };
       await inspect();

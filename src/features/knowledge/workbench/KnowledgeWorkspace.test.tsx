@@ -1,0 +1,48 @@
+// @vitest-environment jsdom
+import {afterEach,it,expect} from 'vitest';
+import {render,screen,fireEvent,cleanup,waitFor} from '@testing-library/react';
+import {draftFixture,draftCleanups} from '../../../../tests/fixtures/workbench/drafts';
+import {createWorkbenchApp} from '../../../server/workbench/app';
+import {createLocalSessionStore} from '../../../server/workbench/session';
+import {QueryRegistry} from '../../../server/workbench/query-registry';
+import {createKnowledgeService,knowledgeStableId} from '../workbench-service';
+import {registerKnowledgeQueries} from '../workbench-query';
+import {registerKnowledgeCommands} from '../workbench-commands';
+import {registerMaturityQueries} from '../../maturity/workbench-query';
+import {loadMaturityMaterials} from '../../maturity/workbench-materials';
+import {createPreferencesService} from '../../system/workbench-preferences';
+import {registerPreferencesQueries} from '../../system/workbench-preferences-query';
+import {WorkbenchClient} from '../../../app/workbench/api-client';
+import {WorkbenchProvider} from '../../../app/workbench/context';
+import {KnowledgeWorkspace} from './KnowledgeWorkspace';
+const closers:Array<()=>Promise<unknown>>=[];
+afterEach(async()=>{cleanup();for(const close of closers.splice(0))await close();while(draftCleanups.length)await draftCleanups.pop()!();});
+it('loads later table pages over actual HTTP and filters the complete hierarchy with ancestors',async()=>{
+ const f=draftFixture(),materials=loadMaturityMaterials(),queries=new QueryRegistry();
+ registerKnowledgeQueries(queries,{repository:f.repository,drafts:f.service,materials});
+ registerKnowledgeCommands(f.registry,{drafts:f.service,service:createKnowledgeService({repository:f.repository,drafts:f.service,materials})});
+ registerMaturityQueries(queries,{repository:f.repository,materials});
+ registerPreferencesQueries(queries,createPreferencesService({repository:f.repository,installationId:f.context.installationId,clock:f.clock}));
+ f.repository.transaction(()=>{for(let n=0;n<215;n++)f.repository.append('directory_entity',{schemaVersion:1,id:knowledgeStableId('ui-paging:'+n),revision:1,actor:f.context.actor,recordedAt:f.clock.now(),publicationAnchorId:f.input.goal.publicationAnchorId,kind:'person',name:'Paging person '+n,externalKeys:[]},null);});
+ const app=await createWorkbenchApp({files:f.files,repository:f.repository,clock:f.clock,hostname:()=>f.context.actor.hostname,installationId:f.context.installationId,accessPolicy:f.policy,commands:f.registry,queries,jobs:f.jobs,modules:[],sessions:createLocalSessionStore({clock:f.clock}),allowedOrigins:['http://127.0.0.1:5173']});
+ closers.push(()=>app.close());let cookie='';
+ const fetcher:typeof fetch=async(input,init)=>{
+  const url=new URL(String(input),'http://127.0.0.1:5173');const headers=new Headers(init?.headers);headers.set('origin',url.origin);if(cookie)headers.set('cookie',cookie);
+  const response=await app.inject({method:(init?.method??'GET') as 'GET'|'POST',url:url.pathname+url.search,headers:Object.fromEntries(headers),payload:init?.body as string|undefined});
+  if(response.cookies.length)cookie=response.cookies.map(c=>c.name+'='+c.value).join('; ');
+  return new Response(response.body,{status:response.statusCode,headers:{'content-type':'application/json'}});
+ };
+ window.history.replaceState(null,'','/knowledge');render(<WorkbenchProvider client={new WorkbenchClient({fetch:fetcher})}><KnowledgeWorkspace/></WorkbenchProvider>);
+ fireEvent.change(await screen.findByLabelText('Поиск по имени или коду'),{target:{value:'Paging'}});
+ await screen.findByText('Показано 200 из 215 объектов.',{}, {timeout:5000});
+ const visibleNames=new Set(screen.getAllByRole('button',{name:/^Paging person /}).map(button=>button.textContent));
+ const unseen=Array.from({length:215},(_,n)=>'Paging person '+n).find(name=>!visibleNames.has(name))!;expect(unseen).toBeTruthy();
+ fireEvent.click(await screen.findByRole('button',{name:'Показать ещё объекты'}));await screen.findByRole('button',{name:unseen},{timeout:5000});
+ expect(screen.getByText('Paging person 0')).toBeTruthy();
+ fireEvent.change(screen.getByLabelText('Поиск по имени или коду'),{target:{value:materials.teams[0].code}});
+ fireEvent.click(screen.getByRole('button',{name:'Дерево'}));
+ await screen.findByRole('button',{name:materials.teams[0].name});await screen.findByRole('button',{name:'Технологии'});
+ expect(screen.queryByRole('button',{name:materials.teams[1].name})).toBeNull();
+ fireEvent.change(screen.getByLabelText('Тип объекта'),{target:{value:'person'}});
+ await waitFor(()=>expect(screen.getByText('Совпадений нет.')).toBeTruthy());
+});

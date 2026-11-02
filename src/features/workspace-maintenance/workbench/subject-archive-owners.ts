@@ -90,7 +90,26 @@ function notificationsOwner(env:ProductionArchiveEnvironment):ProductionArchiveO
  'notifications.event':{schema:z.strictObject({owner,id:uuidSchema,dedupKey:z.string().min(1),value:notificationSchema,readAt:utcInstantSchema.nullable(),emittedAt:utcInstantSchema}).refine(v=>v.id===v.value.id&&v.emittedAt===v.value.emittedAt),key,read:r=>r.sqlForModule('notifications').all<any>('SELECT owner_key,id,dedup_key,payload,read_at,emitted_at FROM wb_notifications_events ORDER BY owner_key,id').map(v=>({owner:ownerOf(v.owner_key),id:v.id,dedupKey:v.dedup_key,value:parse(v.payload),readAt:v.read_at,emittedAt:v.emitted_at})),write:(r,v,c)=>r.sqlForModule('notifications').run('INSERT INTO wb_notifications_events VALUES(?,?,?,?,?,?)',[materialize(v.owner,c),v.id,v.dedupKey,J(v.value),v.readAt,v.emittedAt])},
  'notifications.subscription':{schema:z.strictObject({owner,goalId:uuidSchema,enabled:z.boolean()}),key,read:r=>r.sqlForModule('notifications').all<any>('SELECT owner_key,goal_id,enabled FROM wb_notifications_subscriptions ORDER BY owner_key,goal_id').map(v=>({owner:ownerOf(v.owner_key),goalId:v.goal_id,enabled:!!v.enabled})),write:(r,v,c)=>r.sqlForModule('notifications').run('INSERT INTO wb_notifications_subscriptions VALUES(?,?,?)',[materialize(v.owner,c),v.goalId,Number(v.enabled)])},
  'notifications.occurrence':{schema:z.strictObject({owner,id:uuidSchema,eventId:uuidSchema,emittedAt:utcInstantSchema,category:z.enum(['new','reminder','error'])}),key,read:r=>r.sqlForModule('notifications').all<any>('SELECT id,event_id,owner_key,emitted_at,category FROM wb_notifications_occurrences ORDER BY id').map(v=>({owner:ownerOf(v.owner_key),id:v.id,eventId:v.event_id,emittedAt:v.emitted_at,category:v.category})),write:(r,v,c)=>r.sqlForModule('notifications').run('INSERT INTO wb_notifications_occurrences VALUES(?,?,?,?,?)',[v.id,v.eventId,materialize(v.owner,c),v.emittedAt,v.category])},
- },env,(records,p,i)=>records.forEach(r=>authorizeOwner(owner.parse((r.value as any).owner),p,i)));
+ },env,(records,p,i)=>{
+   // Legacy automatic update events retain their unassigned installation provenance.
+   // Only these events and their exact occurrence closure may accompany a person's archive.
+   const unassignedUpdates = new Set(records.filter(r=>{
+     if(r.schemaId!=='notifications.event')return false;
+     const v=r.value as any, o=owner.parse(v.owner), cause=v.value.cause;
+     return o.personId===null && o.installationId===i && cause.provider==='updates'
+       && cause.kind==='code_update_available' && cause.recurring===false
+       && cause.objectRef.entityType==='code_update' && /^code\/[a-f0-9]{40}(?:[a-f0-9]{24})?$/.test(cause.sourceVersion)
+       && cause.localOwner?.personId===null && cause.localOwner?.installationId===i
+       && cause.recipientPersonIds.length===0 && cause.route==='/updates';
+   }).map(r=>(r.value as any).id));
+   for(const r of records){
+     const v=r.value as any, o=owner.parse(v.owner);
+     if(o.personId===null && o.installationId===i &&
+       (r.schemaId==='notifications.event' && unassignedUpdates.has(v.id) ||
+        r.schemaId==='notifications.occurrence' && unassignedUpdates.has(v.eventId)))continue;
+     authorizeOwner(o,p,i);
+   }
+ });
 }
 export function createSubjectArchiveOwners(repository:WorkbenchRepository,env:ProductionArchiveEnvironment):ProductionArchiveOwner[]{
  const ledger=createWorkspaceOwnership(repository);

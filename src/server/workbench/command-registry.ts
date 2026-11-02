@@ -10,6 +10,7 @@ import type { JobStore } from './jobs';
 import type { QueryContext } from './query-registry';
 import type { CommandOwnership } from './command-store';
 import { commandDigest, createCommandStore, validateCommandOutcome, withCommandExecution } from './command-store';
+import { problemFromError } from './problem-from-error';
 
 export type CommandContext = { sessionId?: string; requestId: string; commandId: string; installationId: string; actor: ActorRef; repository: WorkbenchRepository; clock: Clock; ownAccess: OwnAccessProfile };
 export type CommandOutcome<R> = { result: R; changedRefs: EntityRef[]; editToken: RevisionToken | null };
@@ -71,7 +72,7 @@ export function createCommandRegistry({ repository, jobs, accessPolicy, maxConcu
       // A committed local outcome is authoritative even if the response/handler
       // continuation was lost. Never publish a false failure after its receipt.
       if (reconcileReceipt(identity)) return;
-      const problem: Problem = { code: error instanceof WorkbenchHttpError ? error.code : 'OPERATION_FAILED', message: 'Operation did not complete', retryable: false, details: [], operationId: identity.jobId, provider: null };
+      const problem: Problem = problemFromError(error, identity.jobId);
       const job = jobs.get(identity.jobId, identity.installationId);
       if (job && !['succeeded', 'partial', 'failed', 'cancelled', 'waiting_user', 'retry_wait', 'interrupted'].includes(job.status)) jobs.fail(identity.jobId, problem);
       store.fail(identity.installationId, identity.commandId);

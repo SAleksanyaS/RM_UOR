@@ -45,3 +45,13 @@ it('retains canonical original descriptors only when a trusted partial-archive f
  target.restoreRecords(b.repository,records,{installationId:b.installationId,personId:b.personId,originalsOmitted:true,files:new Map(files.filter(f=>f.kind!=='original').map(f=>[f.path,f.bytesValue])),stagedRoot:b.root,subjectPath:(ns,relative)=>path.join(b.root,ns,relative)});
  expect(target.exportRecords(b.repository)).toEqual(records);expect((await target.files(b.repository,records)).map(f=>f.kind)).toEqual(['module']);expect(target.omittedOriginals!(b.repository)).toBe(true);
 });
+it('includes hidden and raw-only exports plus capture receipts, restores exact bytes without private staging',async()=>{
+ const a=fixture(),store=createOkoWorkflowStore(a.repository),own=`${a.installationId}/${a.personId}`,id=randomUUID(),bytes=Buffer.from('x;y\r\n1;2');
+ store.beginCapture(own,{schemaVersion:1,captureId:id,operationId:randomUUID(),workflowId:randomUUID(),sourceId:randomUUID(),title:'Raw only',origin:'record',createdAt:'2026-11-01T00:00:00Z'});store.commitCapture(own,id,{bytes,name:'raw.tsv',contentType:'text/tab-separated-values'});store.markExportDeleted(own,id,'2026-11-01T01:00:00Z');
+ const codec=a.owners.find(o=>o.moduleId==='oko_workflow')!,records=codec.exportRecords(a.repository),files=await codec.files(a.repository,records);
+ expect(records.map(r=>r.schemaId)).toEqual(['export','capture']);expect(JSON.stringify(records)).not.toMatch(/staging_json|base64|profilePath/);expect(files).toHaveLength(1);codec.validateArchive!(archiveFor(records,files));
+ const b=fixture(randomUUID(),a.personId),target=b.owners.find(o=>o.moduleId==='oko_workflow')!;
+ target.restoreRecords(b.repository,records,{installationId:b.installationId,personId:b.personId,files:new Map(files.map(f=>[f.path,f.bytesValue])),stagedRoot:b.root,subjectPath:(ns,relative)=>path.join(b.root,ns,relative)});
+ expect(target.exportRecords(b.repository)).toEqual(records);const restored=createOkoWorkflowStore(b.repository);expect(restored.listExports(`${b.installationId}/${b.personId}`,{includeHidden:true})).toHaveLength(1);expect(restored.captureReceipt(`${b.installationId}/${b.personId}`,id)).toEqual(store.captureReceipt(own,id));expect((await target.files(b.repository,records))[0].bytesValue).toEqual(bytes);
+ const broken=structuredClone(records);(broken.find(r=>r.schemaId==='capture')!.value as any).receipt.exportId=randomUUID();expect(()=>target.validateArchive!(archiveFor(broken,files))).toThrow();
+});

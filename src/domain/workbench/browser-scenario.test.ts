@@ -23,3 +23,7 @@ describe('browser scenario owner schema', () => {
     expect(recordedBrowserStepSchema.safeParse({ action: 'click', locator: { kind: 'css', selector: '#export' }, framePath: [] }).success).toBe(false);
   });
 });
+it('accepts raw acquisition without inferred columns while typed formats still require headers',()=>{
+ expect(browserScenarioDefinitionSchema.safeParse({...scenario(),expectedExport:{format:'raw',requiredColumns:[]}}).success).toBe(true);
+ expect(browserScenarioDefinitionSchema.safeParse({...scenario(),expectedExport:{format:'csv',requiredColumns:[]}}).success).toBe(false);
+});

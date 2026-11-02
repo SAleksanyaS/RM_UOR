@@ -13,7 +13,7 @@ async function fixture(){
  await new Promise<void>(r=>server.listen(0,'127.0.0.1',r));cleanup.push(()=>new Promise<void>(r=>server.close(()=>r())));
  const origin='http://127.0.0.1:'+(server.address() as any).port, contexts:BrowserContext[]=[], active=new Set<BrowserContext>(), folders:string[]=[];
  const executablePath=await chromeExecutable();
- const f=await createLocalRuntime({browserLauncher:{async launchPersistent(_profile,folder,options){const context=await chromium.launchPersistentContext(folder,{...options,executablePath,headless:true});contexts.push(context);folders.push(folder);active.add(context);context.once('close',()=>active.delete(context));return context;}}});
+ const f=await createLocalRuntime({browserLauncher:{async launchPersistent(_profile,folder,options){const context=await chromium.launchPersistentContext(folder,{...options,executablePath,headless:true,chromiumSandbox:process.env.UOR_SYNTHETIC_CI!=='1'});contexts.push(context);folders.push(folder);active.add(context);context.once('close',()=>active.delete(context));return context;}}});
  cleanup.push(async()=>{await Promise.all([...active].map(c=>c.close()));await f.close();});
  const graph=makeEntityGraph();seedGraph(f.runtime.deps.repository,graph);
  const source=f.runtime.deps.repository.readPublishedHead<SourceDefinition>({entityType:'source_definition',id:graph.input.goal.sourceId})!;
@@ -29,8 +29,12 @@ it.each(['record','login'] as const)('final_I2_shared_only_%s_closes_before_same
  await f.stop();expect(f.active.size).toBe(0);expect(f.contexts[0].pages()).toHaveLength(0);
  await f.restart();await f.request.session();await f.start(mode);expect(f.active.size).toBe(1);expect(f.folders[1]).toBe(f.folders[0]);await f.stop();expect(f.active.size).toBe(0);
 },60000);
-it('final_I2_maintenance_drains_actual_shared_recording',async()=>{
- const f=await fixture();await f.start('record');expect(f.active.size).toBe(1);
- await f.runtime.services.archive.lifecycle!.quiesce(fixtureId(991002));expect(f.active.size).toBe(0);
+it('maintenance preserves an active recording and proceeds only after the owner cancels it',async()=>{
+ const f=await fixture(),recording=await f.start('record');expect(f.active.size).toBe(1);
+ await expect(f.runtime.services.archive.lifecycle!.quiesce(fixtureId(991002))).rejects.toMatchObject({code:'BROWSER_ACTIVE'});
+ expect(f.active.size).toBe(1);expect(await f.contexts[0].pages()[0].locator('#ready').isVisible()).toBe(true);
+ await f.runtime.services.archive.lifecycle!.resume();await f.request.session();
+ await f.request.command('source.browser.record.cancel',{recordingId:recording.result.recordingId});expect(f.active.size).toBe(0);
+ await f.runtime.services.archive.lifecycle!.quiesce(fixtureId(991003));expect(f.active.size).toBe(0);
  await f.runtime.services.archive.lifecycle!.resume();await f.start('record');expect(f.active.size).toBe(1);await f.stop();expect(f.active.size).toBe(0);
 },60000);

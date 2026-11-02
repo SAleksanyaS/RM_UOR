@@ -1,0 +1,16 @@
+import { z } from 'zod';
+import { uuidSchema,versionRefSchema } from '../../domain/workbench/primitives';
+import { directoryEntitySchema,directoryLinkSchema } from '../../domain/workbench/schemas';
+import { fieldProblemSchema } from '../../server/workbench/protocol';
+export const knowledgeImportRowSchema=z.strictObject({id:uuidSchema.optional(),kind:z.enum(['block','tribe','dit','cluster','product','team','person','it_service']),name:z.string().trim().min(1).max(500),code:z.string().trim().max(200).default(''),lifecycle:z.enum(['active','archived']).optional(),parentId:uuidSchema.nullable().default(null)});
+export type KnowledgeImportRow=z.infer<typeof knowledgeImportRowSchema>;
+export const knowledgeImportInputSchema=z.strictObject({packageId:uuidSchema.nullable(),rows:z.array(knowledgeImportRowSchema).max(200).optional(),csv:z.string().max(500000).optional(),xlsxBase64:z.string().max(2000000).optional()}).refine(v=>[v.rows,v.csv,v.xlsxBase64].filter(v=>v!==undefined).length===1,'Choose exactly one import format');
+export type KnowledgeImportInput=z.infer<typeof knowledgeImportInputSchema>;
+export const knowledgePrepareInputSchema=z.strictObject({packageId:uuidSchema.nullable(),curatorPersonId:uuidSchema.nullable()});
+export const knowledgePrepareResultSchema=z.strictObject({packageId:uuidSchema,added:z.number().int(),entryCount:z.number().int()});
+export const knowledgeItemSchema=z.strictObject({value:directoryEntitySchema,ref:versionRefSchema,origin:z.enum(['published','own_draft','selected_material']),parentId:uuidSchema.nullable(),leaderNames:z.array(z.string()),quality:z.array(z.string())});
+export type KnowledgeItem=z.infer<typeof knowledgeItemSchema>;
+export const knowledgeListSchema=z.strictObject({items:z.array(knowledgeItemSchema),links:z.array(directoryLinkSchema),total:z.number().int(),packageId:uuidSchema.nullable(),editToken:z.string().nullable(),quality:z.array(fieldProblemSchema),sourceLabel:z.string(),nextCursor:z.string().nullable()});
+export type KnowledgeList=z.infer<typeof knowledgeListSchema>;
+export const knowledgePreviewSchema=z.strictObject({rows:z.array(knowledgeImportRowSchema),diff:z.array(z.strictObject({id:uuidSchema,name:z.string(),kind:z.string(),action:z.enum(['create','update','unchanged']),parentChange:z.strictObject({from:uuidSchema.nullable(),to:uuidSchema.nullable()}).nullable().optional()})),problems:z.array(fieldProblemSchema),previewDigest:z.string(),stateRevision:z.string(),packageId:uuidSchema.nullable()});
+export type KnowledgePreview=z.infer<typeof knowledgePreviewSchema>;

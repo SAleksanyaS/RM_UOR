@@ -2,6 +2,7 @@ import type { Clock } from '../../domain/workbench/primitives';
 import { newUuid, uuidSchema } from '../../domain/workbench/primitives';
 import type { WorkbenchRepository } from '../storage/workbench-repository';
 import { jobSnapshotSchema, problemSchema, WorkbenchHttpError } from './protocol';
+import { problemFromError } from './problem-from-error';
 import type { JobAccepted, JobSnapshot, JobStatus, Problem } from './protocol';
 
 export type JobPatch = Partial<Omit<JobSnapshot, 'jobId' | 'commandId'>>;
@@ -82,7 +83,7 @@ export function createJobStore({ repository, clock }: { repository: WorkbenchRep
       store.update(jobId, { status: 'queued', stage: 'queued', retryAvailable: false });
       void scheduler(row.resource_key ?? row.name, async () => {
         try { await beforeStart?.(); store.update(jobId, { status: 'running', stage: 'running' }); await action(); }
-        catch (error) { const latest = store.get(jobId, installationId); if (latest && !terminal.has(latest.status) && !['waiting_user', 'retry_wait', 'interrupted'].includes(latest.status)) store.fail(jobId, { code: error instanceof WorkbenchHttpError ? error.code : 'RETRY_FAILED', message: 'Retry did not complete', retryable: false, details: [], operationId: jobId, provider: null }); }
+        catch (error) { const latest = store.get(jobId, installationId); if (latest && !terminal.has(latest.status) && !['waiting_user', 'retry_wait', 'interrupted'].includes(latest.status)) store.fail(jobId, problemFromError(error, jobId)); }
       }).catch(() => undefined);
       return { jobId, status: 'queued', pollAfterMs: 1000 };
     },

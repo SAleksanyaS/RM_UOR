@@ -410,3 +410,6 @@ it('public_package_prop_creates_and_resumes_private_goal_in_published_org_contex
     expect(new URL(window.location.href).searchParams.get('goal')).toBeNull();
     expect(h.requests.filter(r => r.body?.name === 'draft.open' && (r.body?.payload as any)?.packageId === null)).toHaveLength(1);
 });
+it('changes a threshold and reopens the same persisted methodology without changing published rules',async()=>{
+ const h=await open();fireEvent.click(screen.getByRole('button',{name:'Показатели и условия'}));fireEvent.change(screen.getAllByLabelText('Порог')[0],{target:{value:'95'}});fireEvent.change(screen.getByLabelText('Пример значения 1'),{target:{value:'92'}});expect(screen.getByText('Пример: условие не выполнено')).toBeTruthy();fireEvent.click(screen.getByRole('button',{name:'Сохранить черновик'}));await screen.findByText('Черновик сохранён');fireEvent.click(screen.getByRole('button',{name:'Закрыть настройку'}));fireEvent.click(screen.getByRole('button',{name:'Настроить цель'}));await screen.findByLabelText('Название цели');fireEvent.click(screen.getByRole('button',{name:'Показатели и условия'}));expect((screen.getAllByLabelText('Порог')[0] as HTMLInputElement).value).toBe('95');expect(h.repository.readVersion<any>(h.refs.method).rules[0].condition.target).toBe('90');
+});

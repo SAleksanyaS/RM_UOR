@@ -1,0 +1,59 @@
+row;teamCode;date;metric_0;metric_1;metric_2;metric_3;metric_4;state_0;state_1;state_2;state_3;state_4
+00JD0009;00JD0009;2026-10-30;100;94.8;100;100;100;numeric;numeric;numeric;numeric;numeric
+00JD0004;00JD0004;2026-10-30;100;100;100;100;100;numeric;numeric;numeric;numeric;numeric
+00JD0011;00JD0011;2026-10-30;96.1;91.6;95.3;99.5;100;numeric;numeric;numeric;numeric;numeric
+00JD0010;00JD0010;2026-10-30;98.3;98.5;100;99.1;100;numeric;numeric;numeric;numeric;numeric
+00JD0001;00JD0001;2026-10-30;86.4;93.9;100;100;100;numeric;numeric;numeric;numeric;numeric
+00JD0003;00JD0003;2026-10-30;100;64.6;100;100;100;numeric;numeric;numeric;numeric;numeric
+00JD0007;00JD0007;2026-10-30;100;100;100;100;100;numeric;numeric;numeric;numeric;numeric
+00JD0002;00JD0002;2026-10-30;100;95.8;100;100;100;numeric;numeric;numeric;numeric;numeric
+00JD0016;00JD0016;2026-10-30;100;95.9;100;100;100;numeric;numeric;numeric;numeric;numeric
+00JD0013;00JD0013;2026-10-30;100;98.4;100;100;100;numeric;numeric;numeric;numeric;numeric
+00HH0116;00HH0116;2026-10-30;100;80;100;97.9;100;numeric;numeric;numeric;numeric;numeric
+00HH0078;00HH0078;2026-10-30;92;96.6;100;100;100;numeric;numeric;numeric;numeric;numeric
+00HH0006;00HH0006;2026-10-30;100;73.7;100;100;100;numeric;numeric;numeric;numeric;numeric
+00HH0125;00HH0125;2026-10-30;84.1;95.1;94.3;100;100;numeric;numeric;numeric;numeric;numeric
+00HH0139;00HH0139;2026-10-30;86.5;82.9;93.3;100;98.6;numeric;numeric;numeric;numeric;numeric
+00HH0145;00HH0145;2026-10-30;;;100;100;90;В исключениях;В исключениях;numeric;numeric;numeric
+00HH0146;00HH0146;2026-10-30;95.4;96.7;100;99.7;100;numeric;numeric;numeric;numeric;numeric
+00HH0102;00HH0102;2026-10-30;99.2;90.8;100;100;89.2;numeric;numeric;numeric;numeric;numeric
+00HH0123;00HH0123;2026-10-30;92.6;89.7;100;100;98.6;numeric;numeric;numeric;numeric;numeric
+00HH0142;00HH0142;2026-10-30;95.6;92.8;100;98.9;96.9;numeric;numeric;numeric;numeric;numeric
+00HH0129;00HH0129;2026-10-30;88.9;91.8;100;100;100;numeric;numeric;numeric;numeric;numeric
+00HH0130;00HH0130;2026-10-30;96.8;95.2;98.8;100;82;numeric;numeric;numeric;numeric;numeric
+00HH0126;00HH0126;2026-10-30;97.3;98.7;98;100;100;numeric;numeric;numeric;numeric;numeric
+00HH0019;00HH0019;2026-10-30;93.6;100;100;100;100;numeric;numeric;numeric;numeric;numeric
+00HH0060;00HH0060;2026-10-30;;;;100;100;В исключениях;Нет PR;Нет данных;numeric;numeric
+00HH0002;00HH0002;2026-10-30;;;100;99.1;100;В исключениях;В исключениях;numeric;numeric;numeric
+00HH0040;00HH0040;2026-10-30;75.3;95.7;100;100;100;numeric;numeric;numeric;numeric;numeric
+00HH0062;00HH0062;2026-10-30;;;93.3;100;100;В исключениях;В исключениях;numeric;numeric;numeric
+00HH0063;00HH0063;2026-10-30;97.1;94;98.3;100;100;numeric;numeric;numeric;numeric;numeric
+00HH0096;00HH0096;2026-10-30;82.5;97.1;99.5;99.5;100;numeric;numeric;numeric;numeric;numeric
+00HH0049;00HH0049;2026-10-30;86.7;99.1;100;100;100;numeric;numeric;numeric;numeric;numeric
+00HH0092;00HH0092;2026-10-30;;;100;99.5;100;В исключениях;В исключениях;numeric;numeric;numeric
+00HH0138;00HH0138;2026-10-30;82.1;100;100;100;100;numeric;numeric;numeric;numeric;numeric
+00HH0114;00HH0114;2026-10-30;91.7;98.9;100;100;100;numeric;numeric;numeric;numeric;numeric
+00HH0133;00HH0133;2026-10-30;100;96;100;98.6;100;numeric;numeric;numeric;numeric;numeric
+00HH0134;00HH0134;2026-10-30;90.9;100;100;99;100;numeric;numeric;numeric;numeric;numeric
+00HH0127;00HH0127;2026-10-30;95.3;97;100;100;99.3;numeric;numeric;numeric;numeric;numeric
+00HH0098;00HH0098;2026-10-30;100;100;100;100;100;numeric;numeric;numeric;numeric;numeric
+00HH0067;00HH0067;2026-10-30;78.6;100;100;100;94.4;numeric;numeric;numeric;numeric;numeric
+00HH0055;00HH0055;2026-10-30;96.9;93.1;100;100;100;numeric;numeric;numeric;numeric;numeric
+00HH0053;00HH0053;2026-10-30;98;94.3;99.6;100;99.5;numeric;numeric;numeric;numeric;numeric
+00HH0050;00HH0050;2026-10-30;87.1;91.8;99.5;100;100;numeric;numeric;numeric;numeric;numeric
+00HH0089;00HH0089;2026-10-30;96;99.5;100;98.3;100;numeric;numeric;numeric;numeric;numeric
+00I20022;00I20022;2026-10-30;;96.2;100;100;100;В исключениях;numeric;numeric;numeric;numeric
+00I20017;00I20017;2026-10-30;;98.3;99.4;100;100;В исключениях;numeric;numeric;numeric;numeric
+00I20032;00I20032;2026-10-30;90.3;97.9;100;100;100;numeric;numeric;numeric;numeric;numeric
+00I20026;00I20026;2026-10-30;95.4;86.9;98.7;100;100;numeric;numeric;numeric;numeric;numeric
+00I20004;00I20004;2026-10-30;88.1;90.1;98.5;100;100;numeric;numeric;numeric;numeric;numeric
+00I20030;00I20030;2026-10-30;79;93.5;100;98.8;100;numeric;numeric;numeric;numeric;numeric
+00I20025;00I20025;2026-10-30;84.6;81.3;100;100;100;numeric;numeric;numeric;numeric;numeric
+00I20029;00I20029;2026-10-30;100;91;100;100;100;numeric;numeric;numeric;numeric;numeric
+00I20033;00I20033;2026-10-30;94.4;100;100;100;100;numeric;numeric;numeric;numeric;numeric
+00I20031;00I20031;2026-10-30;100;91.3;100;100;100;numeric;numeric;numeric;numeric;numeric
+00I20003;00I20003;2026-10-30;87;97.8;98.4;100;100;numeric;numeric;numeric;numeric;numeric
+00I20014;00I20014;2026-10-30;93.1;96.2;100;97.1;100;numeric;numeric;numeric;numeric;numeric
+00I20012;00I20012;2026-10-30;100;95.3;100;100;100;numeric;numeric;numeric;numeric;numeric
+00I20013;00I20013;2026-10-30;;;92.6;100;94.7;В исключениях;В исключениях;numeric;numeric;numeric
+00I20034;00I20034;2026-10-30;;;100;100;94.8;В исключениях;В исключениях;numeric;numeric;numeric

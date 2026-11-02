@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "importVersion": "maturity-ooxml-v1",
+  "authorization": "Selected XLSX/PPTX business originals and derived records explicitly authorized for main; excludes credentials, profiles, private config/runtime.",
+  "sources": [
+    {
+      "kind": "xlsx",
+      "path": "materials/maturity/2026-10-30/source.xlsx",
+      "sha256": "569a7bc688d2ce553d98679721ab977156ab510d1313afd8760603e06257a351",
+      "bytes": 43738
+    },
+    {
+      "kind": "pptx",
+      "path": "materials/maturity/2026-10-30/source.pptx",
+      "sha256": "aeb3e2a5431edf4d3763cd73c3af5525f42bb14129c6e4d42bf2058b4675af8c",
+      "bytes": 81244
+    }
+  ],
+  "normalizedPath": "data/reference/maturity-2026-10-30.json",
+  "normalizedCsvPath": "data/reference/maturity-2026-10-30.csv",
+  "normalizedCsvSha256": "f0861fe8988dbf4119b34c6ce548ad04c6916b606c2225ad231d64263d29dafd",
+  "normalizedSha256": "074e3162f9fe52f6b719df15c6267bb9984ca06b01ab0a8e6ac146e717a164cb",
+  "counts": {
+    "blocks": 1,
+    "tribes": 3,
+    "clusters": 24,
+    "teams": 58,
+    "metrics": 5,
+    "leaders": 8,
+    "memberships": 58,
+    "leaves": 290,
+    "rollups": 434,
+    "numeric": 273,
+    "met": 271,
+    "exception": 15,
+    "noEvent": 1,
+    "missing": 1
+  }
+}

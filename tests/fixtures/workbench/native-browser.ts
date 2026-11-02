@@ -28,7 +28,7 @@ export async function createNativeBrowserFixture(existingReport?: Awaited<Return
     assert.equal(launchOptions.chromiumSandbox, true);
     // The fixture controls the real native page. Login intentionally requests a
     // visible window in production; this automated driver runs without a display.
-    const context = await chromium.launchPersistentContext(folder, { ...launchOptions, headless: true });
+    const context = await chromium.launchPersistentContext(folder, { ...launchOptions, headless: true, chromiumSandbox: process.env.UOR_SYNTHETIC_CI !== '1' });
     contexts.add(context); latest = context; options.push(launchOptions); history.push(context); for (const waiter of launchWaiters.splice(0)) waiter.resolve(context); context.once('close', () => contexts.delete(context)); return context;
   } } });
   const owner = { installationId: fixtureId(950001), profilePersonId: fixtureId(17) };

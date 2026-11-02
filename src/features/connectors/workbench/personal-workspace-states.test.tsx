@@ -17,7 +17,10 @@ it('reader can complete the first personal setup without changing to editor', as
   await client.command('source.browser.role.set', { role: 'viewer' });
   render(<PersonalOkoWorkspace client={client} />);
   fireEvent.click(await screen.findByRole('button', { name: 'Создать первый сценарий' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Создать сценарий' }));
   await screen.findByLabelText('Адрес отчёта');
+  // The setup panel opens after the own workspace refresh that follows the accepted create.
+  await waitFor(() => expect(document.getElementById('wb-personal-settings')?.hidden).toBe(false));
   expect(screen.getByRole('button', { name: 'Начать запись действий' })).toBeTruthy();
   expect(screen.queryByText(/выберите режим «Редактор»/)).toBeNull();
   expect(f.requests.filter(request => request.body?.name === 'oko.workflow.open')).toHaveLength(1);
@@ -32,6 +35,7 @@ it('explicit recovery reads the original receipt after a lost response without s
   };
   render(<PersonalOkoWorkspace client={new OkoClient(fetcher, { prefix: 'oko.workflow' })} />);
   fireEvent.click(await screen.findByRole('button', { name: 'Создать первый сценарий' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Создать сценарий' }));
   fireEvent.click(await screen.findByRole('button', { name: 'Проверить сохранённое состояние' }));
   await waitFor(() => expect(f.requests.some(request => /\/commands\/[\da-f-]+$/.test(request.url))).toBe(true));
   await waitFor(() => expect(JSON.stringify(sessionStorage)).not.toContain('pending-command'));
@@ -90,6 +94,7 @@ function mountedJob(initial: JobSnapshot | null, initialWorkflow = readyWorkflow
     const url = String(input), body = typeof init?.body === 'string' ? JSON.parse(init.body) : null;
     if (url.endsWith('/session')) return Response.json({ data: session });
     if (url.endsWith('/queries/oko.workflow.workspace')) return Response.json({ data: { workflows: [{ workflowId: value.workflowId, title: value.title, revision: value.revision }], current: value, setup: { hostname: 'synthetic', registryConfigured: true, message: null } } });
+    if (url.endsWith('/queries/oko.workflow.exports')) return Response.json({ data: { items: [], hiddenCount: 0 } });
     if (url.endsWith('/jobs/' + jobId)) return Response.json({ data: job });
     if (url.endsWith('/commands')) {
       sent.push(body);
@@ -147,7 +152,7 @@ it('cancelled first acquisition never claims that a previous successful result e
   expect(screen.getByText(/Новый результат не подтверждён/)).toBeTruthy();
 });
 
-it('collapsed personal setup stays mounted and automatically accepts a completed download exactly once', async () => {
+it('collapsed personal setup preserves edits and requires explicit acceptance after download', async () => {
   const value = readyWorkflow(); value.recording = { ...value.recording, state: 'idle', recordingId: null, steps: [] }; value.columns = [];
   const f = mountedJob(null, value);
   fireEvent.click(await screen.findByRole('button', { name: 'Настроить' }));
@@ -157,9 +162,24 @@ it('collapsed personal setup stays mounted and automatically accepts a completed
   fireEvent.change(screen.getByLabelText('Адрес отчёта'), { target: { value: 'https://report.example.invalid/unsaved' } });
   fireEvent.click(screen.getByRole('button', { name: 'Закрыть настройки' }));
   f.replace({ ...value, revision: 'download-completed', recording: { ...value.recording, state: 'completed', recordingId: fixtureId(8210) } });
-  await waitFor(() => expect(f.sent.filter(command => command.name === 'oko.workflow.record.finish')).toHaveLength(1));
+  await waitFor(() => expect(screen.getByText(/Скачивание завершено. Нажмите/)).toBeTruthy());
+  expect(f.sent.filter(command=>command.name==='oko.workflow.record.finish')).toHaveLength(0);
   expect(document.getElementById('wb-personal-settings')?.hidden).toBe(true);
   fireEvent.click(screen.getByRole('button', { name: 'Настроить' }));
   expect((screen.getByLabelText('Адрес отчёта') as HTMLInputElement).value).toBe('https://report.example.invalid/unsaved');
+  fireEvent.click(screen.getByRole('button',{name:'Получить записанные шаги'}));
+  await waitFor(()=>expect(f.sent.filter(command=>command.name==='oko.workflow.record.finish')).toHaveLength(1));
   expect(f.sent.filter(command => command.name === 'oko.workflow.record.finish')).toHaveLength(1);
+});
+
+it('creates a Confluence recipe with explicitly entered provenance and no guessed version',async()=>{
+ const f=await createPersonalRuntime();closes.push(f.close);const client=new OkoClient(f.fetcher,{prefix:'oko.workflow'});
+ render(<PersonalOkoWorkspace client={client}/>);fireEvent.click(await screen.findByRole('button',{name:'Создать первый сценарий'}));
+ fireEvent.change(screen.getByLabelText('Источник сценария'),{target:{value:'confluence'}});
+ fireEvent.change(screen.getByLabelText('Название отчёта'),{target:{value:'Вложение знаний'}});
+ fireEvent.change(screen.getByLabelText('URL страницы'),{target:{value:'https://wiki.example.org/pages/viewpage.action?pageId=123'}});
+ fireEvent.change(screen.getByLabelText('Идентификатор вложения'),{target:{value:'456'}});
+ fireEvent.change(screen.getByLabelText('Версия вложения'),{target:{value:'7'}});
+ fireEvent.click(screen.getByRole('button',{name:'Создать сценарий'}));await screen.findByLabelText('Адрес отчёта');
+ expect(f.requests.find(r=>r.body?.name==='oko.workflow.open')?.body?.payload).toMatchObject({title:'Вложение знаний',sourceKind:'confluence',sourceMetadata:{pageUrl:'https://wiki.example.org/pages/viewpage.action?pageId=123',attachmentId:'456',version:7}});
 });

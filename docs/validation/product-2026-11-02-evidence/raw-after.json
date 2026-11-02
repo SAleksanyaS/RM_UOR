@@ -1,0 +1,83 @@
+{
+  "measuredAt": "2026-11-02T00:57:25.237Z",
+  "node": "v22.16.0",
+  "platform": "linux",
+  "arch": "x64",
+  "kernel": "6.18.57",
+  "cpu": "AMD EPYC 9V74 80-Core Processor",
+  "logicalCpus": 9,
+  "totalMemory": 10451427328,
+  "source": {
+    "src/features/connectors/workbench-raw-acquisition.ts": "eeee867282a8d87cc9fc5ffa65ce64232720d3422b003ce42a5eec17654bd25a",
+    "src/features/tabular-import/workbench-parser.ts": "aff43fac6705d4b53d4349abb4304cc867d3ad95da5e5e6f730e568234094111"
+  },
+  "conditions": "One real local HTTP/SQLite runtime; after restart cold parse; 20 sequential warm samples per operation; 50 returned rows. RSS includes harness, app and retained V8 memory. Concurrent engineering jobs may share the host. Synthetic five-column CSV; no banking traffic.",
+  "measurements": [
+    {
+      "rows": 10000,
+      "columns": 5,
+      "bytes": 351804,
+      "fixtureSha256": "c1cc292dd290e607759b86dada015e485b560ee82173d12cd2cd8bbad061fa29",
+      "acquisitionMs": 141.1801210000001,
+      "coldDetailMs": 53.204503999999815,
+      "parseState": "parsed",
+      "issue": null,
+      "rssBefore": 320995328,
+      "rssPeak": 376107008,
+      "rssAfter": 365858816,
+      "timings": {
+        "page": {
+          "n": 20,
+          "p50": 7.293299999999817,
+          "p95": 9.32840299999998,
+          "max": 11.760642000000189
+        },
+        "search": {
+          "n": 20,
+          "p50": 9.902263999999832,
+          "p95": 14.02248899999995,
+          "max": 15.240055000000211
+        },
+        "sort": {
+          "n": 20,
+          "p50": 31.499755999999707,
+          "p95": 38.80986100000018,
+          "max": 39.63001600000007
+        }
+      }
+    },
+    {
+      "rows": 100000,
+      "columns": 5,
+      "bytes": 3617814,
+      "fixtureSha256": "c5946da5e2596ed41b2e856d4de02384233925fb92a6163cb7fa11f4ce9a73ea",
+      "acquisitionMs": 411.67746499999976,
+      "coldDetailMs": 266.1413270000003,
+      "parseState": "parsed",
+      "issue": null,
+      "rssBefore": 385355776,
+      "rssPeak": 659820544,
+      "rssAfter": 561475584,
+      "timings": {
+        "page": {
+          "n": 20,
+          "p50": 32.36028500000066,
+          "p95": 46.72458999999981,
+          "max": 50.283102999999755
+        },
+        "search": {
+          "n": 20,
+          "p50": 60.38027200000033,
+          "p95": 78.19139799999994,
+          "max": 91.9742499999993
+        },
+        "sort": {
+          "n": 20,
+          "p50": 316.9323550000008,
+          "p95": 398.03862499999923,
+          "max": 415.6485159999993
+        }
+      }
+    }
+  ]
+}

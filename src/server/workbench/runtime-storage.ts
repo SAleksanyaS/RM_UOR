@@ -18,6 +18,10 @@ import { assertPhysicalPath } from './files';
 import { durableWrite } from '../../features/workspace-maintenance/workbench/private-storage';
 import { createSubjectArchiveOwners } from '../../features/workspace-maintenance/workbench/subject-archive-owners';
 import { createSourceArchiveOwners } from '../../features/workspace-maintenance/workbench/source-archive-owners';
+import { createReportArchiveOwner } from '../../features/reporting/workbench/archive';
+import { createWeeklyArchiveOwner } from '../../features/weekly-report/workbench/archive';
+import { createSetupArchiveOwner } from '../../features/workspace-maintenance/workbench/setup-package-service';
+import { createUpdateArchiveOwner } from '../../features/system/workbench/update-channel';
 import { prepareLegacySubjectRecords } from '../../features/workspace-maintenance/workbench/subject-legacy-archive';
 import type { ProductionArchiveEnvironment, ProductionArchiveOwner } from '../../features/workspace-maintenance/workbench/production-archive-contracts';
 import type { ArchiveDependencies, WorkspaceArchiveWorkspacePort, WorkspaceArchiveStageBindings, WorkspaceLifecycle, MaintenanceContext } from '../../features/workspace-maintenance/workbench/contracts';
@@ -141,7 +145,7 @@ export function createRuntimeStorage(input: {
     }>();
     const stageBindings = (root: string, target: WorkbenchRepository): WorkspaceArchiveStageBindings => {
         const env = { ...environment, localPreview: false, subjectRoot: () => root };
-        const bound = [...createSubjectArchiveOwners(target, env), ...createSourceArchiveOwners(target, env)];
+        const bound = [...createSubjectArchiveOwners(target, env), ...createSourceArchiveOwners(target, env), createReportArchiveOwner(), createWeeklyArchiveOwner(), createSetupArchiveOwner(target, env), createUpdateArchiveOwner(target, env)];
         return {
             modules: new Map(bound.map(owner => [owner.moduleId, owner])),
             omittedOriginals: () => bound.some(owner => owner.omittedOriginals?.(target) === true),
@@ -183,12 +187,15 @@ export function createRuntimeStorage(input: {
                 throw fail();
             maintenanceOwner = operationId;
             closed = true;
-            await pause();
             const coordinator = scope.getStore()?.commandId ?? null;
             for (let attempt = 0; attempt < 200; attempt++) {
-                const pending = jobs?.recoveryCandidates(prepared.installationId).filter(row => row.snapshot.commandId !== coordinator && ['queued', 'running', 'retry_wait'].includes(row.snapshot.status)) ?? [];
-                if (!pending.length && requests === 0)
+                const pending = jobs?.recoveryCandidates(prepared.installationId).filter(row => row.snapshot.commandId !== coordinator && ['queued', 'running', 'retry_wait', 'waiting_user'].includes(row.snapshot.status)) ?? [];
+                if (!pending.length && requests === 0) {
+                    // Maintenance must not cancel accepted work merely to make itself idle.
+                    // Browser participants reject active owned windows before closing anything.
+                    await pause();
                     return;
+                }
                 await new Promise(resolve => setTimeout(resolve, 25));
             }
             throw new WorkbenchHttpError(409, 'WORKSPACE_BUSY', 'Other accepted work has not drained');
@@ -290,7 +297,7 @@ export function createRuntimeStorage(input: {
             pause: () => Promise<void>;
             resume: () => void;
         }) { pause = callbacks.pause; resume = callbacks.resume; },
-        initialize(deps: ArchiveDependencies, jobStore: JobStore, indexRebuild: () => void) { archive = deps; jobs = jobStore; rebuild = indexRebuild; owners = [...createSubjectArchiveOwners(repository, environment), ...createSourceArchiveOwners(repository, environment)]; if (new Set(owners.map(o => o.moduleId)).size !== owners.length)
+        initialize(deps: ArchiveDependencies, jobStore: JobStore, indexRebuild: () => void) { archive = deps; jobs = jobStore; rebuild = indexRebuild; owners = [...createSubjectArchiveOwners(repository, environment), ...createSourceArchiveOwners(repository, environment), createReportArchiveOwner(), createWeeklyArchiveOwner(), createSetupArchiveOwner(repository, environment), createUpdateArchiveOwner(repository, environment)]; if (new Set(owners.map(o => o.moduleId)).size !== owners.length)
             throw Error('Duplicate archive owner'); (workspace.requiredModuleIds as string[]).push(...owners.map(o => o.moduleId)); return new Map(owners.map(o => [o.moduleId, o])); },
         withCoordinator<T>(context: Pick<MaintenanceContext, 'installationId'> & {
             commandId?: string;

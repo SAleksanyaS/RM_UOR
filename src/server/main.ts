@@ -1,3 +1,4 @@
+import './log-capture-bootstrap';
 import { createWorkbenchRuntime } from './workbench/bootstrap';
 import { createWorkbenchApp } from './workbench/app';
 import { attachWorkbenchLauncher } from './workbench/launcher';

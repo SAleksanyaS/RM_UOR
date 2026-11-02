@@ -5,12 +5,12 @@ export const revisionTokenSchema = z.string().min(1);
 export type RevisionToken = z.infer<typeof revisionTokenSchema>;
 const objectSchema = z.record(z.string(), z.unknown());
 export const globalContextSchema = z.strictObject({
-  scopePath: z.strictObject({ ditId: uuidSchema, clusterId: uuidSchema.nullable(), productId: uuidSchema.nullable(), teamId: uuidSchema.nullable() }),
+  scopePath: z.strictObject({ ditId: uuidSchema, rootKind: z.enum(['dit','block','tribe']).optional(), clusterId: uuidSchema.nullable(), productId: uuidSchema.nullable(), teamId: uuidSchema.nullable() }),
   goalId: uuidSchema.nullable(), time: z.union([businessTimeSchema.options[0], businessTimeSchema.options[1]]),
   resultMode: z.enum(['current', 'agreed']), snapshotId: uuidSchema.nullable(),
 }).superRefine((v, ctx) => {
   if (v.scopePath.productId !== null && v.scopePath.clusterId === null) ctx.addIssue({ code: 'custom', path: ['scopePath', 'productId'], message: 'Product requires cluster' });
-  if (v.scopePath.teamId !== null && v.scopePath.productId === null) ctx.addIssue({ code: 'custom', path: ['scopePath', 'teamId'], message: 'Team requires product' });
+  if (v.scopePath.teamId !== null && v.scopePath.productId === null && !((v.scopePath.rootKind==='block'||v.scopePath.rootKind==='tribe')&&v.scopePath.clusterId!==null)) ctx.addIssue({ code: 'custom', path: ['scopePath', 'teamId'], message: 'Team requires product' });
 });
 export type GlobalContext = z.infer<typeof globalContextSchema>;
 export const fieldProblemSchema = z.strictObject({ path: z.string().regex(/^(?:\/(?:[^~]|~[01])*)*$/), code: z.string().min(1), message: z.string(), ref: entityRefSchema.nullable() });

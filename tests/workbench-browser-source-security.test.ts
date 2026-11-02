@@ -43,7 +43,8 @@ it('blocks_foreign_origin_and_secret_recording_in_real_browser', async () => {
   await f.page().locator('[data-testid="security-complete"]').waitFor();
   await expect(f.page().goto(f.report.origin + '/redirect-foreign')).rejects.toThrow();
   expect(f.report.requests().filter(url => url.startsWith(f.report.forbiddenOrigin))).toEqual([]);
-  expect(f.launchOptions().every(option => option.serviceWorkers === 'block' && option.ignoreHTTPSErrors === false)).toBe(true);
+  expect(f.launchOptions().map(option => option.serviceWorkers)).toEqual(['block', 'allow']);
+  expect(f.launchOptions().every(option => option.chromiumSandbox === true && option.ignoreHTTPSErrors === false)).toBe(true);
   await f.runtime.closeOwned(f.owner);
   await expect(f.runtime.replay({ ...f.input, scenario: { ...makeHeader(950004), sourceId: fixtureId(12), startUrl: f.input.startUrl, authenticatedSelector: f.input.authenticatedSelector, steps: [{ action: 'evaluate', script: 'alert(1)' }], parameters: {}, expectedExport: { format: 'csv', requiredColumns: ['Key'] } } as never }, new AbortController().signal)).rejects.toThrow();
   expect(session.state).toBe('open'); expect(f.openContexts()).toBe(0);

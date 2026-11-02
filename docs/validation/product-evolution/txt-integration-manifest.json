@@ -1,0 +1,445 @@
+{
+  "source_report_sha256": "5b4cbf627dcb58cfd6f14f6dfeae7e9f4f5b9c0a1631499f42ec551f3bbd6576",
+  "input_main": "50678454ff1685bec951718f1fe919d94c8ef52e",
+  "modified": 38,
+  "new": 17,
+  "files": [
+    {
+      "path": "src/features/connectors/browser.ts",
+      "comparison": "modified",
+      "supplied_sha256": "1f21fce05f7834b4def6e995271596ce6362a6d1e0a7cecda53d2152678d739b",
+      "disposition": "imported; mandatory hardening and fresh verification pending",
+      "imported_sha256": "6b4f37e200550ed69d11b00dbfdc0abf0f3f39bacc528590a27638b61e0e45ad",
+      "normalization": "trailing blank lines from text-block delimiter removed"
+    },
+    {
+      "path": "src/features/connectors/browser-launch-policy.test.ts",
+      "comparison": "modified",
+      "supplied_sha256": "b743ab689f270d75b022852a8b4782ca122a55bcb8f4f2e61326fb4a93e0d30b",
+      "disposition": "imported; mandatory hardening and fresh verification pending",
+      "imported_sha256": "6ecfa6a48ebec75e8209969eebffc0ece588a24f87c800f21ade9718b60994d1",
+      "normalization": "trailing blank lines from text-block delimiter removed"
+    },
+    {
+      "path": "src/features/connectors/contracts.ts",
+      "comparison": "modified",
+      "supplied_sha256": "69a83ea6e6fbda39000ce81042691b7e6f873f2de08a608160d60ae6eec979e1",
+      "disposition": "imported; mandatory hardening and fresh verification pending",
+      "imported_sha256": "ba452defa2a2ecd6033aa9601eb510bdba1d37fd51f826eca81db5c954289cec",
+      "normalization": "trailing blank lines from text-block delimiter removed"
+    },
+    {
+      "path": "src/features/connectors/transport.ts",
+      "comparison": "modified",
+      "supplied_sha256": "f201c6bad878bdc8d40f17c7ae92cdc5636dda3e7ed3a87016cc4123a4cec42d",
+      "disposition": "imported; mandatory hardening and fresh verification pending",
+      "imported_sha256": "e781088e8bea81a0e16b8c3120aa330930dcfd7a0a7a54419741de5206414650",
+      "normalization": "trailing blank lines from text-block delimiter removed"
+    },
+    {
+      "path": "src/features/connectors/workbench-browser-commands.ts",
+      "comparison": "modified",
+      "supplied_sha256": "ca2d0f2c3267cb0818b5ae6ad89a0cf7212a74448b82ce90b6ead5904e172914",
+      "disposition": "imported; mandatory hardening and fresh verification pending",
+      "imported_sha256": "9ce586378b521a66a31fa9023b88175a44eb2ffa3435e41defe73b7f0dce8a29",
+      "normalization": "trailing blank lines from text-block delimiter removed"
+    },
+    {
+      "path": "src/features/connectors/workbench-browser-recorder.ts",
+      "comparison": "modified",
+      "supplied_sha256": "e1282ff12c6ddd8cbe142f6b8a96c5765d15aa81f08dae9cf18549d85e08bc53",
+      "disposition": "imported; mandatory hardening and fresh verification pending",
+      "imported_sha256": "55a68cc63324d217fa5a7acefb7ad88b01e4e5ab0e64cd9d0b92a2170926429c",
+      "normalization": "trailing blank lines from text-block delimiter removed"
+    },
+    {
+      "path": "src/features/connectors/workbench-browser-recorder.test.ts",
+      "comparison": "modified",
+      "supplied_sha256": "43dd7601a8b6c3508e38e519830edac8b05a5a1fe164dbb2a3024faed7e79fef",
+      "disposition": "imported; mandatory hardening and fresh verification pending",
+      "imported_sha256": "e2461118d769e946518bce969749daa1bf57d2657321da6330237b9a072da34c",
+      "normalization": "trailing blank lines from text-block delimiter removed"
+    },
+    {
+      "path": "src/features/connectors/workbench-browser-scenarios.ts",
+      "comparison": "modified",
+      "supplied_sha256": "a75fa613a2b32a23121386ae7f57affac500aca2126981635672069751c17b16",
+      "disposition": "imported; mandatory hardening and fresh verification pending",
+      "imported_sha256": "b15e90aa7ac2983b8843f481e6d184fa9dd493e11012b2f6b83bdc285c53a0a1",
+      "normalization": "trailing blank lines from text-block delimiter removed"
+    },
+    {
+      "path": "src/features/connectors/workbench-browser-source.ts",
+      "comparison": "modified",
+      "supplied_sha256": "c691f002fee51d4768b3f257bef447e2948af983b00a1ef3e36fdde0fe97ace9",
+      "disposition": "imported; mandatory hardening and fresh verification pending",
+      "imported_sha256": "936568602afe33b24e870f6e07c3f2710914390af0dfb0bed08f035741c01684",
+      "normalization": "trailing blank lines from text-block delimiter removed"
+    },
+    {
+      "path": "tests/workbench-browser-source-security.test.ts",
+      "comparison": "modified",
+      "supplied_sha256": "9774e84c238e28c7708600d30d078a393d0df7ef9a4121c40711697dd1019f97",
+      "disposition": "imported; mandatory hardening and fresh verification pending",
+      "imported_sha256": "bad2c36d52cd32636e3af7d8aaab2a0c49f638fab71152b277b214c291e6c207",
+      "normalization": "trailing blank lines from text-block delimiter removed"
+    },
+    {
+      "path": "src/features/connectors/workbench/BrowserScenarioWizard.tsx",
+      "comparison": "modified",
+      "supplied_sha256": "b9c35037d2775b9c4ea0aaba0d427501066fe272095faf0a60c1d6bf66a80376",
+      "disposition": "imported; mandatory hardening and fresh verification pending",
+      "imported_sha256": "0f0c7707aec56d41bce78d6e3de4fc8b05a028043fdc3445dd2dcc7d85cb30bf",
+      "normalization": "trailing blank lines from text-block delimiter removed"
+    },
+    {
+      "path": "src/features/connectors/workbench/BrowserScenarioWizard.test.tsx",
+      "comparison": "modified",
+      "supplied_sha256": "a6bc0d2a607f118a7ae9c0605ef9a1410a6f5feed26fe16a0ad0d46828198981",
+      "disposition": "imported; mandatory hardening and fresh verification pending",
+      "imported_sha256": "45f8a2040aa5a904e4ad346d421a53650f8229ae6b64873de57302ba10c1cf5a",
+      "normalization": "trailing blank lines from text-block delimiter removed"
+    },
+    {
+      "path": "src/features/connectors/workbench/client.ts",
+      "comparison": "modified",
+      "supplied_sha256": "6c5a98f9e00782072da9ff7c0f1bf2d19c3361493d420288ab690bbd91e4f77b",
+      "disposition": "imported; mandatory hardening and fresh verification pending",
+      "imported_sha256": "05a4a3a6aac44c049c55d9825199faecfe815a5bc090719640e1a664f7065099",
+      "normalization": "trailing blank lines from text-block delimiter removed"
+    },
+    {
+      "path": "src/features/connectors/workbench/PersonalOkoWorkspace.tsx",
+      "comparison": "modified",
+      "supplied_sha256": "07804bc744b606d80459a6fdf6546ec2a535e15ce0ade2b42b817bc75cce1894",
+      "disposition": "imported; mandatory hardening and fresh verification pending",
+      "imported_sha256": "bdf15536fba29c73829066175f753ddb7efb1bf572fc2586978e5374440dcc35",
+      "normalization": "trailing blank lines from text-block delimiter removed"
+    },
+    {
+      "path": "src/features/connectors/workbench/PersonalOperationStatus.tsx",
+      "comparison": "modified",
+      "supplied_sha256": "363e0cdf8e3f94376d8b3c14afa933e79b8117166f7b62a273ea24aec187f4c2",
+      "disposition": "imported; mandatory hardening and fresh verification pending",
+      "imported_sha256": "73dba8f78254b656633307e46512fd6bb36b89e4a60748b4a4599c6a15e39486",
+      "normalization": "trailing blank lines from text-block delimiter removed"
+    },
+    {
+      "path": "src/features/connectors/workbench/personal-workspace-states.test.tsx",
+      "comparison": "modified",
+      "supplied_sha256": "a35597fa7d204bae2ef12417008712739f78d18927daf049563290e64368a41d",
+      "disposition": "imported; mandatory hardening and fresh verification pending",
+      "imported_sha256": "5796e4ef79972b823ae21a46e7cad560c5cf5e09a672c5a47454cb5c2acec8f9",
+      "normalization": "trailing blank lines from text-block delimiter removed"
+    },
+    {
+      "path": "src/features/connectors/workbench/WorkbenchProvider.tsx",
+      "comparison": "modified",
+      "supplied_sha256": "39337f0910abe94fb084f39ce7e9ec8c75224e1f31bf66ca37ab04dd2b4c9387",
+      "disposition": "imported; mandatory hardening and fresh verification pending",
+      "imported_sha256": "02801364c211a049de7da1c4810e86b4f83c072a83fb7edcefc8d84c77699fa8",
+      "normalization": "trailing blank lines from text-block delimiter removed"
+    },
+    {
+      "path": "src/features/connectors/workbench/WorkbenchProvider.test.tsx",
+      "comparison": "modified",
+      "supplied_sha256": "7da9bee32d213788e11e0a28e147ae07c608d155df95d80c90592a338d25e038",
+      "disposition": "imported; mandatory hardening and fresh verification pending",
+      "imported_sha256": "bb1208a60e44cef0ca4e87320d014b953d16691bfc71523d4e138aa339eadfe2",
+      "normalization": "trailing blank lines from text-block delimiter removed"
+    },
+    {
+      "path": "src/features/connectors/workbench/WorkbenchProvider.recovery-ui.test.tsx",
+      "comparison": "modified",
+      "supplied_sha256": "f77200a11ce4567776130a66edef1610a2499c44edd29803606cae1530dbaba4",
+      "disposition": "imported; mandatory hardening and fresh verification pending",
+      "imported_sha256": "1962065a5d4c1583bac119c73bf3dc7b422cc26e9aff11fce4cdb3923c2853ba",
+      "normalization": "trailing blank lines from text-block delimiter removed"
+    },
+    {
+      "path": "src/features/connectors/workbench-workflow-contracts.ts",
+      "comparison": "modified",
+      "supplied_sha256": "6e1646d3f8705a23778a82aa1a608fe5abf811ee5261995c132e6391125529b0",
+      "disposition": "imported; mandatory hardening and fresh verification pending",
+      "imported_sha256": "9fbcf36be9dda35d8b6ea1db6b27b93b4c626abbcc75b7f39f2ad076ea340128",
+      "normalization": "trailing blank lines from text-block delimiter removed"
+    },
+    {
+      "path": "src/features/connectors/workbench-workflow-module.ts",
+      "comparison": "modified",
+      "supplied_sha256": "fff2b6daaefdbe2d36bd4457bf3ce56c82913519e3d2055773cd023f91b4f700",
+      "disposition": "imported; mandatory hardening and fresh verification pending",
+      "imported_sha256": "d1686b28066151e3513bc8c7dac439cd9dfd17a41039a3d7796d3f8fbc971f98",
+      "normalization": "trailing blank lines from text-block delimiter removed"
+    },
+    {
+      "path": "src/features/connectors/workbench-workflow-service.ts",
+      "comparison": "modified",
+      "supplied_sha256": "1518ed9e7c5cdb27873e30c58429ea61a831472b25227b0e4c52ce8620b358ae",
+      "disposition": "imported; mandatory hardening and fresh verification pending",
+      "imported_sha256": "8a7cf1ea83c00706a006f25f5f77dd0f908f29aedcb03e77005908ad750807c5",
+      "normalization": "trailing blank lines from text-block delimiter removed"
+    },
+    {
+      "path": "src/features/connectors/workbench-workflow-service.test.ts",
+      "comparison": "modified",
+      "supplied_sha256": "4ba08fdc0f79c79f2a6f139d000be1f9f9d74f4e762bcd9d10790892da56ecd5",
+      "disposition": "imported; mandatory hardening and fresh verification pending",
+      "imported_sha256": "c35ca447e5e7bd55f1d63b0e09c8e2660e4bca306c1a10b9f5974029487d1b7d",
+      "normalization": "trailing blank lines from text-block delimiter removed"
+    },
+    {
+      "path": "src/features/connectors/workbench-workflow-store.ts",
+      "comparison": "modified",
+      "supplied_sha256": "1db5238293ffcf26dc677cb6b476ba62de34ab539c49729bcd989455e93074e0",
+      "disposition": "imported; mandatory hardening and fresh verification pending",
+      "imported_sha256": "77a8906683bada554b00402ebb4eff5cb84f9ee93425c3241d6e0c7611b2daff",
+      "normalization": "trailing blank lines from text-block delimiter removed"
+    },
+    {
+      "path": "src/features/connectors/workbench-workflow-store.test.ts",
+      "comparison": "modified",
+      "supplied_sha256": "b258d245a7a85b24304bbdbf2e7a2d5364b4755272bd9b834112ab1ae29a02e8",
+      "disposition": "imported; mandatory hardening and fresh verification pending",
+      "imported_sha256": "fdbb590278f65983e57528b8e20a2dd64a9d131f30343696ed6efb42baf7f14b",
+      "normalization": "trailing blank lines from text-block delimiter removed"
+    },
+    {
+      "path": "src/app/workbench/production-ui.css",
+      "comparison": "modified",
+      "supplied_sha256": "685dde79e3995510c5413e3f31d688cdde1a8cb9bcfa7dab662ecf6c70c79306",
+      "disposition": "imported; mandatory hardening and fresh verification pending",
+      "imported_sha256": "176d58c2a6692f1c7c1a0cf8e695500fdb0c617e1b57a90f4f61d9ba550ef1f2",
+      "normalization": "trailing blank lines from text-block delimiter removed"
+    },
+    {
+      "path": "src/server/main.ts",
+      "comparison": "modified",
+      "supplied_sha256": "be5a50f5ca200575758a748bd9e59ba0e39540a2a19efd7e8e6e2972d22b2da5",
+      "disposition": "imported; mandatory hardening and fresh verification pending",
+      "imported_sha256": "177fed2c2bef3da4ba4d8ffe8581b9d0a5f41e559c15aee4f32e23abf48219ef",
+      "normalization": "trailing blank lines from text-block delimiter removed"
+    },
+    {
+      "path": "src/server/workbench/application.ts",
+      "comparison": "modified",
+      "supplied_sha256": "84476a67d5ede5ca5d85d93332b2a2a02d8cfed14be943540edd4d0fdd0261f8",
+      "disposition": "imported; mandatory hardening and fresh verification pending",
+      "imported_sha256": "42c5a3e0a072e7fb03ee8e9e2599a9122abfe82960049d72364b29a5c7380c86",
+      "normalization": "trailing blank lines from text-block delimiter removed"
+    },
+    {
+      "path": "src/server/workbench/bootstrap.ts",
+      "comparison": "modified",
+      "supplied_sha256": "488175b498f29c9ba40588b97782f1b642162e57546fe476ba4863ec89b7a4dd",
+      "disposition": "imported; mandatory hardening and fresh verification pending",
+      "imported_sha256": "964499045fe3f4b47d6f8a0583fc052987b3df38c04e765a8c4ba9c2e35d199a",
+      "normalization": "trailing blank lines from text-block delimiter removed"
+    },
+    {
+      "path": "src/server/workbench/command-registry.ts",
+      "comparison": "modified",
+      "supplied_sha256": "b8bc259b84e8cb755d36f5eb39d4067906eda2cba8ea12efb14228d8fef346ce",
+      "disposition": "imported; mandatory hardening and fresh verification pending",
+      "imported_sha256": "26c2716f90564ffb0794635c9c6202321489092412aa032e7504eb26b94faa6b",
+      "normalization": "trailing blank lines from text-block delimiter removed"
+    },
+    {
+      "path": "src/server/workbench/jobs.ts",
+      "comparison": "modified",
+      "supplied_sha256": "d126623e0b693c3b67be92840f104f404225a51c3a3602059ddd95fe4a1b1a8e",
+      "disposition": "imported; mandatory hardening and fresh verification pending",
+      "imported_sha256": "e27b795a1ba9336581415437a941797e977c3ca125e8ba5cd3723532fd373806",
+      "normalization": "trailing blank lines from text-block delimiter removed"
+    },
+    {
+      "path": "src/server/workbench/oko-application.ts",
+      "comparison": "modified",
+      "supplied_sha256": "ceefdd8d217a33ade84f7e27b26794254d6f4256ed87f299accd84330b0215f9",
+      "disposition": "imported; mandatory hardening and fresh verification pending",
+      "imported_sha256": "aa49097338acb5f8116e13e02d05afd885a0258401a5fd98430131a1b466c1d5",
+      "normalization": "trailing blank lines from text-block delimiter removed"
+    },
+    {
+      "path": "src/server/workbench/routes.ts",
+      "comparison": "modified",
+      "supplied_sha256": "6726420057090e364e9264cf6fc38acb992c8056709886da209364fe381328f1",
+      "disposition": "imported; mandatory hardening and fresh verification pending",
+      "imported_sha256": "97481a3100acecf7d36c2fd73370fd9ca49360806bb11145db6aac26a40c525e",
+      "normalization": "trailing blank lines from text-block delimiter removed"
+    },
+    {
+      "path": "src/server/workbench/runtime-layout-adoption.ts",
+      "comparison": "modified",
+      "supplied_sha256": "67aeb70ba87f01b8770819bf1084fd10cb33e2ef81b83177348f1f899feff980",
+      "disposition": "imported; mandatory hardening and fresh verification pending",
+      "imported_sha256": "c37caa90fea72bffcbf51f74928768668f44e7a1437f9a2cf52704704241b9f2",
+      "normalization": "trailing blank lines from text-block delimiter removed"
+    },
+    {
+      "path": "src/features/workspace-maintenance/zip.ts",
+      "comparison": "modified",
+      "supplied_sha256": "5607d792832bef2ec2e4bce5e81e7ae953a6effa40f9fb8d0cc683ebe8119ec2",
+      "disposition": "imported; mandatory hardening and fresh verification pending",
+      "imported_sha256": "3714a8569d5f9154a92afa21189639507d19ca9e4601121e5a9e20c7627a5662",
+      "normalization": "trailing blank lines from text-block delimiter removed"
+    },
+    {
+      "path": "package.json",
+      "comparison": "modified",
+      "supplied_sha256": "26c090c33aa57a88ffca9c6991c5580e1e5321f6ebff421aa5bb944c4c439813",
+      "disposition": "imported; mandatory hardening and fresh verification pending",
+      "imported_sha256": "6d1f9b3e7570b59f59157299e54c667ce90a46e88baca42a5ddc835e30234f53",
+      "normalization": "trailing blank lines from text-block delimiter removed"
+    },
+    {
+      "path": "scripts/dev.mjs",
+      "comparison": "modified",
+      "supplied_sha256": "da9313855bc7fcbaa1c9584afa405d87c6b58365cbf8dffda3da4e70ea9377bf",
+      "disposition": "imported; mandatory hardening and fresh verification pending",
+      "imported_sha256": "d0ba6e7250885d182d9ce9faa6288baca608498f088e64471fd7e8fcd5f8e6e7",
+      "normalization": "trailing blank lines from text-block delimiter removed"
+    },
+    {
+      "path": "scripts/oko.ts",
+      "comparison": "modified",
+      "supplied_sha256": "176e0cc631ffc101a410ecfce12335873a196329a74c4ba25beea025507aad53",
+      "disposition": "imported; mandatory hardening and fresh verification pending",
+      "imported_sha256": "cd2bcc8de5ab449181ea61f4cbad6f189c8ec937bba9137042febfbfd5d7cb0b",
+      "normalization": "trailing blank lines from text-block delimiter removed"
+    },
+    {
+      "path": "src/features/connectors/workbench-browser-diagnostics.ts",
+      "comparison": "new",
+      "supplied_sha256": "53d29fb68137f09314e39f7ce3d676de4116cf00a2323024445d5bfbf1f312a0",
+      "disposition": "imported; mandatory hardening and fresh verification pending",
+      "imported_sha256": "7437ad039f3fc9014decd77400ab60b47af066d647197f28c1a1e9898f3134ec",
+      "normalization": "trailing blank lines from text-block delimiter removed"
+    },
+    {
+      "path": "src/features/connectors/workbench-browser-diagnostics.test.ts",
+      "comparison": "new",
+      "supplied_sha256": "1cc885b0a984509a9720fde933c3dee144c929ba9066cfaf413b9cf9c794cb37",
+      "disposition": "imported; mandatory hardening and fresh verification pending",
+      "imported_sha256": "58ac46a3c411be9962a8e29d3e712e7c2acb0b6951d382e18740e2cd9acadbcc",
+      "normalization": "trailing blank lines from text-block delimiter removed"
+    },
+    {
+      "path": "src/features/connectors/workbench-browser-profile-locks.ts",
+      "comparison": "new",
+      "supplied_sha256": "75c383a4591a4ef3fe337675a41f7af813d038b701c545fbe8f88f8eaa5227bf",
+      "disposition": "imported; mandatory hardening and fresh verification pending",
+      "imported_sha256": "c92f4ebd7faa6366b5d50ce93ee2e6ef32d304f948721b4185453f5dd613be9d",
+      "normalization": "trailing blank lines from text-block delimiter removed"
+    },
+    {
+      "path": "src/features/connectors/workbench-browser-profile-locks.test.ts",
+      "comparison": "new",
+      "supplied_sha256": "4e441799b158b919729d2312db9a730e0cbc16b166d6470a9a8f51e78c9ab274",
+      "disposition": "imported; mandatory hardening and fresh verification pending",
+      "imported_sha256": "a4fbfd4f2e26474dc677a34ea01ac14cc18fd2b0972cb9b5f465ddecb9bb5c5c",
+      "normalization": "trailing blank lines from text-block delimiter removed"
+    },
+    {
+      "path": "src/features/connectors/login-origins.test.ts",
+      "comparison": "new",
+      "supplied_sha256": "72d2fe604d519b210ba98ea4ad0b6d31aa7756be77c192b91f96568bfe44ada1",
+      "disposition": "imported; mandatory hardening and fresh verification pending",
+      "imported_sha256": "f3848350cc897da6c9955247ef6fabf418d2d67a2a0bded9d67b5756fe01cf9e",
+      "normalization": "trailing blank lines from text-block delimiter removed"
+    },
+    {
+      "path": "src/features/connectors/workbench/PersonalExportsList.tsx",
+      "comparison": "new",
+      "supplied_sha256": "cf6b26ca178191260b5bd093a3f29ad4ea959b71cf153520682dbaf7443a185d",
+      "disposition": "imported; mandatory hardening and fresh verification pending",
+      "imported_sha256": "b10d4383e9c0acf582527b409fd286ea4fa2bcdd13bf34da59a9526acb6821ff",
+      "normalization": "trailing blank lines from text-block delimiter removed"
+    },
+    {
+      "path": "src/features/connectors/workbench/PersonalExportsList.test.tsx",
+      "comparison": "new",
+      "supplied_sha256": "2ab36f65a6de462963a3ffb51e426a3c912b8da711e8e22ff691826137dc54f9",
+      "disposition": "imported; mandatory hardening and fresh verification pending",
+      "imported_sha256": "f028679267831386083a1097a67a3a619bf392cdc3a08468a5fc2878468a2b72",
+      "normalization": "trailing blank lines from text-block delimiter removed"
+    },
+    {
+      "path": "src/server/workbench/problem-from-error.ts",
+      "comparison": "new",
+      "supplied_sha256": "15fc6f99ad0389a9ab45699713944db9a44a679ea05640af7a49cc9b4242b701",
+      "disposition": "imported; mandatory hardening and fresh verification pending",
+      "imported_sha256": "f180d63ece539b3296c9c68923db581019118b06e52ef5d4f0258a5753eb2912",
+      "normalization": "trailing blank lines from text-block delimiter removed"
+    },
+    {
+      "path": "src/server/workbench/problem-from-error.test.ts",
+      "comparison": "new",
+      "supplied_sha256": "8a71a1283540fa3a6bf3843beeecb88a4956cfaa0a84a3c44045efed86cda0eb",
+      "disposition": "imported; mandatory hardening and fresh verification pending",
+      "imported_sha256": "32773b4b7b0f5840668bdd932a82128312b30cefb98ea97340f5bd4f72123282",
+      "normalization": "trailing blank lines from text-block delimiter removed"
+    },
+    {
+      "path": "src/server/log-capture-bootstrap.ts",
+      "comparison": "new",
+      "supplied_sha256": "a8841857878e835d998be5a5ad6145af1d3bab582470934c4a1631901b221256",
+      "disposition": "imported; mandatory hardening and fresh verification pending",
+      "imported_sha256": "fb6f17bbcd66b9db819682e0d7197b44c302f0ad403bc595ac3325d80414fb1b",
+      "normalization": "trailing blank lines from text-block delimiter removed"
+    },
+    {
+      "path": "scripts/log-capture.mjs",
+      "comparison": "new",
+      "supplied_sha256": "aeaab499ec729affa64c39af289b2bffc469bb8a30e7ec791350ce073cc9b81d",
+      "disposition": "imported; mandatory hardening and fresh verification pending",
+      "imported_sha256": "02ff0e1acce6c130217a790c3cf8af5b2d1d9601c78aaa7ac1969f5ef624a641",
+      "normalization": "trailing blank lines from text-block delimiter removed"
+    },
+    {
+      "path": "scripts/log-capture.d.mts",
+      "comparison": "new",
+      "supplied_sha256": "7da5338b926aa912147edfafb93df5162ce0772e80cc10ba33761b3ce92f2c10",
+      "disposition": "imported; mandatory hardening and fresh verification pending",
+      "imported_sha256": "1ba32311fb5da558993c34f93631d858f0489a12c818ab3c204aff8d56e20a96",
+      "normalization": "trailing blank lines from text-block delimiter removed"
+    },
+    {
+      "path": "scripts/logs.mjs",
+      "comparison": "new",
+      "supplied_sha256": "90eabd53ffc17b8621ef7d77ec814acd8ed4d9367b27c8c365c719a3e12225cf",
+      "disposition": "imported; mandatory hardening and fresh verification pending",
+      "imported_sha256": "a3bc219ce0e85848af66c2efa40e62a2e88469120ada004398618572fe6340fa",
+      "normalization": "trailing blank lines from text-block delimiter removed"
+    },
+    {
+      "path": "scripts/probes/sberbrowser-diagnose.ts",
+      "comparison": "new",
+      "supplied_sha256": "690afbe175618b7e37d9b16e3f957e6476a34a2111611d25a52a19713e3fbe3a",
+      "disposition": "imported; mandatory hardening and fresh verification pending",
+      "imported_sha256": "8f5e6ca55beca6fefc55186bd1755198099563fe40478482461d5fd662f38d01",
+      "normalization": "trailing blank lines from text-block delimiter removed"
+    },
+    {
+      "path": "config/site.local.json",
+      "comparison": "new",
+      "disposition": "local only; implement validated setup/example instead of private values"
+    },
+    {
+      "path": "docs/validation/oko-login-window-fix.md",
+      "comparison": "new",
+      "supplied_sha256": "177d3005f09c795311c0a3edbccee6688660a0d2c083de856faa05c6a673ae58",
+      "disposition": "imported; mandatory hardening and fresh verification pending",
+      "imported_sha256": "f9c0febd482984c4441b9390b57af0c95cda88c92a9ca00516a29972cdfdb4e1",
+      "normalization": "trailing blank lines from text-block delimiter removed"
+    },
+    {
+      "path": "docs/validation/oko-raw-exports.md",
+      "comparison": "new",
+      "supplied_sha256": "3b8aa657f246b6e7faa2104c1e2cfa91e716d79642565f39d2cc4a779096c726",
+      "disposition": "imported; mandatory hardening and fresh verification pending",
+      "imported_sha256": "3b8aa657f246b6e7faa2104c1e2cfa91e716d79642565f39d2cc4a779096c726",
+      "normalization": "trailing blank lines from text-block delimiter removed"
+    }
+  ]
+}

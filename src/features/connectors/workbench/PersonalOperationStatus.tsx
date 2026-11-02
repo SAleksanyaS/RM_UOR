@@ -15,12 +15,19 @@ export function okoProblemMessage(problem: { code: string; message: string }): s
   const known: Record<string, string> = {
     SOURCE_SCHEMA_CHANGED: 'Изменились столбцы или формат выгрузки. Откройте настройки, запишите актуальный файл и проверьте сопоставление.',
     BROWSER_CONFIGURATION_REQUIRED: 'Не удалось открыть личный браузер. Проверьте установленный браузер, его профиль и разрешение Chromium sandbox в ОС.',
+    BROWSER_LAUNCH_FAILED: 'Браузер не запустился с включённой защитой. Проверьте путь к исполняемому файлу, права chrome-sandbox и системные библиотеки; подробности — в технических сведениях или через npm run probe:sberbrowser.',
+    BROWSER_WINDOW_CLOSED: 'Окно браузера закрылось до завершения операции. Откройте окно входа заново и повторите. Если перезапускался сервер разработки, окна закрываются автоматически.',
+    BROWSER_URL_BLOCKED: 'Переход заблокирован: адрес входа вне разрешённых источников. Добавьте точный адрес SSO в личный профиль.',
+    SOURCE_CANCELLED: 'Ожидание или окно браузера закрыто до завершения. Откройте окно заново и повторите.',
+    REPORT_URL_REQUIRED: 'Сначала укажите адрес отчёта и сохраните личный профиль.',
     SCENARIO_REVIEW_REQUIRED: 'Завершите запись и сопоставление столбцов перед получением данных.',
     OPERATION_FAILED: 'Не удалось завершить получение. Проверьте доступ к отчёту и настройки сценария перед повтором.',
+    BROWSER_SESSION_EXHAUSTED: 'Сервер отчёта отказал: исчерпаны лицензии (активные сеансы). Закройте лишние вкладки/окна Qlik Sense, подождите и нажмите «Обновить» в окне браузера.',
     MANUAL_LOGIN_REQUIRED: 'Войдите в ОКО в личном окне браузера и продолжите это задание.',
     AUTH_REQUIRED: 'Войдите в ОКО в личном окне браузера и продолжите это задание.',
   };
-  return known[problem.code] ?? problem.message ?? problem.code;
+  // Never replace a concrete server message with the generic code text.
+  return known[problem.code] ?? (problem.message || problem.code);
 }
 
 /** All progress, actions and diagnostics come from the saved own job snapshot. */

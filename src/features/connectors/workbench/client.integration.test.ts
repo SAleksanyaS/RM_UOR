@@ -43,7 +43,11 @@ it('client creates and reopens a real own workflow through actual v1 HTTP, SQLit
     expect(opened).toMatchObject({ title: 'Мой отчёт', reportUrl: '', result: null });
     if ('jobId' in opened) throw Error('Unexpected asynchronous create');
     expect((await client.workspace(opened.workflowId)).current).toMatchObject({ workflowId: opened.workflowId, title: 'Мой отчёт' });
-    await expect(client.command('source.browser.record.start', { workflowId: opened.workflowId, expectedRevision: 'stale', reportUrl: 'https://report.example', parsingProfile: opened.parsingProfile })).rejects.toMatchObject({ code: 'REVISION_CONFLICT' });
+    const accepted = await client.command('source.browser.record.start', { workflowId: opened.workflowId, expectedRevision: 'stale', reportUrl: 'https://report.example', parsingProfile: opened.parsingProfile });
+    expect(accepted).toMatchObject({ status: 'queued' });
+    if (!('jobId' in accepted)) throw Error('Recording must use an asynchronous job');
+    await commands.idle();
+    await expect(client.job(accepted.jobId)).resolves.toMatchObject({ status: 'failed', error: { code: 'REVISION_CONFLICT' } });
     expect((await client.workspace(opened.workflowId)).current?.revision).toBe(opened.revision);
   } finally { await app.close(); repository.close(); const target = path.resolve(root); if (!target.startsWith(path.resolve(realpathSync.native(tmpdir())) + path.sep) || !path.basename(target).startsWith('uor-oko-client-')) throw Error('Invalid test cleanup'); rmSync(target, { recursive: true, force: true }); }
 });

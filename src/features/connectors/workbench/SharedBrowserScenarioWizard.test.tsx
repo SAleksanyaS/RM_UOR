@@ -59,7 +59,7 @@ it('curator_records_reviews_filters_and_saves_draft_without_json', async () => {
 it('first unpublished source configures own profile and records through its exact private binding', async () => {
   const f = await fixture('curator', { unconfigured: true }, true);
   await screen.findByText('Личный браузер ещё не настроен.');
-  fireEvent.change(screen.getByLabelText('Установленный браузер'), { target: { value: 'edge' } }); await click('Сохранить личный профиль'); await screen.findByText('Личный профиль сохранён.');
+  fireEvent.change(screen.getByLabelText('Путь к СберБраузеру'), { target: { value: process.execPath } }); await click('Сохранить личный профиль'); await screen.findByText('Личный профиль сохранён.');
   await record(f);
   const request = f.requests.find(r => r.body?.name === 'source.browser.record.start')!.body!;
   expect(request.payload).toMatchObject({ ownDraft: { packageId: expect.any(String), sourceDraftId: expect.any(String), editToken: expect.stringMatching(/^draft:/) } });
@@ -72,7 +72,7 @@ it('first unpublished source configures own profile and records through its exac
 it('empty installation explains the missing context without inventing a source', async () => {
   const f = await createWorkbenchUiHarness({ role: 'curator', scenario: 'empty' }, { views: { data: () => <WorkbenchBrowserScenarioWizard sourceRef={{ entityType: 'source_definition', id: fixtureId(12), revision: 1 }} draftId={null} onDraftSaved={() => { throw Error('No source'); }} /> } });
   cleanup.push(f.close); await f.open('/data');
-  await screen.findByText(/Получите опубликованный каталог из main, затем выберите область/); expect(screen.queryByRole('button', { name: /записать действия/i })).toBeNull();
+  await screen.findByText(/Нет опубликованного контекста. Сначала создайте цель и собственный черновик источника/); expect(screen.queryByRole('button', { name: /записать действия/i })).toBeNull();
 });
 it('source setup hands its saved exact own source directly to the browser wizard', async () => {
   let f: Awaited<ReturnType<typeof createWorkbenchUiHarness>>;
@@ -192,7 +192,7 @@ it('background_job_preserves_form_and_focus', async () => {
 it('unconfigured profile and incomplete export may save an explicitly incomplete local draft', async () => {
   const f = await fixture('curator', { unconfigured: true, partial: true });
   await screen.findByText('Личный браузер ещё не настроен.');
-  fireEvent.change(screen.getByLabelText('Установленный браузер'), { target: { value: 'edge' } });
+  fireEvent.change(screen.getByLabelText('Путь к СберБраузеру'), { target: { value: process.execPath } });
   await click('Сохранить личный профиль');
   await screen.findByText('Личный профиль сохранён.');
   await record(f); fireEvent.change(screen.getByLabelText('Значение фильтра «Период»'), { target: { value: '2026-10' } });

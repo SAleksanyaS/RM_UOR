@@ -19,7 +19,7 @@ it('personal_record_download_correct_directory_enrich_download_and_restart_in_ch
   closes.push(async () => { await Promise.all([...contexts].map(context => context.close())); });
   const f = await createLocalBrowserRun({ browserLauncher: { async launchPersistent(_profile, folder, options) {
     try {
-      const context = await chromium.launchPersistentContext(folder, { ...options, executablePath, channel: undefined, headless: true }); contexts.add(context); launches.push(context);
+      const context = await chromium.launchPersistentContext(folder, { ...options, executablePath, channel: undefined, headless: true, chromiumSandbox: process.env.UOR_SYNTHETIC_CI !== '1' }); contexts.add(context); launches.push(context);
       context.once('close', () => contexts.delete(context)); for (const waiter of waiters.splice(0)) waiter.resolve(context); return context;
     } catch (error) { launchFailure = error; for (const waiter of waiters.splice(0)) waiter.reject(error); throw error; }
   } } }); closes.push(f.close);
@@ -28,11 +28,12 @@ it('personal_record_download_correct_directory_enrich_download_and_restart_in_ch
   const page = f.page;
   const failures: string[] = []; page.on('pageerror', error => failures.push(String(error)));
   try {
-    await page.goto(f.origin + '/data');
+    await page.goto(f.origin + '/data#personal-oko');
     await page.getByRole('button', { name: 'Создать первый сценарий' }).click();
+    await page.getByRole('button', { name: 'Создать сценарий' }).click();
     await page.getByRole('heading', { name: 'Новый отчёт ОКО' }).waitFor();
     await page.getByLabel('Адрес отчёта', { exact: true }).fill(report.origin + '/report');
-    await page.getByLabel('Установленный браузер', { exact: true }).selectOption('chrome');
+    await page.getByLabel('Путь к СберБраузеру', { exact: true }).fill(executablePath);
     await page.getByRole('button', { name: 'Сохранить личный профиль', exact: true }).click();
     await page.getByText('Личный профиль настроен · изменить', { exact: true }).waitFor();
     let before = launches.length;
@@ -42,21 +43,28 @@ it('personal_record_download_correct_directory_enrich_download_and_restart_in_ch
     await nativePage().locator('[data-testid="personal-ready"]').waitFor();
     await page.getByRole('button', { name: 'Завершить ручной вход', exact: true }).click();
     await page.getByRole('button', { name: 'Завершить ручной вход', exact: true }).waitFor({ state: 'hidden' });
-    before = launches.length;
-    await page.getByRole('button', { name: 'Выбрать элемент отчёта в браузере', exact: true }).click(); await launched(before);
+    const authenticatedPage = nativePage(); before = launches.length;
+    await page.getByRole('button', { name: 'Выбрать элемент отчёта в браузере', exact: true }).click(); await authenticatedPage.locator('[data-uor-marker-picker]').waitFor();
+    expect(launches.length).toBe(before); expect(nativePage()).toBe(authenticatedPage);
     await nativePage().locator('[data-testid="personal-ready"]').click();
     await page.getByRole('button', { name: 'Выбрать другой элемент отчёта', exact: true }).waitFor();
     await page.getByText('Как читать файл CSV / XLSX', { exact: true }).click();
     await page.locator('#source-delimiter').selectOption(';');
     before = launches.length;
-    await page.getByRole('button', { name: 'Начать запись действий', exact: true }).click(); await launched(before);
+    await page.getByRole('button', { name: 'Начать запись действий', exact: true }).click();
+    await page.getByText('Идёт запись в браузере. Завершите её скачиванием файла.', { exact: true }).waitFor();
+    expect(launches.length).toBe(before); expect(nativePage()).toBe(authenticatedPage);
     await nativePage().getByLabel('Период', { exact: true }).fill('2026-09'); await nativePage().getByLabel('Период', { exact: true }).press('Tab');
     await nativePage().getByLabel('Период', { exact: true }).fill('2026-10'); await nativePage().getByLabel('Период', { exact: true }).press('Tab');
     await nativePage().getByLabel('Состав', { exact: true }).selectOption('all');
     let exportBefore = report.exportCount();
     await nativePage().getByRole('button', { name: 'Выгрузить CSV', exact: true }).click({ noWaitAfter: true });
     await report.waitForExport(exportBefore); report.release();
+    await page.getByText('Скачивание завершено. Нажмите «Получить записанные шаги», чтобы принять шаги и столбцы файла.', { exact: true }).waitFor();
+    await page.getByRole('button', { name: 'Получить записанные шаги', exact: true }).click();
     await page.getByText('Запись завершена. Шаги и образец файла получены.', { exact: true }).waitFor();
+    await page.getByRole('heading', { name: 'Сопоставление столбцов — необязательно', exact: true }).click();
+    await page.getByRole('heading', { name: 'Справочник и обогащение — необязательно', exact: true }).click();
     for (const input of await page.locator('input[id^="parameter-"]').all()) await input.fill((await input.getAttribute('id'))?.includes('scope') ? 'all' : '2026-10');
     await page.getByRole('group', { name: 'Уникальный ключ строки', exact: true }).getByLabel('RowId', { exact: true }).check();
     await page.getByLabel('Ключ продукта для справочника', { exact: true }).selectOption('ProductAlias');
@@ -69,13 +77,13 @@ it('personal_record_download_correct_directory_enrich_download_and_restart_in_ch
     const upload = async (key: string, leader: string, map: boolean) => {
       await page.getByLabel('Файл справочника', { exact: true }).setInputFiles({ name: 'directory.csv', mimeType: 'text/csv', buffer: dictionary(key, leader) });
       await page.getByRole('button', { name: 'Прочитать столбцы справочника', exact: true }).click();
-      const section = page.getByRole('region', { name: 'Обогащение из справочника', exact: true });
+      const section = page.locator('details[aria-labelledby="oko-directory-title"]');
       if (map) for (const [label, column] of [ ['Ключ продукта в ОКО', 'key'], ['ID продукта (UUID)', 'productId'], ['Название продукта', 'productName'], ['ID кластера (UUID)', 'clusterId'], ['Название кластера', 'clusterName'], ['ID ДИТ (UUID)', 'ditId'], ['Название ДИТ', 'ditName'], ['ID руководителя кластера (UUID)', 'clusterLeaderId'], ['Руководитель кластера', 'clusterLeaderName'], ['ID руководителя продукта (UUID)', 'productLeaderId'], ['Руководитель продукта', 'productLeaderName'] ]) await section.getByLabel(label, { exact: true }).selectOption(column);
       await section.getByRole('button', { name: 'Применить справочник к предпросмотру', exact: true }).click();
       await page.getByText('Используется личный справочник для предпросмотра.', { exact: true }).waitFor();
     };
     const run = async (previousId: string | null) => {
-      const old = report.exportCount(); await page.getByRole('button', { name: 'Проверить сценарий и получить данные', exact: true }).click();
+      const old = report.exportCount(); await page.getByRole('button', { name: 'Получить файл ещё раз', exact: true }).click();
       await report.waitForExport(old); report.release();
       await expect.poll(async () => { const id = (await workspace()).current?.result?.resultId; return typeof id === 'string' && id !== previousId; }, { timeout: 30000 }).toBe(true);
       await page.getByRole('link', { name: 'Скачать обогащённый CSV', exact: true }).waitFor();
@@ -128,7 +136,7 @@ it('personal_record_download_correct_directory_enrich_download_and_restart_in_ch
     await page.reload(); await page.getByRole('heading', { name: 'Новый отчёт ОКО' }).waitFor();
     await f.request.session(); expect((await workspace()).workflows).toHaveLength(1);
     expect(Buffer.from(await (await f.request.response(oldLink)).arrayBuffer())).toEqual(enrichedBytes);
-    await page.goto('about:blank'); await f.restart(); await f.request.session(); await page.goto(f.origin + '/data');
+    await page.goto('about:blank'); await f.restart(); await f.request.session(); await page.goto(f.origin + '/data#personal-oko');
     await page.getByRole('heading', { name: 'Новый отчёт ОКО' }).waitFor();
     expect(Buffer.from(await (await f.request.response(oldLink)).arrayBuffer())).toEqual(enrichedBytes);
     const originalAfter = Buffer.from(await (await f.request.response('/api/v1/browser/results/' + enriched.resultId + '/original')).arrayBuffer());

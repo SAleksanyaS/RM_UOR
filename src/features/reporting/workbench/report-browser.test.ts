@@ -1,0 +1,12 @@
+import {it,expect} from 'vitest';
+import {createLocalRuntime,codeRoot} from '../../../../tests/workbench/helpers/runtime';
+import {createServer} from 'vite';
+import {chromium} from 'playwright';
+import {mkdir} from 'node:fs/promises';
+import path from 'node:path';
+it.skipIf(!process.env.UOR_TEST_BROWSER_EXECUTABLE)('groups the report editor beside an actual preview and reflows at narrow width',async()=>{
+ const f=await createLocalRuntime();let host:Awaited<ReturnType<typeof createServer>>|undefined,browser:Awaited<ReturnType<typeof chromium.launch>>|undefined;
+ try{host=await createServer({configFile:path.join(codeRoot,'vite.config.ts'),root:codeRoot,cacheDir:path.join(f.root,'.runtime/vite-cache'),server:{host:'127.0.0.1',port:f.ui,strictPort:true,proxy:{'/api':f.origin}}});await host.listen();browser=await chromium.launch({executablePath:process.env.UOR_TEST_BROWSER_EXECUTABLE!,headless:true,chromiumSandbox:process.env.UOR_SYNTHETIC_CI!=='1'});const page=await browser.newPage({viewport:{width:1440,height:1000}});page.setDefaultTimeout(15000);const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));await page.goto(`http://127.0.0.1:${f.ui}/reports`);await page.getByLabel('Режим работы').selectOption('curator');await page.getByLabel('Название отчёта').fill('Проверенный отчёт');await page.getByRole('button',{name:'Исключить Матрица команд и метрик'}).click();await page.getByRole('button',{name:'Предпросмотр влияния'}).click();await page.getByRole('region',{name:'Предпросмотр отчёта'}).getByText('271 / 290',{exact:true}).waitFor();const editor=await page.locator('.wb-report-editor').boundingBox(),preview=await page.locator('.wb-report-preview').boundingBox();expect(preview!.x).toBeGreaterThan(editor!.x+editor!.width-1);await page.getByRole('button',{name:'Сохранить версию',exact:true}).click();await page.getByText('Версия отчёта сохранена',{exact:true}).waitFor();
+ const out=process.env.UOR_UI_ARTIFACT_DIR;if(out){await mkdir(out,{recursive:true});await page.screenshot({path:path.join(out,'report-editor-desktop.png'),fullPage:true});}await page.setViewportSize({width:390,height:900});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);if(out)await page.screenshot({path:path.join(out,'report-editor-mobile.png'),fullPage:true});expect(errors).toEqual([]);
+ }finally{await browser?.close();await host?.close();await f.close();}
+},60000);

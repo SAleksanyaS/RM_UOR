@@ -1,3 +1,4 @@
+import { personalDestinations, defaultNavigation, personalFavoriteKey } from '../../domain/workbench/entities/preferences';
 import { z } from 'zod';
 import type { DirectoryEntity, PersonalPreferences } from '../../domain/workbench/entities';
 import type { Clock } from '../../domain/workbench/primitives';
@@ -15,9 +16,12 @@ export const preferenceSortFields:Record<string,readonly string[]> = {
   'snapshots.list':['recordedAt','title'],'search':['title','kind'],'notifications.list':['emittedAt','category','readAt'],'uor.queue':['title','state','recordedAt'],
 };
 export const personalPreferencesSchema = z.strictObject({
+  navigation:z.strictObject({favorites:z.array(z.union([z.enum(personalDestinations),z.strictObject({kind:z.enum(['goal','team']),id:uuidSchema}),z.strictObject({kind:z.literal('report'),id:uuidSchema,revision:z.number().int().positive().max(Number.MAX_SAFE_INTEGER)})])).max(100),recent:z.array(z.enum(personalDestinations)).max(9),startPage:z.enum(personalDestinations),showFavorites:z.boolean().optional()}).default(defaultNavigation),
+  rawTableColumns:z.record(z.string().regex(/^[a-f0-9]{64}$/),z.array(z.string().regex(/^col_(?:[1-9]\d{0,3})$/)).min(1).max(1000).refine(v=>new Set(v).size===v.length)).refine(v=>Object.keys(v).length<=200).optional(),
   context:globalContextSchema.nullable(),sorts:z.record(z.string(),z.array(sortSchema)),
-  visual:z.strictObject({theme:z.enum(['system','light','dark']),density:z.enum(['comfortable','compact'])}),notificationPersonId:uuidSchema.nullable().optional(),
+  visual:z.strictObject({theme:z.enum(['system','light','dark']),density:z.enum(['comfortable','compact']),sidebar:z.enum(['expanded','compact']).default('expanded')}),notificationPersonId:uuidSchema.nullable().optional(),
 }).superRefine((value,ctx) => {
+  for(const key of ['favorites','recent'] as const)if(new Set(value.navigation[key].map(personalFavoriteKey)).size!==value.navigation[key].length)ctx.addIssue({code:'custom',path:['navigation',key],message:'Duplicate destination'});
   for (const [query,sorts] of Object.entries(value.sorts)) if (!Object.hasOwn(preferenceSortFields,query) || sorts.some(sort => !preferenceSortFields[query].includes(sort.field)) || new Set(sorts.map(s => s.field)).size !== sorts.length) ctx.addIssue({code:'custom',path:['sorts',query],message:'Unknown or duplicate sort'});
 });
 const fail = (code:string,status=422):never => { throw new WorkbenchHttpError(status,code,code); };
@@ -34,7 +38,7 @@ export function createPreferencesService({repository,installationId,clock}:{repo
     const binding=ownership.read('preferences',installationId);
     if(!binding||binding.installationId!==installationId||binding.personId!==personId)fail('PREFERENCES_NOT_FOUND',404);
   };
-  const defaults = ():PersonalPreferences => ({context:null,sorts:{},visual:{theme:'system',density:'comfortable'},notificationPersonId:null});
+  const defaults = ():PersonalPreferences => ({navigation:defaultNavigation(),context:null,sorts:{},visual:{theme:'system',density:'comfortable',sidebar:'expanded'},notificationPersonId:null});
   const token = (row:Row|null) => row ? `preferences:${installationId}:${row.revision}` : null;
   const write = (revision:number,values:PersonalPreferences) => {
     sql.run('INSERT OR IGNORE INTO wb_preferences_personal(installation_id,revision,payload,updated_at) VALUES(?,?,?,?)',[installationId,revision,JSON.stringify(values),clock.now()]);
@@ -45,10 +49,12 @@ export function createPreferencesService({repository,installationId,clock}:{repo
     if (person && repository.readPublishedHead<DirectoryEntity>({entityType:'directory_entity',id:person})?.kind !== 'person') fail('PREFERENCES_PERSON_INVALID');
     const context = values.context; if (!context) return;
     const path = context.scopePath;
-    for (const [key,kind] of [['ditId','dit'],['clusterId','cluster'],['productId','product'],['teamId','team']] as const) if (path[key] && repository.readPublishedHead<DirectoryEntity>({entityType:'directory_entity',id:path[key]!})?.kind !== kind) fail('PREFERENCES_CONTEXT_INVALID');
+    for (const [key,kind] of [['ditId',path.rootKind??'dit'],['clusterId','cluster'],['productId','product'],['teamId','team']] as const) if (path[key] && repository.readPublishedHead<DirectoryEntity>({entityType:'directory_entity',id:path[key]!})?.kind !== kind) fail('PREFERENCES_CONTEXT_INVALID');
     const links = repository.readPublishedDirectoryLinks();
     const linked = (kind:string,from:string,to:string|null) => !to || links.some(link => link.kind === kind && 'from' in link && link.from.id === from && link.to.id === to);
-    if (!linked('dit_cluster',path.ditId,path.clusterId) || path.clusterId && !linked('cluster_product',path.clusterId,path.productId) || path.clusterId && !linked('cluster_team',path.clusterId,path.teamId) || path.productId && !linked('product_team',path.productId,path.teamId)) fail('PREFERENCES_CONTEXT_INVALID');
+    const rootKind=path.rootKind??'dit';
+    const rootLinked=!path.clusterId||(rootKind==='block'?links.some(link=>link.kind==='block_tribe'&&'from'in link&&link.from.id===path.ditId&&linked('tribe_cluster',link.to.id,path.clusterId)):linked(rootKind==='tribe'?'tribe_cluster':'dit_cluster',path.ditId,path.clusterId));
+    if (!rootLinked || path.clusterId && !linked('cluster_product',path.clusterId,path.productId) || path.clusterId && !linked('cluster_team',path.clusterId,path.teamId) || path.productId && !linked('product_team',path.productId,path.teamId)) fail('PREFERENCES_CONTEXT_INVALID');
     if (context.goalId && !repository.readPublishedHead({entityType:'core_goal_definition',id:context.goalId})) fail('PREFERENCES_CONTEXT_INVALID');
     if (context.resultMode === 'current' && context.snapshotId !== null || context.snapshotId && !repository.readPublishedHead({entityType:'agreed_snapshot',id:context.snapshotId})) fail('PREFERENCES_CONTEXT_INVALID');
   };

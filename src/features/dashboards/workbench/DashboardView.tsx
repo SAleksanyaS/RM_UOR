@@ -1,3 +1,4 @@
+import {cellProvenance,exactValue,ruleLabel,effectiveStateNames} from '../../evaluation/workbench/effective-matrix';
 import { useEffect,useRef,useState } from 'react';
 import { useGlobalContext,useWorkbench,useWorkbenchQuery } from '../../../app/workbench/context';
 import { useUnsavedChanges } from '../../../app/workbench/use-unsaved-changes';
@@ -22,53 +23,11 @@ export function DashboardView({reference}:{reference?:EntityRef}){
  useEffect(()=>{if(catalog.data)setOptions(previous=>cursor?[...new Map([...previous,...catalog.data!.items].map(item=>[item.ref.id,item])).values()]:catalog.data!.items);},[catalog.data,cursor,client]);
  const dashboard=useWorkbenchQuery<WorkbenchReadModels['dashboards.view']>('dashboards.view',context&&selected?configurationRequest(context,{ref:{entityType:'dashboard_def',id:selected}}):null);
  const preparation=session?.allowedCommands.includes('dashboard.draft.save');
- return <section className="wb-dashboards" aria-label="Дашборды"><PersonalView key={executionOwner(client)+":"+session?.personId}/><h2>Общие дашборды</h2><QueryFeedback loading={catalog.loading} error={catalog.error}/><label>Дашборд<select aria-label="Дашборд" value={selected} onChange={event=>{const value=event.target.value;leaveBuilder(()=>{setSelected(value);setEditing(false);setBuilderDirty(false);});}}><option value="">Выберите опубликованный дашборд</option>{selected&&!options.some(item=>item.ref.id===selected)&&<option value={selected}>Выбранный дашборд</option>}{options.map(item=><option key={item.ref.id} value={item.ref.id}>{item.title}</option>)}</select></label>{catalog.data?.page.nextCursor&&<button disabled={catalog.loading} onClick={()=>setCursor(catalog.data!.page.nextCursor)}>Ещё дашборды</button>}{!catalog.loading&&catalog.data&&!options.length&&<p>Общие дашборды ещё не опубликованы. {preparation?'Создайте дашборд в своём пакете.':'Получите проверенное обновление из main.'}</p>}
+ return <section className="wb-dashboards" aria-label="Дашборды"><h2>Общие дашборды</h2><QueryFeedback loading={catalog.loading} error={catalog.error}/><label>Дашборд<select aria-label="Дашборд" value={selected} onChange={event=>{const value=event.target.value;leaveBuilder(()=>{setSelected(value);setEditing(false);setBuilderDirty(false);});}}><option value="">Выберите опубликованный дашборд</option>{selected&&!options.some(item=>item.ref.id===selected)&&<option value={selected}>Выбранный дашборд</option>}{options.map(item=><option key={item.ref.id} value={item.ref.id}>{item.title}</option>)}</select></label>{catalog.data?.page.nextCursor&&<button disabled={catalog.loading} onClick={()=>setCursor(catalog.data!.page.nextCursor)}>Ещё дашборды</button>}{!catalog.loading&&catalog.data&&!options.length&&<p>Общие дашборды ещё не опубликованы. {preparation?'Создайте дашборд в своём пакете.':'Получите проверенное обновление из main.'}</p>}
  {preparation&&<div className="wb-dashboard-actions"><button onClick={()=>leaveBuilder(()=>{setEditing(null);setBuilderDirty(false);})}>Создать общий дашборд</button>{selected&&<button onClick={()=>leaveBuilder(()=>{setEditing({entityType:'dashboard_def',id:selected});setBuilderDirty(false);})}>Изменить общий дашборд</button>}</div>}{editing===false&&preparation&&<ConfigurationDrafts entityType="dashboard_def" onSelect={setEditing}/ >}{editing!==false&&<><button onClick={()=>leaveBuilder(()=>{setEditing(false);setBuilderDirty(false);})}>Закрыть конструктор</button><DashboardBuilder key={editing?.id??'new'} reference={editing} onDirtyChange={setBuilderDirty}/></>}
  <QueryFeedback loading={dashboard.loading} error={dashboard.error}/>{dashboard.data&&<><h2>{dashboard.data.definition.title}</h2>{dashboard.data.unavailableReason&&<p role="status">{reasonLabel(dashboard.data.unavailableReason)}</p>}{dashboard.data.definition.filters.map(filter=><ScopeFilter key={filter.schemaId} levels={filter.value.levels as string[]} showGoal={!!filter.value.showGoal}/>)}<div className="wb-dashboard-grid">{dashboard.data.blocks.map(block=><article key={block.id} className="wb-dashboard-block" style={{gridColumn:`span ${block.layout.w}`,minHeight:`${block.layout.h*5}rem`}} aria-label={blockNames[block.type]}><h3>{blockNames[block.type]}</h3><BlockRenderer block={block}/></article>)}</div>{!dashboard.data.blocks.length&&<p>В дашборде пока нет блоков.</p>}</>}
  {context?.goalId&&<CustomFieldsPanel key={context.goalId} objectRef={{entityType:'core_goal_definition',id:context.goalId}}/>}
  </section>;
-}
-function PersonalView(){
- const {client,preferences,refreshPreferences}=useWorkbench();
- const [theme,setTheme]=useState<PreferencesRead['values']['visual']['theme']>(preferences?.values.visual.theme??'system');
- const [density,setDensity]=useState<PreferencesRead['values']['visual']['density']>(preferences?.values.visual.density??'comfortable');
- const [busy,setBusy]=useState(false),[error,setError]=useState<unknown>(null),[readError,setReadError]=useState<unknown>(null),[saved,setSaved]=useState(false),[unknown,setUnknown]=useState(false);
- const pending=useRef<CommandRequest|null>(null),live=useRef(true),dirty=useRef(false),locked=useRef(false);
- useUnsavedChanges(dirty.current);
- useEffect(()=>{live.current=true;return()=>{live.current=false;};},[client]);
- useEffect(()=>{if(preferences&&!dirty.current){setTheme(preferences.values.visual.theme);setDensity(preferences.values.visual.density);}},[preferences]);
- const readBack=async()=>{
-  try{await refreshPreferences();if(live.current)setReadError(null);}
-  catch(failure){if(live.current)setReadError(failure);}
- };
- const refreshDisplay=async()=>{
-  if(locked.current)return;locked.current=true;setBusy(true);
-  try{await readBack();}finally{if(live.current){setBusy(false);locked.current=false;}}
- };
- const save=async()=>{
-  if(locked.current)return;locked.current=true;setBusy(true);setError(null);setReadError(null);setSaved(false);
-  try{
-   if(!pending.current){
-    const read=await client.query<PreferencesRead>('preferences.get',{context:null,filter:{},sort:[],page:{limit:50,cursor:null}});
-    if(!live.current)return;
-    pending.current={commandId:crypto.randomUUID(),name:'preferences.set',baseRevision:read.data.editToken,payload:{values:{...read.data.values,visual:{theme,density}}}};
-   }
-   const response=await client.command<CommandResult>(pending.current);
-   if('jobId'in response.data)throw Error('Ожидался ответ сохранения настроек');
-   // A confirmed mutation receipt is authoritative. A subsequent read failure
-   // must never turn it into an unknown mutation or offer to submit it again.
-   pending.current=null;dirty.current=false;
-   if(live.current){setUnknown(false);setSaved(true);}
-   await readBack();
-  }catch(failure){
-   if(live.current){
-    const definite=failure instanceof WorkbenchApiError&&[403,409,422].includes(failure.status);
-    if(definite)pending.current=null;
-    setUnknown(pending.current!==null&&!definite);setError(failure);
-   }
-  }finally{if(live.current){setBusy(false);locked.current=false;}}
- };
- return <section aria-label="Личный вид"><h2>Личный вид</h2><fieldset disabled={busy||unknown}><legend>Только на этом рабочем месте</legend><label>Тема<select aria-label="Тема" value={theme} onChange={event=>{dirty.current=true;setSaved(false);setTheme(event.target.value as typeof theme);}}><option value="system">Как в системе</option><option value="light">Светлая</option><option value="dark">Тёмная</option></select></label><label>Плотность представления<select aria-label="Плотность представления" value={density} onChange={event=>{dirty.current=true;setSaved(false);setDensity(event.target.value as typeof density);}}><option value="comfortable">Обычная</option><option value="compact">Компактная</option></select></label></fieldset><button disabled={busy} onClick={()=>void save()}>{unknown?'Проверить сохранение личного вида':'Сохранить личный вид'}</button>{error!==null&&<p role="alert">{workbenchErrorMessage(error)}</p>}{saved&&<p role="status">Личный вид сохранён</p>}{readError!==null&&<div role="alert"><p>Личный вид сохранён; обновить отображение пока не удалось. Повторите чтение настроек.</p><button disabled={busy} onClick={()=>void refreshDisplay()}>Обновить отображение</button></div>}<p>Настройки вида не меняют общие данные и методику.</p></section>;
 }
 function ScopeFilter({levels,showGoal}:{levels:string[];showGoal:boolean}){
  const {context,setContext}=useGlobalContext();const [error,setError]=useState<unknown>(null);const options=useWorkbenchQuery<WorkbenchReadModels['context.options']>('context.options',context?configurationRequest(context):null);if(!context)return null;
@@ -79,6 +38,8 @@ function ScopeFilter({levels,showGoal}:{levels:string[];showGoal:boolean}){
 function reasonLabel(reason:string):string{return ({AGREED_SNAPSHOT_UNAVAILABLE:'Согласованный срез не опубликован',NO_DATA:'Нет данных',NEEDS_CALCULATION:'Требуется расчёт',ASSIGNMENT_OUTSIDE_CONTEXT:'Назначение вне выбранной области',HISTORICAL_EVALUATION_TIME_UNAVAILABLE:'Историческое время расчёта неизвестно'} as Record<string,string>)[reason]??reason;}
 function BlockRenderer({block}:{block:DashboardBlockRead}){
  const {context}=useGlobalContext();const directory=useWorkbenchQuery<WorkbenchReadModels['context.options']>('context.options',context&&block.type==='execution-table'?configurationRequest(context):null);const names=Object.fromEntries((directory.data?.entities??[]).map(entity=>[entity.id,entity.name]));
+ if(block.type==='goal-matrix')return <GoalMetricMatrix block={block}/>;
+ if(block.type==='goal-comparison')return <div className="wb-dashboard-table"><p>Каждое назначение показано отдельно. Разные методики не усредняются.</p><table><thead><tr><th>Цель / область</th><th>{block.type==='goal-comparison'?'Результат':'Расчётное состояние'}</th><th>Полнота</th><th>Актуальность</th><th>Подтверждение УОР</th></tr></thead><tbody>{block.items.map(row=><tr key={row.ref.id}><td>{row.goal.title} · {row.scopeName??'Имя области не сохранено'}</td><td>{block.type==='goal-comparison'?displayExact(row.numericResult?.scorePercent):row.numericResult?.achievement==='met'?'Условие выполнено':row.numericResult?.achievement==='not_met'?'Условие не выполнено':row.manualStatus?.to??'Нет данных'}{block.type==='goal-comparison'&&row.unit?' '+row.unit:''}</td><td>{displayExact(row.numericResult?.coveragePercent)}</td><td>{goalCell(row,'freshness',context?.resultMode??'current')}</td><td>{row.attestation?'Подтверждено':'Нет подтверждения'}</td></tr>)}</tbody></table>{!block.items.length&&<p>В выбранной области нет назначений.</p>}</div>;
  if(block.type==='goal-table')return <div className="wb-dashboard-table"><table><thead><tr>{block.columns.map(column=><th key={column}>{columnLabels[column]}</th>)}</tr></thead><tbody>{block.items.map(row=><tr key={row.ref.id}>{block.columns.map(column=><td key={column}>{column==='title'?<ContextLink path={'/goals/'+row.goal.id} label={row.goal.title}/>:goalCell(row,column,context?.resultMode??'current')}</td>)}</tr>)}</tbody></table>{!block.items.length&&<p>Целей в выбранном контексте нет.</p>}</div>;
  if(block.type==='execution-table')return <><QueryFeedback loading={directory.loading} error={directory.error}/><div className="wb-dashboard-table"><table><thead><tr>{block.columns.map(column=><th key={column}>{columnLabels[column]}</th>)}</tr></thead><tbody>{block.items.map(item=><tr key={item.ref.id}>{block.columns.map(column=><td key={column}>{column==='title'?<ContextLink path={'/execution?ref='+item.ref.entityType+'/'+item.ref.id} label={item.title}/>:executionCell(item,column,names)}</td>)}</tr>)}</tbody></table>{!block.items.length&&<p>Работ и решений в выбранном контексте нет.</p>}</div></>;
  if(block.type==='data-issues')return block.items.length?<ul>{block.items.map((issue,index)=><li key={index}>{reasonLabel(issue.message)} · {issue.code} <ContextLink path="/data" label="Проверить данные"/></li>)}</ul>:<p>Проблем данных в выбранном контексте не найдено.</p>;
@@ -92,4 +53,12 @@ function executionCell(item:ExecutionReadItem,column:string,names:Record<string,
 }
 function TrendTable({trend}:{trend:NonNullable<Extract<DashboardBlockRead,{type:'metric-card'}>['trend']>}){
  return <div className="wb-dashboard-table"><table><caption>Временной ряд · {trend.mode==='agreed'?'согласованный':'текущий'}</caption><thead><tr><th>Дата / период</th><th>Значение</th><th>Дата исходных данных</th><th>Примечание</th></tr></thead><tbody>{trend.points.map((point,index)=><tr key={index}><td>{'friday'in point?point.friday:'date'in point?point.date:point.businessTime.kind==='as_of'?point.businessTime.date:point.businessTime.kind==='period'?point.businessTime.startInclusive+' — '+point.businessTime.endExclusive+' (не включая)':'Неизвестно'}</td><td>{displayExact(point.value)}</td><td>{point.sourceCapturedAt??'Неизвестна'}</td><td>{'warning'in point?point.warning??'Новое наблюдение':'Исходное наблюдение'}</td></tr>)}</tbody></table>{!trend.points.length&&<p>В выбранном периоде наблюдений нет.</p>}{trend.nextCursor&&<p>Показана часть ряда. Откройте историю цели для продолжения.</p>}{trend.qualityFlags.map(flag=><p key={flag}>{flag}</p>)}</div>;
+}
+
+export function GoalMetricMatrix({block}:{block:Extract<DashboardBlockRead,{type:'goal-matrix'}>}){
+ return <div className="wb-dashboard-table"><p>Участники × показатели. Каждое назначение и его методика показаны отдельно; значения участников не подменяют общий результат.</p>{block.groups.map(group=>{
+ const metrics=[...new Map(group.cells.map(c=>[c.metric.id+'/'+c.metric.revision,c.metric])).values()];
+ const scopes=[...new Map(group.cells.map(c=>[c.scope.kind+'/'+c.scope.id,c.scope])).values()];
+ return <section key={group.row.ref.id+'/'+group.row.ref.revision}><h4><ContextLink path={'/goals/'+group.row.goal.id} label={group.row.goal.title}/></h4><p>Назначение {group.row.assignment.id} / {group.row.assignment.revision} · методика {group.methodRef?.id} / {group.methodRef?.revision}</p>{group.unavailableReason&&<p role="status">{reasonLabel(group.unavailableReason)}</p>}<table><caption>{group.row.scopeName??'Историческое имя области не сохранено'}</caption><thead><tr><th scope="col">Участник</th>{metrics.map(m=><th scope="col" key={m.id+'/'+m.revision}>{m.name} · v{m.revision}</th>)}</tr></thead><tbody>{scopes.map(scope=><tr key={scope.id}><th scope="row">{scope.id===group.row.assignment.scope.id?group.row.scopeName??scope.id:scope.kind+' '+scope.id}</th>{metrics.map(m=>{const cell=group.cells.find(c=>c.scope.id===scope.id&&c.scope.kind===scope.kind&&c.metric.id===m.id&&c.metric.revision===m.revision)!;return <td key={m.id+'/'+m.revision}><strong>{exactValue(cell.selection.value)}</strong> {cell.metric.unit.label}<p>{ruleLabel(cell.rule.condition)} · {effectiveStateNames[cell.state]}</p><details><summary>Основание: {m.name} / {scope.id}</summary><p>{cellProvenance(cell)}</p>{cell.facts.map(f=><p key={f.id+'/'+f.revision}><ContextLink path={'/data?fact='+f.id+'&factRevision='+f.revision} label={'Исходный факт '+f.id+' / '+f.revision}/></p>)}{!cell.facts.length&&<ContextLink path={'/goals/'+group.row.goal.id+'#method'} label="Ожидаемый участник и методика"/>}</details></td>;})}</tr>)}</tbody></table></section>;
+ })}{!block.groups.length&&<p>В выбранной области нет назначений.</p>}</div>;
 }

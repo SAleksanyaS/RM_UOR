@@ -223,7 +223,9 @@ it('native installed Edge runs login recording completion and replay without acc
   f.trusted.operator.login = async () => {
     const cdp = await native.page().context().newCDPSession(native.page());
     nativeVersion = (await cdp.send('Browser.getVersion')).product.split('/')[1] ?? null; await cdp.detach();
-    await native.login();
+    // The second explicit operator login may already show the authenticated
+    // report when this synthetic server persists its cookie in the profile.
+    if (!await native.page().locator(native.input.authenticatedSelector).isVisible()) await native.login();
   };
   f.trusted.operator.record = async () => {
     await native.page().getByLabel('Период', { exact: true }).fill('2026-10');
@@ -242,7 +244,7 @@ it('native installed Edge runs login recording completion and replay without acc
   const stable = f.repository.getStateRevision(); const result = await probeOkoBrowser(f.input, f.deps);
   expect(result).toMatchObject({ status: 'blocked', acceptedSourceBinding: false });
   expect(result.checks).toContainEqual(expect.objectContaining({ code: 'EXPORT_COMPLETE', status: 'passed' }));
-  expect(native.launchCount()).toBeGreaterThanOrEqual(3); expect(native.openContexts()).toBe(0);
+  expect(native.launchCount()).toBe(2); expect(native.openContexts()).toBe(0);
   expect(f.repository.getStateRevision()).toBe(stable); expect(stable).not.toBe(before);
   expect(result.browser.version).toMatch(/^\d+(?:\.\d+){1,3}$/);
   await writeFile(path.resolve('.runtime/validation/workbench/continuation/t48-native-probe.json'), JSON.stringify({ report: publicOkoBrowserProbeReport(result), syntheticOnly: true, launchCount: native.launchCount(), deliveredRows: native.report.deliveries().at(-1)?.deliveredRows, repositoryUnchangedByProbe: f.repository.getStateRevision() === stable }, null, 2) + '\n');

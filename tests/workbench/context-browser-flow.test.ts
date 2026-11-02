@@ -35,10 +35,10 @@ it('fresh_user_selects_published_scope_time_and_source_context_in_main_chrome', 
     await page.getByLabel('Режим работы', { exact: true }).selectOption('viewer');
     await expect.poll(async () => (await f.request.session()).role).toBe('viewer');
     await page.getByText('Область и период', { exact: true }).click();
-    await page.getByLabel('ДИТ', { exact: true }).selectOption(fixtureId(73000));
+    await page.getByLabel('Область', { exact: true }).selectOption(fixtureId(73000));
     await page.getByLabel('Кластер', { exact: true }).selectOption(fixtureId(73001));
     await page.getByLabel('Продукт', { exact: true }).selectOption(fixtureId(73002));
-    await page.getByLabel('ДИТ', { exact: true }).selectOption(fixtureId(73010));
+    await page.getByLabel('Область', { exact: true }).selectOption(fixtureId(73010));
     expect(await page.getByLabel('Кластер', { exact: true }).inputValue()).toBe('');
     expect(await page.getByLabel('Продукт', { exact: true }).inputValue()).toBe('');
     await page.getByLabel('Кластер', { exact: true }).selectOption(fixtureId(73011));
@@ -59,6 +59,7 @@ it('fresh_user_selects_published_scope_time_and_source_context_in_main_chrome', 
     await page.getByRole('button', { name: 'Применить время', exact: true }).click();
     await page.getByLabel('Команда', { exact: true }).selectOption('');
     await page.getByRole('button', { name: 'Данные', exact: true }).click();
+    await page.getByRole('button', { name: 'Данные целей', exact: true }).click();
     await page.getByRole('button', { name: 'Цель выбора области', exact: true }).click();
     await page.getByRole('button', { name: 'Получить данные ОКО', exact: true }).click();
     await expect.poll(() => observed.length).toBeGreaterThan(0);

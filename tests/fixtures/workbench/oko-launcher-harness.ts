@@ -40,10 +40,12 @@ export async function createOkoLauncherHarness() {
   let launcher: ChildProcess | undefined, browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
   let managedBrowserExecutable: string | null = null;
   let nativeArgumentsPath: string | null = null;
+  const managedProfilePath = path.join(root, 'managed-profile-path.txt');
+  const managedConnections: Awaited<ReturnType<typeof chromium.connectOverCDP>>[] = [];
   const stop = () => stopOkoLauncher(launcher);
   const close = async (primaryError?: unknown) => closeOkoLauncherResources({
     saveEvidence: async () => { const directory = path.join(repository, '.runtime/validation/workbench/continuation'); await mkdir(directory, {recursive:true}); await writeFile(path.join(directory, 'oko-launcher-process.log'), logs.join('')); if (nativeArgumentsPath) { const args = await readFile(nativeArgumentsPath, 'utf8').catch(() => 'No managed launch recorded\n'); await writeFile(path.join(directory, 'oko-launcher-native-argv.txt'), args); } },
-    closeBrowser: async () => browser?.close(), stopLauncher: stop,
+    closeBrowser: async () => { await browser?.close(); await Promise.all(managedConnections.map(connection => connection.close().catch(() => {}))); }, stopLauncher: stop,
     closeReport: () => new Promise<void>(resolve => { report.closeAllConnections(); report.close(() => resolve()); }),
     removeProject: async () => {
       assert.equal(path.dirname(root), temp); assert.ok(path.basename(root).startsWith('uor-oko-launcher-'));
@@ -58,16 +60,20 @@ export async function createOkoLauncherHarness() {
       if (process.platform !== 'win32') {
         // The standard launcher remains a separate unmodified production process.
         // Only this explicitly selected test executable adapts its real native UI
-        // to a display-free runner. It changes no origin, TLS or sandbox option.
+        // to a display-free runner with an owned loopback CDP endpoint for trusted input.
+        // TLS/origins remain unchanged. The explicitly
+        // opted-in root-only synthetic CI exception is recorded in actual argv.
+        const syntheticSandbox = process.env.UOR_SYNTHETIC_CI === '1' ? '--no-sandbox' : '';
         const quote = (value: string) => "'" + value.replace(/'/g, "'\\''") + "'";
         nativeArgumentsPath = path.join(root, 'managed-browser-arguments.txt');
         managedBrowserExecutable = path.join(root, 'installed-headless-browser.sh');
         await writeFile(managedBrowserExecutable, '#!/bin/sh\n' +
-          `printf '%s\\n' ${quote('BEGIN NATIVE TEST BROWSER')} ${quote(installed)} '--headless' "$@" >> ${quote(nativeArgumentsPath)}\n` +
-          `exec ${quote(installed)} --headless "$@"\n`, { mode: 0o700, flag: 'wx' });
+          `printf '%s\\n' ${quote('BEGIN NATIVE TEST BROWSER')} ${quote(installed)} '--headless' ${quote(syntheticSandbox)} '--remote-debugging-address=127.0.0.1' '--remote-debugging-port=0' "$@" >> ${quote(nativeArgumentsPath)}\n` +
+          `for argument in "$@"; do case "$argument" in --user-data-dir=*) printf '%s' "\${argument#--user-data-dir=}" > ${quote(managedProfilePath)} ;; esac; done\n` +
+          `exec ${quote(installed)} --headless ${syntheticSandbox} --remote-debugging-address=127.0.0.1 --remote-debugging-port=0 "$@"\n`, { mode: 0o700, flag: 'wx' });
       }
     }
-    await Promise.all([cp(path.join(repository, 'src'), path.join(root, 'src'), { recursive: true }), mkdir(path.join(root, 'scripts')), mkdir(path.join(root, 'config'))]);
+    await Promise.all([cp(path.join(repository, 'src'), path.join(root, 'src'), { recursive: true }), cp(path.join(repository, 'scripts'), path.join(root, 'scripts'), { recursive: true }), cp(path.join(repository, 'data'), path.join(root, 'data'), { recursive: true }), cp(path.join(repository, 'materials'), path.join(root, 'materials'), { recursive: true }), mkdir(path.join(root, 'config'))]);
     await Promise.all(['package.json', 'tsconfig.json'].map(name => cp(path.join(repository, name), path.join(root, name))));
     await cp(path.join(repository, 'scripts/oko.ts'), path.join(root, 'scripts/oko.ts'));
     await symlink(path.join(repository, 'node_modules'), path.join(root, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir');
@@ -86,12 +92,30 @@ export async function createOkoLauncherHarness() {
       await waitFor(() => ready || launcher!.exitCode !== null, 'Standard launcher did not become ready');
       assert.equal(launcher.exitCode, null, logs.join(''));
     };
-    await start(); browser = await chromium.launch({ ...testBrowserSelection('chrome'), headless: true, chromiumSandbox: true });
+    await start(); browser = await chromium.launch({ ...testBrowserSelection('chrome'), headless: true, chromiumSandbox: process.env.UOR_SYNTHETIC_CI !== '1' });
     const page = await browser.newPage({ acceptDownloads: true }); page.setDefaultTimeout(18000);
     return { root, page, url, reportUrl, logs, telemetry, start, stop, close, exportBytes, downloads, managedBrowserExecutable,
       nativeArguments: () => nativeArgumentsPath ? readFile(nativeArgumentsPath, 'utf8') : Promise.resolve(null),
       expire: () => { authenticated = false; },
       reportAction: async (action: 'login' | 'marker' | 'record') => {
+        if (nativeArgumentsPath) {
+          // This test owns this launcher, wrapper and profile. Connect only to its
+          // fresh loopback endpoint and use native input so isTrusted stays real.
+          const profileDirectory = await readFile(managedProfilePath, 'utf8');
+          assert.ok(path.resolve(profileDirectory).startsWith(root + path.sep));
+          const [portText, endpoint] = (await readFile(path.join(profileDirectory, 'DevToolsActivePort'), 'utf8')).trim().split('\n');
+          const port = Number(portText); assert.ok(Number.isInteger(port) && port > 0 && port < 65536); assert.match(endpoint, /^\/devtools\/browser\/[a-zA-Z0-9-]+$/);
+          const connection = await chromium.connectOverCDP(`ws://127.0.0.1:${port}${endpoint}`, { noDefaults: true }); managedConnections.push(connection);
+          const reportPage = connection.contexts()[0].pages().find(candidate => candidate.url().startsWith(reportUrl)); assert.ok(reportPage, 'Owned report page missing');
+          if (action === 'login') { await reportPage.locator('#login').click(); await reportPage.locator('#ready').waitFor({ state: 'visible' }); }
+          if (action === 'marker') await reportPage.locator('#ready').click();
+          if (action === 'record') {
+            await reportPage.getByLabel('Period', { exact: true }).fill('October'); await reportPage.getByLabel('Period', { exact: true }).press('Tab');
+            await reportPage.getByLabel('Scope', { exact: true }).selectOption('dit');
+            await reportPage.locator('#open-export').click(); await reportPage.locator('#download-data').click(); await reportPage.locator('#export').click();
+          }
+          return;
+        }
         const id = ++serial; control = { id, action }; await waitFor(() => acknowledged === id, `Managed report did not perform ${action}. Telemetry: ${JSON.stringify(telemetry.slice(-8))}`);
       },
       waitReport: async (mode: 'login' | 'picker' | 'recorder', after = 0) => {

@@ -5,6 +5,7 @@ import { WorkbenchProvider, useGlobalContext, useWorkbench, useWorkbenchQuery } 
 import { WorkbenchClient } from './api-client';
 import { createWorkbenchApiHarness } from './testing/api-harness';
 import type { GlobalContext, QueryRequest } from '../../server/workbench/protocol';
+import { fixtureId } from '../../../tests/fixtures/workbench/factories';
 const closes: Array<() => Promise<void>> = [];
 afterEach(async () => { cleanup(); for (const close of closes.splice(0)) await close(); vi.restoreAllMocks(); window.history.replaceState(null, '', '/'); });
 it('ignores_obsolete_context_response', async () => {
@@ -148,4 +149,105 @@ it.each(['response', 'error'] as const)('ignores_an_already_dispatched_old_clien
   expect(global.persistenceError).toBeNull();
   expect(a.requests.filter(r => r.body?.name === 'preferences.set')).toHaveLength(1);
   expect(b.requests.filter(r => r.body?.name === 'preferences.set')).toHaveLength(0);
+});
+it('serializes appearance and context writes without dropping either preference',async()=>{
+ const h=await createWorkbenchApiHarness({role:'viewer',scenario:'scope-split'});closes.push(h.close);
+ let global!:ReturnType<typeof useGlobalContext>,wb!:ReturnType<typeof useWorkbench>;
+ function Probe(){global=useGlobalContext();wb=useWorkbench();return <p>{wb.loading?'loading':'ready'}</p>;}
+ render(<WorkbenchProvider client={h.client}><Probe/></WorkbenchProvider>);await screen.findByText('ready');
+ await act(async()=>{await Promise.all([wb.saveAppearance({theme:'dark',sidebar:'compact'}),global.setContext({time:{kind:'as_of',date:'2026-10-29'}})]);});
+ expect(wb.preferences?.values.visual).toMatchObject({theme:'dark',sidebar:'compact'});
+ expect(wb.preferences?.values.context?.time).toEqual({kind:'as_of',date:'2026-10-29'});
+});
+it('never applies an old appearance response after changing clients',async()=>{
+ const a=await createWorkbenchApiHarness({role:'viewer',scenario:'empty'}),b=await createWorkbenchApiHarness({role:'viewer',scenario:'empty'});closes.push(a.close,b.close);
+ let release!:()=>void,started!:()=>void;const gate=new Promise<void>(r=>{release=r;}),sent=new Promise<void>(r=>{started=r;});
+ const client=new WorkbenchClient({fetch:async(input,init)=>{const response=await a.fetch(input,init);if(String(input).endsWith('/commands')){started();await gate;}return response;}});
+ let wb!:ReturnType<typeof useWorkbench>;function Probe(){wb=useWorkbench();return <p>{wb.loading?'loading':'ready'}</p>;}
+ const view=render(<WorkbenchProvider client={client}><Probe/></WorkbenchProvider>);await screen.findByText('ready');
+ let save!:Promise<void>;act(()=>{save=wb.saveAppearance({theme:'dark'});});await sent;
+ view.rerender(<WorkbenchProvider client={b.client}><Probe/></WorkbenchProvider>);await screen.findByText('ready');
+ await act(async()=>{release();await save;});expect(wb.preferences?.values.visual.theme).toBe('system');expect(wb.appearancePending).toBe(false);
+});
+
+it('persists navigation with merged appearance and respects only bare-root start page',async()=>{
+ const h=await createWorkbenchApiHarness({role:'viewer',scenario:'empty'});closes.push(h.close);
+ let wb!:ReturnType<typeof useWorkbench>,g!:ReturnType<typeof useGlobalContext>;
+ function Probe(){wb=useWorkbench();g=useGlobalContext();return <p>{wb.loading?'loading':'ready'}</p>;}
+ const view=render(<WorkbenchProvider client={h.client}><Probe/></WorkbenchProvider>);await screen.findByText('ready');
+ await act(async()=>{await Promise.all([wb.saveNavigation({kind:'favorite',path:'/data'}),wb.saveNavigation({kind:'start',path:'/data'}),wb.saveAppearance({theme:'dark'})]);});
+ act(()=>g.navigate('/knowledge'));await waitFor(()=>expect(wb.preferences?.values.navigation?.recent).toEqual(['/knowledge']));
+ expect(wb.preferences?.values.navigation).toEqual({favorites:['/data'],recent:['/knowledge'],startPage:'/data'});
+ expect(wb.preferences?.values.visual.theme).toBe('dark');view.unmount();
+ window.history.replaceState(null,'','/');const second=render(<WorkbenchProvider client={h.client}><Probe/></WorkbenchProvider>);await screen.findByText('ready');expect(window.location.pathname).toBe('/data');second.unmount();
+ window.history.replaceState(null,'','/reports#weekly');render(<WorkbenchProvider client={h.client}><Probe/></WorkbenchProvider>);await screen.findByText('ready');expect(window.location.pathname+window.location.hash).toBe('/reports#weekly');
+});
+it('reconciles lost navigation receipt without duplicate mutation',async()=>{
+ const h=await createWorkbenchApiHarness({role:'viewer',scenario:'empty'});closes.push(h.close);
+ const client=new WorkbenchClient({fetch:async(input,init)=>{const r=await h.fetch(input,init);if(String(input).endsWith('/commands'))throw Error('lost');return r;}});
+ let wb!:ReturnType<typeof useWorkbench>;function Probe(){wb=useWorkbench();return <p>{wb.loading?'loading':'ready'}</p>;}
+ render(<WorkbenchProvider client={client}><Probe/></WorkbenchProvider>);await screen.findByText('ready');
+ await act(async()=>{await expect(wb.saveNavigation({kind:'favorite',path:'/data'})).rejects.toThrow('lost');});
+ expect(wb.appearancePending).toBe(true);await act(async()=>{await wb.recoverAppearance();});
+ expect(wb.preferences?.values.navigation?.favorites).toEqual(['/data']);expect(h.requests.filter(r=>r.body?.name==='preferences.set')).toHaveLength(1);
+});
+
+it('does not carry a pending favorite or late saved result into another client identity',async()=>{
+ const a=await createWorkbenchApiHarness({role:'viewer',scenario:'empty'}),b=await createWorkbenchApiHarness({role:'viewer',scenario:'empty'});closes.push(a.close,b.close);
+ let release!:()=>void,started!:()=>void;const gate=new Promise<void>(r=>release=r),sent=new Promise<void>(r=>started=r);
+ const client=new WorkbenchClient({fetch:async(input,init)=>{const r=await a.fetch(input,init);if(String(input).endsWith('/commands')){started();await gate;}return r;}});
+ let wb!:ReturnType<typeof useWorkbench>;function Probe(){wb=useWorkbench();return <p>{wb.loading?'loading':'ready'}</p>;}
+ const view=render(<WorkbenchProvider client={client}><Probe/></WorkbenchProvider>);await screen.findByText('ready');let save!:Promise<void>;
+ act(()=>{save=wb.saveNavigation({kind:'favorite',path:'/data'});});await sent;
+ view.rerender(<WorkbenchProvider client={b.client}><Probe/></WorkbenchProvider>);await waitFor(()=>expect(wb.client).toBe(b.client));await screen.findByText('ready');
+ await act(async()=>{release();await save;});expect(wb.preferences?.values.navigation?.favorites).toEqual([]);expect(wb.appearancePending).toBe(false);expect(b.requests.some(r=>r.body?.name==='preferences.set')).toBe(false);
+});
+
+it('recovers a pre-send preference failure by explicitly retrying the original command',async()=>{
+ const h=await createWorkbenchApiHarness({role:'viewer',scenario:'empty'});closes.push(h.close);const attempts:unknown[]=[];
+ const client=new WorkbenchClient({fetch:async(input,init)=>{if(String(input).endsWith('/commands')){attempts.push(JSON.parse(String(init?.body)));if(attempts.length===1)throw Error('before send');}return h.fetch(input,init);}});
+ let wb!:ReturnType<typeof useWorkbench>;function Probe(){wb=useWorkbench();return <p>{wb.loading?'loading':'ready'}</p>;}
+ render(<WorkbenchProvider client={client}><Probe/></WorkbenchProvider>);await screen.findByText('ready');
+ await act(async()=>{await expect(wb.saveAppearance({theme:'dark'})).rejects.toThrow('before send');await expect(wb.recoverAppearance()).rejects.toThrow();});
+ expect(wb.appearanceRecovery).toBe('not_found');expect(wb.appearancePending).toBe(true);
+ await act(async()=>{await wb.retryAppearance();});expect(attempts).toHaveLength(2);expect(attempts[1]).toEqual(attempts[0]);expect(wb.preferences?.values.visual.theme).toBe('dark');expect(wb.appearancePending).toBe(false);
+});
+it.each(['completed','interrupted'] as const)('retains %s preference recovery through failed readback and does not acknowledge unrelated changes',async(status)=>{
+ const h=await createWorkbenchApiHarness({role:'viewer',scenario:'empty'});closes.push(h.close);let failRead=false,first=true;
+ const client=new WorkbenchClient({fetch:async(input,init)=>{if(String(input).endsWith('/queries/preferences.get')&&failRead)throw Error('readback failed');if(String(input).endsWith('/commands')&&first){first=false;if(status==='completed')await h.fetch(input,init);throw Error('lost');}return h.fetch(input,init);}});
+ const reconcile=client.reconcileCommand.bind(client);vi.spyOn(client,'reconcileCommand').mockImplementation(async id=>{const r=await reconcile(id);return {...r,data:{...r.data,status}};});
+ let wb!:ReturnType<typeof useWorkbench>;function Probe(){wb=useWorkbench();return <p>{wb.loading?'loading':'ready'}</p>;}
+ render(<WorkbenchProvider client={client}><Probe/></WorkbenchProvider>);await screen.findByText('ready');
+ await act(async()=>{await expect(wb.saveAppearance({theme:'dark'})).rejects.toThrow('lost');await expect(wb.saveNavigation({kind:'favorite',path:'/data'})).rejects.toThrow();});
+ expect(wb.preferences?.values.navigation?.favorites).toEqual([]);failRead=true;
+ await act(async()=>{await expect(wb.recoverAppearance()).rejects.toThrow('readback failed');});expect(wb.appearancePending).toBe(true);failRead=false;
+ await act(async()=>{if(status==='interrupted')await expect(wb.recoverAppearance()).rejects.toThrow(/прервано/);else await wb.recoverAppearance();});
+ expect(wb.appearancePending).toBe(false);expect(wb.preferences?.values.visual.theme).toBe(status==='completed'?'dark':'system');
+ await act(async()=>{await wb.saveNavigation({kind:'favorite',path:'/data'});});expect(wb.preferences?.values.navigation?.favorites).toEqual(['/data']);
+});
+
+it('queues mixed favorite ordering, visibility and default-view reset while preserving the selected context and recipient',async()=>{
+ const h=await createWorkbenchApiHarness({role:'viewer',scenario:'scope-split'});closes.push(h.close);
+ await h.client.session();
+ await h.client.command({commandId:crypto.randomUUID(),name:'preferences.set',baseRevision:null,payload:{values:{context:null,sorts:{'goals.list':[{field:'title',direction:'asc'}]},visual:{theme:'light',density:'compact'},rawTableColumns:{['a'.repeat(64)]:['col_2','col_1']},notificationPersonId:fixtureId(17)}}});
+ let wb!:ReturnType<typeof useWorkbench>,g!:ReturnType<typeof useGlobalContext>;
+ function Probe(){wb=useWorkbench();g=useGlobalContext();return <p>{wb.loading?'loading':'ready'}</p>;}
+ render(<WorkbenchProvider client={h.client}><Probe/></WorkbenchProvider>);await screen.findByText('ready');
+ const goal={kind:'goal' as const,id:fixtureId(11)},team={kind:'team' as const,id:fixtureId(104)},report={kind:'report' as const,id:fixtureId(99501),revision:3};
+ await act(async()=>{await Promise.all([wb.saveNavigation({kind:'favorite',path:goal}),wb.saveNavigation({kind:'favorite',path:'/data'}),wb.saveNavigation({kind:'favorite',path:team}),wb.saveNavigation({kind:'favorite',path:report}),wb.saveAppearance({theme:'dark',density:'compact'}),g.setContext({time:{kind:'as_of',date:'2026-10-29'}})]);});
+ expect(wb.preferences?.values.navigation?.favorites).toEqual([goal,'/data',team,report]);
+ await act(async()=>{await wb.saveNavigation({kind:'move',favorite:report,offset:-1});await wb.saveNavigation({kind:'display',visible:false});});
+ expect(wb.preferences?.values.navigation).toMatchObject({favorites:[goal,'/data',report,team],showFavorites:false});
+ act(()=>g.navigate('/reports?report='+report.id+'&reportRevision=3'));
+ await act(async()=>{await g.setContext({time:{kind:'as_of',date:'2026-10-30'}});});
+ expect(new URL(window.location.href).searchParams.get('report')).toBe(report.id);expect(new URL(window.location.href).searchParams.get('reportRevision')).toBe('3');
+ const context=wb.preferences?.values.context,recipient=wb.preferences?.values.notificationPersonId;
+ expect(wb.preferences?.values.sorts).toEqual({'goals.list':[{field:'title',direction:'asc'}]});expect(wb.preferences?.values.rawTableColumns).toEqual({['a'.repeat(64)]:['col_2','col_1']});expect(recipient).toBe(fixtureId(17));
+ const core=h.repository.exportWorkspaceCore();
+ await act(async()=>{await wb.saveNavigation({kind:'reset'});});
+ expect(wb.preferences?.values.navigation).toEqual({favorites:[],recent:[],startPage:'/overview'});
+ expect(wb.preferences?.values.visual).toEqual({theme:'system',density:'comfortable',sidebar:'expanded'});
+ expect(wb.preferences?.values.sorts).toEqual({});expect(wb.preferences?.values.rawTableColumns).toBeUndefined();
+ expect(wb.preferences?.values.context).toEqual(context);expect(wb.preferences?.values.notificationPersonId).toEqual(recipient);
+ expect(h.repository.exportWorkspaceCore()).toEqual(core);
 });

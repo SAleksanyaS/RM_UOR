@@ -1,0 +1,17 @@
+{
+  "browser": "156.0.8078.80",
+  "syntheticOnly": true,
+  "rows": 100000,
+  "renderedRows": 50,
+  "searchFindsLastRow": true,
+  "sorting": "server",
+  "afterRestart": true,
+  "noFactsCreated": true,
+  "fixtureSha256": "c5946da5e2596ed41b2e856d4de02384233925fb92a6163cb7fa11f4ce9a73ea",
+  "overflows": {
+    "320": false,
+    "1024": false,
+    "1440": false
+  },
+  "pageErrors": []
+}

@@ -7,7 +7,14 @@ import { z } from 'zod';
 import type { FastifyInstance } from 'fastify';
 import type { CoreGoalDefinition, GoalAssignment, SourceDefinition, SourceFieldMapping, MethodVersion, Template, DirectoryEntity, DirectoryLink } from '../../domain/workbench/entities';
 import type { Header } from '../../domain/workbench/primitives';
+import { registerEnvironmentQuery } from '../../features/system/workbench/environment-query';
 import { APP_VERSION } from '../../domain/app-version';
+import { SetupPackageService, registerSetupPackageFeature } from '../../features/workspace-maintenance/workbench/setup-package-service';
+import { UpdateChannelService, createUpdateNotificationProvider, registerUpdateChannelFeature } from '../../features/system/workbench/update-channel';
+import { createNativeUpdateProvider } from '../../features/system/workbench/update-provider';
+import { reportDefinitionSchema } from '../../features/reporting/workbench/contracts';
+import { defaultWeeklyPrompt } from '../../features/weekly-report/workbench/prompts';
+import { discoverSberBrowsers } from '../../../scripts/open-workbench-browser.mjs';
 import { prepareCodeUpdateStartup } from '../../../scripts/code-update-runtime.mjs';
 import { createAccessPolicyService, createUnavailableRegistryReadPort, type Capability } from '../../features/identity/workbench-access-policy';
 import { createOwnPolicyCache } from '../../features/identity/workbench-policy-cache';
@@ -52,6 +59,22 @@ import { parseWorkbenchTable } from '../../features/tabular-import/workbench-par
 import { normalizeParsedWorkbenchTable } from '../../features/connectors/workbench-source-normalizer';
 import { createOkoWorkflowService } from '../../features/connectors/workbench-workflow-service';
 import { createOkoWorkflowModule } from '../../features/connectors/workbench-workflow-module';
+import { createRawAcquisitionService, createRawAcquisitionModule } from '../../features/connectors/workbench-raw-acquisition';
+import { loadMaturityMaterials } from '../../features/maturity/workbench-materials';
+import { registerMaturityQueries } from '../../features/maturity/workbench-query';
+import { createReportService } from '../../features/reporting/workbench/service';
+import { registerReportCommands } from '../../features/reporting/workbench/commands';
+import { registerReportQueries } from '../../features/reporting/workbench/queries';
+import { createReportPdfRenderer } from '../../features/reporting/workbench/pdf';
+import { registerGoalBuilderQueries } from '../../features/goal-setup/workbench/template-query';
+import { queryWorkbench, type WorkbenchReadPorts } from '../../features/catalog/workbench-read-models';
+import { createWeeklyService } from '../../features/weekly-report/workbench/service';
+import { registerWeeklyCommands } from '../../features/weekly-report/workbench/commands';
+import { registerWeeklyQueries } from '../../features/weekly-report/workbench/queries';
+import { createGigaChatBrowserProvider } from '../../features/connectors/gigachat-browser-provider';
+import { createKnowledgeService } from '../../features/knowledge/workbench-service';
+import { registerKnowledgeCommands } from '../../features/knowledge/workbench-commands';
+import { registerKnowledgeQueries } from '../../features/knowledge/workbench-query';
 import { createExecutionService, registerExecutionCommands } from '../../features/execution/workbench-execution';
 import { createExecutionStore } from '../../features/execution/workbench-execution-store';
 import { createNotificationRuntime } from '../../features/execution/workbench-notification-runtime';
@@ -70,7 +93,8 @@ import { createCodeUpdateLauncherPort } from '../../features/system/code-update'
 import { RestoreService } from '../../features/workspace-maintenance/workbench/restore-service';
 import { backupFile } from '../../features/workspace-maintenance/workbench/workspace-archive';
 const port = z.number().int().min(1024).max(65535);
-const siteSchema = z.object({ port: port.default(4174), clientPort: port.default(5173), allowedWorkspaceRoots: z.array(z.string()).min(1), roleMode: z.enum(['local-preview', 'registry']).default('local-preview'), mainRepositoryId: z.string().min(1).default('RM_UOR'), repositoryUrl: z.string().default(''), publishedBranch: z.string().default('main'), gitExecutable: z.string().optional(), registry: z.object({ checkout: z.string(), expectedRemote: z.string(), acceptedBranch: z.string().default('main'), registryPath: z.string().default('registry.json'), repositoryId: z.string() }).nullable().default(null) }).refine(v => v.port !== v.clientPort);
+const updatePollingSchema = z.object({ pollIntervalMs: z.number().int().min(1000).max(3600000).default(60000), maxBackoffMs: z.number().int().max(86400000).default(3600000), jitterRatio: z.number().min(0).max(0.5).default(0.2) }).refine(value => value.maxBackoffMs >= value.pollIntervalMs);
+const siteSchema = z.object({ updates: updatePollingSchema.default({ pollIntervalMs:60000, maxBackoffMs:3600000, jitterRatio:0.2 }), port: port.default(4174), clientPort: port.default(5173), allowedWorkspaceRoots: z.array(z.string()).min(1), roleMode: z.enum(['local-preview', 'registry']).default('local-preview'), mainRepositoryId: z.string().min(1).default('RM_UOR'), repositoryUrl: z.string().default(''), publishedBranch: z.string().default('main'), gitExecutable: z.string().optional(), browserExecutable: z.string().max(4096).optional(), registry: z.object({ checkout: z.string(), expectedRemote: z.string(), acceptedBranch: z.string().default('main'), registryPath: z.string().default('registry.json'), repositoryId: z.string() }).nullable().default(null) }).refine(v => v.port !== v.clientPort);
 const unavailable = () => { throw new WorkbenchHttpError(503, 'INTEGRATION_NOT_READY', 'Trusted corporate provider is not configured'); };
 const version = (type: string, value: Header) => ({ entityType: type, id: value.id, revision: value.revision });
 /** Real production owners, no synthetic data or test-specific branch. */
@@ -119,6 +143,17 @@ export async function createWorkbenchRuntime(options: WorkbenchRuntimeOptions, i
         registerConfigurationCommands(commands, { drafts, preferences });
         registerExecutionCommands(commands, createExecutionService({ repository, drafts, store: createExecutionStore({ repository }), clock }));
         const queries = new QueryRegistry();
+        const setup = new SetupPackageService(repository);
+        const launcher = createCodeUpdateLauncherPort(root, config);
+        const updates = new UpdateChannelService({ repository, ...config.updates, provider: providers.updates ?? createNativeUpdateProvider({ projectRoot: codeRoot, config, launcherAvailable: () => launcher.available() }), now: () => clock.now() });
+        registerUpdateChannelFeature({ service: updates, commands, queries });
+        const materials = loadMaturityMaterials();
+        const materialsFor = (context: { installationId: string; ownAccess: { personId: string | null } }) => setup.commonValue({ installationId: context.installationId, personId: context.ownAccess.personId }, 'maturity-reference', 'maturity-reference', materials);
+        const knowledge = createKnowledgeService({ repository, drafts, materials, materialsFor });
+        registerKnowledgeCommands(commands, { drafts, service: knowledge });
+        registerKnowledgeQueries(queries, { repository, drafts, materials, materialsFor });
+        registerMaturityQueries(queries, { repository, materials, materialsFor });
+        const raw = createRawAcquisitionService({ repository, files });
         registerConfigurationQueries(queries, repository);
         registerPreferencesQueries(queries, preferences);
         registerPrivateCalculationPreviewQuery(queries, drafts);
@@ -151,16 +186,39 @@ export async function createWorkbenchRuntime(options: WorkbenchRuntimeOptions, i
         registerImportCommands(sourceCommands, imports);
         const workflow = createOkoWorkflowService({ repository, runtime, profiles, files, jobs, clock, preparationCapability: 'personal.write', setup: () => ({ hostname: hostname(), registryConfigured: config.registry !== null, message: localPolicy ? 'Временные локальные роли. Публикация недоступна.' : config.registry ? null : 'Реестр допуска не подключён.' }), recheckGuard: async (context) => { const fresh = await accessPolicy.assertCommandAllowed('oko.workflow.record.start'); if (fresh.personId !== context.ownAccess.personId)
                 throw new WorkbenchHttpError(403, 'ACCESS_RECHECK_REQUIRED', 'Owner changed'); } });
-        const notifications = createNotificationRuntime({ repository, clock, installationId, accessPolicy, commands, drafts, preferences: (id, personId) => ({ notificationPersonId: preferences.get(id, personId).notificationPersonId ?? null }), provider: providers.notifications ?? { async current(context, signal) { const settings = repository.readPublishedCatalog().filter(v => v.entityType === 'reminder_settings'); if (settings.length !== 1)
-                    throw new WorkbenchHttpError(409, 'REMINDER_SETTINGS_UNAVAILABLE', 'Published reminder settings are required'); return createNotificationProvider({ repository, settingsRef: { entityType: 'reminder_settings', id: settings[0].value.id }, sources: [createExecutionNotificationSource({ repository })] }).current(context, signal); } } });
+        registerEnvironmentQuery(queries, { root, commands, jobs, ports:{api:config.port,client:config.clientPort}, discoverBrowser:()=>discoverSberBrowsers({configuredExecutable:config.browserExecutable}), repositoryConfigured: !!config.repositoryUrl, registryConfigured: !!config.registry, async inspectOwn(context) { const list=context.ownAccess.personId?await raw.list(context,{limit:1}):{page:{total:0}}; const workspace=context.ownAccess.personId?await workflow.workspace(context):null; return {rawFiles:list.page.total,publishedDefinitions:repository.readPublishedCatalog().length,privateBrowserConfigured:workspace?.current?.profile.configured??false}; } });
+        const notifications = createNotificationRuntime({ repository, clock, installationId, accessPolicy, commands, drafts, preferences: (id, personId) => ({ notificationPersonId: preferences.get(id, personId).notificationPersonId ?? null }), provider: { async current(context, signal) {
+            const settings = repository.readPublishedCatalog().filter(v => v.entityType === 'reminder_settings');
+            if (!providers.notifications && settings.length > 1) throw new WorkbenchHttpError(409, 'REMINDER_SETTINGS_UNAVAILABLE', 'One published reminder configuration is required');
+            const business = providers.notifications ?? (settings.length === 1 ? createNotificationProvider({ repository, settingsRef: { entityType: 'reminder_settings', id: settings[0].value.id }, sources: [createExecutionNotificationSource({ repository })] }) : undefined);
+            return createUpdateNotificationProvider(updates, business).current(context, signal);
+        } } });
+        const readPorts: WorkbenchReadPorts = { repository, index, drafts, publishing: publishing.readPort, sources, notifications: notifications.service, jobs, preferences };
+        const reports = createReportService({ repository, clock, materials, materialsFor,
+            recipes: context => setup.catalog({ installationId: context.installationId, personId: context.ownAccess.personId }).records.filter(record => record.kind === 'report-recipe').map(record => reportDefinitionSchema.parse(record.value)),
+            readGoal: (context, selected) => queryWorkbench('goals.detail', { context: selected, filter: {}, sort: [], page: { limit: 100, cursor: null } }, context, readPorts),
+            pdf: providers.reportPdf ?? createReportPdfRenderer({ executablePath: async () => {
+                if (config.browserExecutable) return config.browserExecutable;
+                const found = (await discoverSberBrowsers()).candidates.filter(candidate => candidate.status === 'compatible');
+                return found.length === 1 ? found[0].executablePath : null;
+            } }),
+        });
+        registerReportCommands(commands, reports);
+        registerReportQueries(queries, reports);
+        registerGoalBuilderQueries(queries, repository);
+        const weeklyBrowser = providers.weeklyBrowser ?? createGigaChatBrowserProvider({ runtimeRoot: prepared.runtimeRoot, launcher: providers.browserLauncher });
+        const weekly = createWeeklyService({ repository, clock, materials, materialsFor, browser: weeklyBrowser, promptFor: context => setup.commonValue({ installationId: context.installationId, personId: context.ownAccess.personId }, 'weekly-prompt', 'weekly-default', defaultWeeklyPrompt) });
+        registerWeeklyCommands(commands, weekly);
+        registerWeeklyQueries(queries, weekly);
         const sessions = createLocalSessionStore({ clock });
         storage.admissionInvalidator(() => { sessions.invalidateAll(); sourceRevision = ''; });
         const archive: ArchiveDependencies = { repository, artifactRoot: path.join(prepared.runtimeRoot, 'maintenance'), files, clock, sessionId: context => context.sessionId ?? '', modules: new Map(), lifecycle: storage.lifecycle, workspace: storage.workspace };
         archive.modules = storage.initialize(archive, jobs, index.rebuild);
-        const launcher = createCodeUpdateLauncherPort(root, config), codeUpdateRecovery = createCodeUpdateRecovery({ repository, jobs, installationId, accessPolicy, launcher });
-        storage.background({ pause: async () => { await Promise.all([notifications.pause(), codeUpdateRecovery.pause(),runtime.pause()]); recorder.dispose(); login.dispose(); }, resume: () => { runtime.resume(); notifications.start(); codeUpdateRecovery.start(); } });
+        const codeUpdateRecovery = createCodeUpdateRecovery({ repository, jobs, installationId, accessPolicy, launcher });
+        storage.background({ pause: async () => { runtime.assertIdle(); weeklyBrowser.assertIdle(); await Promise.all([notifications.pause(), codeUpdateRecovery.pause(),runtime.pause()]); recorder.dispose(); login.dispose(); }, resume: () => { runtime.resume(); notifications.start(); codeUpdateRecovery.start(); } });
         const codeUpdate = new CodeUpdateService({ projectRoot: codeRoot, config, launcher, clock, jobs, jobSink: jobs });
         const maintenance = new MaintenanceService({ archive, jobs, jobSink: jobs, codeUpdate });
+        registerSetupPackageFeature({ service: setup, commands, queries, projectRoot: codeRoot, createRescue: context => maintenance.createBackup(context, { label: 'Before common setup', includeOriginals: true }) });
         const apply = maintenance.applyRestore.bind(maintenance);
         maintenance.applyRestore = (context, input) => storage.withCoordinator(context, () => apply(context, input));
         registerMaintenanceCommands(commands, maintenance);
@@ -168,7 +226,26 @@ export async function createWorkbenchRuntime(options: WorkbenchRuntimeOptions, i
         if (localPolicy)
             commands.register({ name: 'workbench.role.set', capability: 'personal.write', ownership: 'person', effect: 'local', execution: 'sync', inputSchema: z.strictObject({ role: z.enum(['viewer', 'curator']) }), outputSchema: z.strictObject({ role: z.enum(['viewer', 'curator']), mode: z.literal('local-preview') }), async handler(_context, input) { await localPolicy.setRole(input.role); return { result: { role: input.role, mode: 'local-preview' }, changedRefs: [], editToken: null }; } });
         commands.register({ name: 'code.update.check', capability: 'workspace.backup', ownership: 'person-if-present', effect: 'local', execution: 'async', inputSchema: z.strictObject({}), outputSchema: z.strictObject({ currentCommit: z.string(), targetCommit: z.string(), available: z.boolean(), launcherAvailable: z.boolean(), warnings: z.array(z.unknown()) }), async handler(context, input) { return { result: await maintenance.checkCodeUpdate(context, input), changedRefs: [], editToken: null }; } });
-        commands.register({ name: 'code.update.apply', capability: 'workspace.backup', ownership: 'person-if-present', effect: 'local', execution: 'async', resourceKey: () => 'workspace-maintenance', inputSchema: z.strictObject({ expectedCommit: z.string().regex(/^[a-f0-9]{40,64}$/), targetCommit: z.string().regex(/^[a-f0-9]{40,64}$/) }), outputSchema: z.strictObject({ currentCommit: z.string(), targetCommit: z.string(), rolledBack: z.boolean(), recoveryRequired: z.boolean() }), async handler(context, input) { return { result: await maintenance.applyCodeUpdate(context, input), changedRefs: [], editToken: null }; } });
+        commands.register({ name: 'code.update.apply', capability: 'workspace.backup', ownership: 'person-if-present', effect: 'local', execution: 'async', resourceKey: () => 'workspace-maintenance', inputSchema: z.strictObject({ expectedCommit: z.string().regex(/^[a-f0-9]{40,64}$/), targetCommit: z.string().regex(/^[a-f0-9]{40,64}$/) }), outputSchema: z.strictObject({ currentCommit: z.string(), targetCommit: z.string(), rolledBack: z.boolean(), recoveryRequired: z.boolean() }), async handler(context, input) {
+            const owner = { installationId: context.installationId, personId: context.ownAccess.personId };
+            const job = jobs.findByCommand(context.commandId, context.installationId);
+            const dispatched = job && jobs.checkpoints(job.jobId, context.installationId).some(value => value.kind === 'code-update-request');
+            if (!dispatched) {
+                await updates.poll(owner, 'manual', true);
+                const checked = await updates.activationInput(owner, input.targetCommit, context.ownAccess.policyState);
+                if (checked.expectedCommit !== input.expectedCommit) throw new WorkbenchHttpError(409, 'PREVIEW_STALE', 'The local version changed after preview');
+            }
+            updates.recordOutcome(owner, input.targetCommit, 'applying');
+            try {
+                const result = await maintenance.applyCodeUpdate(context, input);
+                updates.recordOutcome(owner, input.targetCommit, result.rolledBack || result.recoveryRequired ? 'error' : 'applied', result.recoveryRequired ? 'RECOVERY_REQUIRED' : result.rolledBack ? 'UPDATE_ROLLED_BACK' : null);
+                return { result, changedRefs: [], editToken: null };
+            } catch (error) {
+                const code = (error as { code?: unknown }).code;
+                updates.recordOutcome(owner, input.targetCommit, 'error', typeof code === 'string' && /^[A-Z][A-Z0-9_]{0,100}$/.test(code) ? code : 'UPDATE_FAILED');
+                throw error;
+            }
+        } });
         let sourceRevision = '';
         const refreshSources = () => { const revision = repository.getStateRevision(); if (sourceRevision === revision)
             return; const catalog = repository.readPublishedCatalog(); const entities = catalog.filter(v => v.entityType === 'directory_entity').map(v => v.value as DirectoryEntity), links = catalog.filter(v => v.entityType === 'directory_link').map(v => v.value as DirectoryLink); for (const entry of catalog.filter(v => v.entityType === 'core_goal_definition')) {
@@ -197,20 +274,21 @@ export async function createWorkbenchRuntime(options: WorkbenchRuntimeOptions, i
                 sources.saveAllowedContext({ installationId: context.installationId, goalId: payload.goalId, context: saved, revision }, prior, context.ownAccess.personId);
         } }
         const shared = createSharedBrowserResultReader({ sources });
-        const deps: WorkbenchApplicationDeps = { repository, clock, hostname, installationId, accessPolicy, commands, queries, jobs, files, sessions, readState: { publishedCommit: () => readAppliedPublication(repository)?.commit ?? null }, modules: [createOkoWorkflowModule({ service: workflow, prefix: 'oko.workflow' })], maintenance, notifications, evidence, allowedOrigins: [`http://127.0.0.1:${config.port}`, `http://localhost:${config.port}`, `http://127.0.0.1:${config.clientPort}`, `http://localhost:${config.clientPort}`], queryPorts: { repository, index, drafts, publishing: publishing.readPort, sources, notifications: notifications.service, jobs, preferences }, browserRecordings: { screenshot: recorder.screenshot }, browserResults: { async read(context, id, kind) { const personal = workflow.hasResult(context, id), captured = sources.hasOwnCapture({ installationId: context.installationId, profilePersonId: context.ownAccess.personId }, id); if (personal && captured)
+        const deps: WorkbenchApplicationDeps = { repository, clock, hostname, installationId, accessPolicy, commands, queries, jobs, files, sessions, readState: { publishedCommit: () => readAppliedPublication(repository)?.commit ?? null }, modules: [createOkoWorkflowModule({ service: workflow, prefix: 'oko.workflow' }), createRawAcquisitionModule(raw)], maintenance, notifications, evidence, allowedOrigins: [`http://127.0.0.1:${config.port}`, `http://localhost:${config.port}`, `http://127.0.0.1:${config.clientPort}`, `http://localhost:${config.clientPort}`], queryPorts: readPorts, rawFile: { read: raw.read }, browserRecordings: { screenshot: recorder.screenshot }, browserResults: { async read(context, id, kind) { const personal = workflow.hasResult(context, id), captured = sources.hasOwnCapture({ installationId: context.installationId, profilePersonId: context.ownAccess.personId }, id); if (personal && captured)
                     throw new WorkbenchHttpError(409, 'ARTIFACT_ID_COLLISION', 'Ambiguous owned artifact'); if (personal)
                     return workflow.readResult(context, id, kind); if (captured)
-                    return shared.read(context, id, kind); throw new WorkbenchHttpError(404, 'RESULT_NOT_FOUND', 'Own result not found'); } } };
+                    return shared.read(context, id, kind); throw new WorkbenchHttpError(404, 'RESULT_NOT_FOUND', 'Own result not found'); } }, browserExport: { async read(context, id) { if (!workflow.hasExport(context, id))
+                    throw new WorkbenchHttpError(404, 'EXPORT_NOT_FOUND', 'Own export not found'); return workflow.readExport(context, id); } } };
         let closed = false, activated = false, preparedUpdate = false;
         const requestReleases = new WeakMap<object, () => void>();
         const configure = async (app: FastifyInstance) => { app.addHook('onRequest', async (request) => { requestReleases.set(request, storage.admit()); }); app.addHook('onResponse', async (request) => { requestReleases.get(request)?.(); requestReleases.delete(request); }); app.addHook('onError', async (request) => { requestReleases.get(request)?.(); requestReleases.delete(request); }); app.addHook('onRequestAbort', async (request) => { requestReleases.get(request)?.(); requestReleases.delete(request); }); app.get('/api/health', async () => ({ status: 'ok', version: APP_VERSION })); };
         const activate = async (_app?: FastifyInstance) => { if (activated)
             return; await recoverWorkbenchCommands(deps); await codeUpdateRecovery.reconcile(); codeUpdateRecovery.start(); notifications.start(); storage.activate(); activated = true; };
         const close = async () => { if (closed)
-            return; closed = true; storage.freeze(); await notifications.stop(); await codeUpdateRecovery.pause(); await runtime.shutdown(); recorder.dispose(); login.dispose(); await workflow.shutdown(); if (!preparedUpdate)
+            return; closed = true; storage.freeze(); await notifications.stop(); await codeUpdateRecovery.pause(); await weeklyBrowser.shutdown(); await runtime.shutdown(); recorder.dispose(); login.dispose(); await workflow.shutdown(); if (!preparedUpdate)
             await commands.idle(); await storage.close(); };
         const systemContext = async (commandId: string = randomUUID()): Promise<CommandContext> => { const ownAccess = await accessPolicy.resolveOwnAccess(); return { repository, clock, installationId, commandId, requestId: randomUUID(), sessionId: 'code-update-system', ownAccess, actor: { hostname: hostname(), installationId, profilePersonId: ownAccess.personId } }; };
-        return { deps, configure, activate, close, config, codeRoot, projectRoot: root, services: { drafts, sources, publishing, workflow, maintenance, preferences, files, archive },
+        return { deps, configure, activate, close, config, codeRoot, projectRoot: root, services: { drafts, sources, publishing, workflow, raw, knowledge, reports, weekly, weeklyBrowser, setup, updates, maintenance, preferences, files, archive },
             async prepareUpdate(jobId: string) { const job = jobs.get(jobId, installationId); if (!job || jobs.name(jobId, installationId) !== 'code.update.apply')
                 throw new WorkbenchHttpError(409, 'JOB_NOT_FOUND', 'Exact update job is required'); await storage.withCoordinator({ installationId, commandId: job.commandId }, () => storage.lifecycle.quiesce(jobId)); const context = await systemContext(job.commandId); createCommandStore(repository).assertAccess(installationId, job.commandId, context.ownAccess.personId); const backup = await maintenance.createBackup(context, { label: 'Before code update', includeOriginals: true }); preparedUpdate = true; return { backupId: backup.backupId, sha256: backup.archiveSha256, bytes: backup.bytes }; },
             async releaseUpdate() { preparedUpdate = false; await storage.lifecycle.resume(); },

@@ -12,10 +12,12 @@ const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 const MAX_ARCHIVE_BYTES = 128 * 1024 * 1024;
 const MAX_FILE_BYTES = 16 * 1024 * 1024;
 const MAX_CONTENT_BYTES = 96 * 1024 * 1024;
-const topFiles = new Set(['.gitignore', '.nvmrc', '.node-version', 'AGENTS.md', 'GIGACODE.md', 'README.md', 'LICENSE', 'LICENSE.md', 'index.html', 'oko.html', 'package.json', 'package-lock.json', 'tsconfig.json', 'vite.config.ts', 'vitest.config.ts']);
-const currentDocs = new Set(['docs/MASTER_SPEC.md', 'docs/USER_GUIDE.md', 'docs/AI_PDLC_HANDOFF.md', 'docs/BANK_CONNECTORS_RUNBOOK.md', 'docs/ARCHIVE.md', 'docs/VALIDATION.md', 'docs/remaining-work.md', 'docs/remaining-by-environment.md', 'docs/OKO_WORKFLOW.md', 'docs/validation/workbench-acceptance.md', 'docs/releases/workbench-candidate.md']);
+const topFiles = new Set(['.gitattributes', 'start-rm-uor.mjs', 'START_RM_UOR.sh', 'START_RM_UOR.cmd', 'README_RU_LOCAL_START.txt', '.gitignore', '.nvmrc', '.node-version', 'AGENTS.md', 'GIGACODE.md', 'README.md', 'LICENSE', 'LICENSE.md', 'index.html', 'oko.html', 'package.json', 'package-lock.json', 'tsconfig.json', 'vite.config.ts', 'vitest.config.ts']);
+const currentDocs = new Set(['docs/validation/product-2026-11-02.md', 'docs/validation/product-2026-11-02-design.md', 'docs/validation/product-2026-11-02-txt.md', 'docs/validation/raw-preview-performance.md', 'docs/releases/product-0.6.md', 'docs/MASTER_SPEC.md', 'docs/USER_GUIDE.md', 'docs/AI_PDLC_HANDOFF.md', 'docs/BANK_CONNECTORS_RUNBOOK.md', 'docs/ARCHIVE.md', 'docs/VALIDATION.md', 'docs/remaining-work.md', 'docs/remaining-by-environment.md', 'docs/OKO_WORKFLOW.md', 'docs/validation/workbench-acceptance.md', 'docs/releases/workbench-candidate.md']);
 // Exact public approved contracts and linked current plans only; no evidence/history glob.
 const approvedWorkbenchDocs = new Set([
+  'docs/superpowers/specs/2026-11-02-product-evolution.txt',
+  'docs/superpowers/plans/2026-11-02-product-evolution.md',
   "docs/superpowers/specs/2026-11-01-product-redesign.txt",
   "docs/superpowers/plans/2026-11-01-product-redesign-completion.md",
   "docs/releases/redesign-candidate.md",
@@ -92,7 +94,10 @@ async function unusedOutput(root, candidate) {
 function safeArchivePath(name) {
   return typeof name === 'string' && name.length <= 2000 && !/[\\:\x00-\x1f]/.test(name) && !name.startsWith('/') && name.split('/').every(part => part && part !== '.' && part !== '..');
 }
+const approvedMaterials = new Set(['materials/maturity/2026-10-30/source.xlsx', 'materials/maturity/2026-10-30/source.pptx', 'materials/maturity/2026-10-30/manifest.json', 'data/reference/maturity-2026-10-30.json', 'data/reference/maturity-2026-10-30.csv']);
 function included(name) {
+  if (approvedMaterials.has(name)) return true;
+  if (/^docs\/validation\/product-2026-11-02-evidence\/(?:raw-before|raw-after|raw-browser|txt-manifest)\.json$/.test(name)) return true;
   // This tracked file is a public setup template; its placeholder-only content is checked below.
   if (name === 'config/curators.example.json') return true;
   const parts = name.split('/');
@@ -121,7 +126,7 @@ async function localAccounts(root) {
 }
 const hashEntry = (name, bytes) => ({ path: name, bytes: bytes.length, sha256: sha256(bytes) });
 const jsonBytes = value => Buffer.from(JSON.stringify(value, null, 2) + '\n');
-const zipBytes = zip => zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE', compressionOptions: { level: 6 } });
+const zipBytes = zip => zip.generateAsync({ type: 'nodebuffer', platform: 'UNIX', compression: 'DEFLATE', compressionOptions: { level: 6 } });
 
 /** Code-only delivery from a clean accepted Git revision. Private account hashes never enter the public archive. */
 export async function exportCleanDistribution({ projectRoot, outputPath, includeLocalAccounts = false }) {
@@ -147,7 +152,7 @@ export async function exportCleanDistribution({ projectRoot, outputPath, include
       const placeholder = z.array(z.object({ name: z.string().min(1).max(200), code: z.literal('REPLACE_WITH_PRIVATE_PASSWORD') }).strict()).min(1).max(100).safeParse(JSON.parse(bytes.toString('utf8')));
       if (!placeholder.success) throw new Error('Публичный пример кураторов должен содержать только placeholder REPLACE_WITH_PRIVATE_PASSWORD');
     }
-    zip.file(name, bytes); files.push(hashEntry(name, bytes));
+    zip.file(name, bytes, { unixPermissions: name === 'START_RM_UOR.sh' ? 0o100755 : 0o100644 }); files.push(hashEntry(name, bytes));
   }
   const generatedBaseline = !zip.file('catalog/catalog.json');
   if (generatedBaseline) { const bytes = jsonBytes(emptyCatalog()); zip.file('catalog/catalog.json', bytes); files.push(hashEntry('catalog/catalog.json', bytes)); }
@@ -157,7 +162,18 @@ export async function exportCleanDistribution({ projectRoot, outputPath, include
   const destination = await unusedOutput(root, outputPath ?? `.runtime/exports/RM_UOR-clean-${applicationVersion}-${commit.slice(0, 12)}.zip`);
   const privateDestination = includeLocalAccounts ? await unusedOutput(root, destination.replace(/\.zip$/i, '.private-local-accounts.zip')) : undefined;
   const registry = includeLocalAccounts ? await localAccounts(root) : undefined;
-  const instructions = Buffer.from(`# Чистая поставка РМ УОР\n\nВерсия ${applicationVersion}. Ревизия кода: ${commit}.\n\nРаспакуйте ZIP в разрешённую отдельную папку. Начните с README.md: текущие маршруты Workbench 0.5, затем docs/OKO_WORKFLOW.md и docs/agents/START_HERE.md. docs/USER_GUIDE.md — только историческое руководство 0.4.1. Установите согласованные Node/npm/Git, выполните npm ci и npm run build, затем создайте config/site.local.json по текущему README с существующей разрешённой папкой. Проверьте локальную конфигурацию; штатный первый запуск использует local-preview и локальный переключатель читатель/редактор. Запустите npm run dev. Для режима реестра hostname настройка выполняется только по утверждённым данным организации. Для подключения внутреннего Git используйте утверждённый порядок настройки организации.\n\nВ архиве нет истории Git, рабочей SQLite-базы, локальных конфигураций, паролей/хешей учётных записей, сессий, браузерных профилей, cookies, сертификатов, зависимостей и личных артефактов. manifest содержит SHA-256 каждого файла, кроме самого manifest. Пустой каталог первого запуска включён всегда; generatedBaseline в manifest показывает, создан ли он экспортом взамен отсутствующего/заполненного. Это поставка программы, не перенос рабочего набора; для рабочих данных используйте проверяемый перенос из обслуживания.\n\nЕсли отдельно создан PRIVATE ZIP учётных записей, храните и передавайте его по разрешённому приватному каналу. Он не входит в этот архив. Банковские источники, ОС, авторизация и Office требуют целевой приёмки.\n`);
+  const instructions = Buffer.from(`# Чистая поставка РМ УОР
+
+Версия ${applicationVersion}. Принятая ревизия: ${commit}.
+
+Это исходный ZIP для сопровождающего. Начните с README.md. Ежедневный запуск описан в README_RU_LOCAL_START.txt и docs/guides/product-0.6.md. Подготовленный Linux x64 комплект поставляется отдельно: в нём уже есть Node.js22.16.0/npm10.9.2 и закреплённые зависимости. Для самостоятельной подготовки исходного ZIP ИТ устанавливает эти версии, выполняет npm ci, npm run build и запускает scripts/install-local.mjs. Обычный пользователь запускает START_RM_UOR.sh или созданный ИТ ярлык; ежедневный запуск не устанавливает зависимости.
+
+В исходном ZIP нет .git, SQLite, личной конфигурации, учётного реестра, профилей браузера, cookies, ключей, сертификатов или node_modules. Разрешённые владельцем XLSX/PPTX модели зрелости и их нормализованные справочники включены явно: materials/maturity/2026-10-30 и data/reference. Состав и SHA-256 каждого файла перечислены в DISTRIBUTION_MANIFEST.json. Это не архив личного рабочего места.
+
+Исходный ZIP сам по себе не является Git-checkout и не может применить обновление кода через Git. Для этого используйте подготовленный комплект с чистым checkout или установленный ИТ clone принятого main. Общий пакет настроек переносит согласованные справочники и пресеты; личную историю переносит отдельная проверяемая копия рабочего места.
+
+Устройство допуска, адреса корпоративных Git/ОКО/Confluence/ГигаЧат и личный вход настраиваются в разрешённом контуре. Режим local-preview не выдаёт банковский допуск и не разрешает внешнюю отправку/применение принятого main. Целевую проверку СберБраузера152, сертификатов и Office выполняют на рабочем ПК по разделу приёмки руководства.
+`);
   zip.file('TRANSFER_README.md', instructions); files.push(hashEntry('TRANSFER_README.md', instructions));
   zip.file('DISTRIBUTION_MANIFEST.json', jsonBytes({ format: 'uor-clean-distribution-v1', commit, applicationVersion, createdAt: new Date().toISOString(), includesLocalAccounts: false, generatedBaseline, files }));
   const publicBytes = await zipBytes(zip), outputs = [{ path: destination, bytes: publicBytes }];

@@ -16,8 +16,10 @@ it('shared_wizard_records_tests_saves_and_reader_downloads_in_actual_edge_at_320
   await page.getByRole('button', { name: 'Выбрать признак открытого отчёта' }).click(); await f.native.waitForLaunch(markerLaunch);
   await f.native.login(); await f.native.page().locator('[data-testid="report-ready"]').click();
   await page.getByText('Признак отчёта: report-ready', { exact: true }).waitFor();
-  const recordLaunch = f.native.launchCount();
-  await page.getByRole('button', { name: 'Открыть СберБраузер и записать действия' }).click(); await f.native.waitForLaunch(recordLaunch);
+  const recordLaunch = f.native.launchCount(), preparedPage = f.native.page();
+  await page.getByRole('button', { name: 'Открыть СберБраузер и записать действия' }).click();
+  await page.getByText('Запись в отдельном окне браузера.', { exact: true }).waitFor();
+  expect(f.native.launchCount()).toBe(recordLaunch); expect(f.native.page()).toBe(preparedPage);
   await f.native.page().getByLabel('Период', { exact: true }).fill('2026-09'); await f.native.page().getByLabel('Период', { exact: true }).press('Tab'); await f.native.page().getByLabel('Период', { exact: true }).fill('2026-10'); await f.native.page().getByLabel('Период', { exact: true }).press('Tab');
   await f.native.page().getByLabel('Состав', { exact: true }).selectOption('all');
   await f.native.page().getByRole('button', { name: 'Выгрузить CSV' }).click({ noWaitAfter: true }); await f.report.waitForEvent('export-requested'); f.report.release('download');

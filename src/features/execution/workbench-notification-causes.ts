@@ -52,10 +52,10 @@ export function createExecutionNotificationSource({ repository }: { repository: 
 
 /** Explicit configured settings and typed sources. No guessed first calendar,
  * private draft data, source capture or external write is used by polling. */
-export function createNotificationProvider({ repository, settingsRef, sources }: { repository: WorkbenchRepository; settingsRef: EntityRef; sources: NotificationCauseSource[] }): NotificationProvider {
+export function createNotificationProvider({ repository, settingsRef, sources }: { repository: WorkbenchRepository; settingsRef: EntityRef; sources: NotificationCauseSource[] }) {
   entityRefSchema.parse(settingsRef);
   if (settingsRef.entityType !== 'reminder_settings' || new Set(sources.map(source => source.id)).size !== sources.length || sources.some(source => !/^[a-z][a-z0-9-]*$/.test(source.id))) throw new WorkbenchHttpError(422, 'NOTIFICATION_CONFIGURATION_INVALID', 'Invalid notification configuration');
-  return { async current(context, signal) {
+  return { async current(context:NotificationContext, signal?:AbortSignal) {
     const settingsValue = repository.readPublishedHead(settingsRef);
     if (!settingsValue) throw new WorkbenchHttpError(409, 'REMINDER_SETTINGS_UNAVAILABLE', 'Published reminder settings are unavailable');
     const settings = reminderSettingsSchema.parse(settingsValue);

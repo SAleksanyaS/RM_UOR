@@ -46,7 +46,7 @@ it('declining a local role switch preserves dashboard input without a mutation, 
   const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
   window.history.replaceState(null, '', '/overview');
   render(<WorkbenchApp client={client} />);
-  fireEvent.click(await screen.findByText('Мои дашборды и настройки представления'));
+  fireEvent.click(await screen.findByText('Мои дашборды'));
   fireEvent.click(await screen.findByRole('button', { name: 'Создать общий дашборд' }));
   const title = await screen.findByLabelText('Название дашборда') as HTMLInputElement;
   await waitFor(() => expect(title.closest('fieldset')?.disabled).toBe(false));

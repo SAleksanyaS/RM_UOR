@@ -14,9 +14,10 @@ it('T46_review_native_profile_filter_retest_and_completed_recording_new_url_reco
     if (login) await f.native.login();
     await f.native.page().locator('[data-testid="report-ready"]').click();
     await page.getByText('Признак отчёта: report-ready', { exact: true }).waitFor();
-    launched = f.native.launchCount();
+    const preparedPage = f.native.page(); launched = f.native.launchCount();
     await page.getByRole('button', { name: 'Открыть СберБраузер и записать действия', exact: true }).click();
-    await f.native.waitForLaunch(launched);
+    await page.getByText('Запись в отдельном окне браузера.', { exact: true }).waitFor();
+    expect(f.native.launchCount()).toBe(launched); expect(f.native.page()).toBe(preparedPage);
     await f.native.page().getByLabel('Период', { exact: true }).fill('2026-09');
     await f.native.page().getByLabel('Период', { exact: true }).press('Tab');
     await f.native.page().getByLabel('Период', { exact: true }).fill('2026-10');

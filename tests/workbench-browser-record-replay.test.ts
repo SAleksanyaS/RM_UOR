@@ -61,6 +61,10 @@ it('local_recorder_to_published_reader_capture_uses_downloaded_rows', async () =
   f.report.setExportMode('complete');
   expect(await f.captureDuringDelivery('cancel')).toMatchObject({ status: 'cancelled' }); expect(f.acceptedCaptures()).toHaveLength(prior);
   expect(await f.captureDuringDelivery('profile')).toMatchObject({ status: 'failed', error: { code: 'SOURCE_CONFIGURATION_CHANGED' } }); expect(f.acceptedCaptures()).toHaveLength(prior);
+  // A new logical operation may reuse a persistent profile only under the exact
+  // approved binding. Changing that profile requires a fresh live confirmation.
+  expect(await f.readerCapture()).toMatchObject({ status: 'waiting_user', stage: 'browser.auth' });
+  expect(await f.readerLogin()).toEqual({ hadCookie: true }); expect(f.acceptedCaptures()).toHaveLength(prior);
   const repeated = await f.repeatCaptureCommand(); expect(repeated.first.jobId).toBe(repeated.second.jobId); expect(repeated.completed.status).toBe('succeeded'); expect(f.acceptedCaptures()).toHaveLength(prior + 1);
   const latest = reader.sources.readCapture(repeated.completed.result!.captureRef, reader.owner.installationId)!, sql = reader.repository.sqlForModule('sources');
   expect(latest.capture.id).not.toBe(view.capture.id);

@@ -17,7 +17,7 @@ export function normalizeParsedWorkbenchTable({ table, mapping: unparsedMapping 
     if (numericColumns.has(field) && numericColumns.get(field) !== column) throw invalidMapping(); numericColumns.set(field, column);
   }
   const required = new Set([...mapping.rowKeyFields, ...Object.values(mapping.dimensionFields), ...numericColumns.values(),
-    ...[mapping.productKeyField, mapping.dateField, mapping.periodStartField, mapping.periodEndField, mapping.unitField].filter((column): column is string => column !== null)]);
+    ...[mapping.teamKeyField??null, mapping.productKeyField, mapping.dateField, mapping.periodStartField, mapping.periodEndField, mapping.unitField].filter((column): column is string => column !== null)]);
   if ([...required].some(column => !table.columns.includes(column) || table.rows.some(row => !Object.hasOwn(row.cells, column)))) throw new WorkbenchHttpError(422, 'SOURCE_SCHEMA_CHANGED', 'A saved mapped column is absent from the source table');
   const read = (cells: RawSourceRow['cells'], column: string | null): string | null => {
     if (column === null) return null; const cell = cells[column];

@@ -11,7 +11,7 @@ it('reads_owned_preferences_without_saving_or_accepting_identity_selectors', asy
   const h = await createWorkbenchApiHarness({ role: 'viewer', scenario: 'empty' }); cleanups.push(h.close);
   await h.client.session(); const revision = h.repository.getStateRevision();
   const request = { context: null, filter: {}, sort: [], page: { limit: 50, cursor: null } };
-  expect((await h.client.query('preferences.get', request)).data).toEqual({ values: { context: null, sorts: {}, visual: { theme: 'system', density: 'comfortable' }, notificationPersonId: null }, editToken: null });
+  expect((await h.client.query('preferences.get', request)).data).toEqual({ values: { navigation: { favorites: [], recent: [], startPage: '/overview' }, context: null, sorts: {}, visual: { theme: 'system', density: 'comfortable', sidebar: 'expanded' }, notificationPersonId: null }, editToken: null });
   expect(h.repository.getStateRevision()).toBe(revision);
   await expect(h.client.query('preferences.get', { ...request, filter: { installationId: 'foreign', role: 'chief' } })).rejects.toMatchObject({ status: 422 });
   const registry = new QueryRegistry();

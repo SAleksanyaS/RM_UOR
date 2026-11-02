@@ -109,6 +109,15 @@
 .wb-result-downloads { display:flex; flex-wrap:wrap; align-items:center; gap:14px; }
 .wb-result-downloads a { font-size:12px; white-space:nowrap; }
 .wb-download-link { display:inline-flex; align-items:center; gap:6px; text-decoration:none; font-weight:550; }
+.wb-personal-exports { background:var(--wb-surface); border:1px solid var(--wb-border); border-radius:9px; padding:24px; display:flex; flex-direction:column; gap:14px; }
+.wb-personal-exports .wb-section-header { display:flex; align-items:flex-start; justify-content:space-between; flex-wrap:wrap; gap:12px; }
+.wb-personal-exports .wb-section-header p { font-size:12px; color:var(--wb-muted); margin:6px 0 0; }
+.wb-personal-exports .wb-table-scroll { max-height:none; }
+.wb-personal-exports .wb-personal-table td:first-child { max-width:340px; overflow-wrap:anywhere; }
+.wb-export-confirmation { display:flex; align-items:center; flex-wrap:wrap; gap:12px; border:1px solid var(--wb-success-border,#b7ddc6); background:var(--wb-success-bg,#eef8f1); border-radius:8px; padding:12px 14px; color:var(--wb-accent,#1b7757); }
+.wb-export-confirmation strong { display:block; font-size:13px; }
+.wb-export-confirmation p { font-size:12px; color:var(--wb-muted); margin:2px 0 0; overflow-wrap:anywhere; }
+.wb-export-confirmation a { margin-left:auto; }
 .wb-result-metrics { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); padding:0 24px 23px; gap:16px; }
 .wb-result-metrics > div { border-left:1px solid var(--wb-border); padding-left:20px; }
 .wb-result-metrics > div:first-child { border-left:0; padding-left:0; }
@@ -430,3 +439,92 @@
   .wb-assignment-list li { align-items:flex-start; }
   .wb-pagination { justify-content:flex-start; }
 }
+
+/* Shared analytic workbench rhythm: semantic surfaces, readable data, no remote assets. */
+.wb-shell { --wb-radius:10px; --wb-shadow:0 12px 40px #082d2918; --wb-space:8px; }
+.wb-main { max-width:1680px; }
+.wb-main h1 { letter-spacing:-.7px; font-size:28px; }
+.wb-page-heading { margin-bottom:24px; padding-bottom:18px; border-bottom:1px solid var(--wb-border); }
+.wb-page-heading p { margin-top:6px; max-width:760px; line-height:1.6; }
+.wb-service-navigation { padding-top:8px; border-top:1px solid var(--wb-border); }
+.wb-brand-description { font-size:13px; font-weight:650; line-height:1.45; }
+.wb-navigation-caption { font-size:10px; font-weight:650; letter-spacing:1.4px; }
+.wb-shell .wb-navigation button { font-size:13px; min-height:42px; }
+.wb-header { min-height:66px; }
+.wb-shell button { transition:background-color 120ms ease,border-color 120ms ease; }
+.wb-shell input,.wb-shell textarea,.wb-shell select { max-width:100%; }
+.wb-shell fieldset { min-width:0; }
+.wb-shell .wb-appearance { width:min(100%,440px); max-height:100%; overflow:auto; align-self:flex-start; box-shadow:var(--wb-shadow); }
+.wb-appearance-fields { border:0; padding:0; display:grid; gap:18px; margin:24px 0 0; }
+.wb-muted { color:var(--wb-muted); }
+.wb-shell .wb-data-table { font-variant-numeric:tabular-nums; }
+.wb-shell .wb-data-table tbody tr:hover { background:var(--wb-surface-subtle); }
+.wb-shell .wb-data-table th { position:sticky; top:0; z-index:1; }
+.wb-shell .wb-data-table td { padding-block:14px; }
+.wb-shell[data-density=compact] .wb-data-table td,.wb-shell[data-density=compact] .wb-personal-table td { padding-block:8px; }
+.wb-shell[data-density=compact] .wb-data-table th { padding-block:9px; }
+.wb-table-scroll { border-radius:var(--wb-radius); overscroll-behavior-inline:contain; }
+.wb-status-badge { display:inline-flex; align-items:center; padding:3px 8px; border-radius:5px; font-size:12px; font-weight:600; background:var(--wb-neutral-bg); color:var(--wb-muted); }
+.wb-status-success { background:var(--wb-success-bg); color:var(--wb-success); }
+.wb-status-warning { background:var(--wb-warning-bg); color:var(--wb-warning); }
+.wb-status-danger { background:var(--wb-danger-bg); color:var(--wb-danger); }
+.wb-status-info { background:var(--wb-info-bg); color:var(--wb-info); }
+.wb-data-subnav { display:flex; gap:6px; flex-wrap:wrap; padding:0 0 18px; }
+.wb-shell .wb-data-subnav button { background:transparent; border-color:transparent; color:var(--wb-muted); }
+.wb-shell .wb-data-subnav button[aria-current=page] { color:var(--wb-accent); background:var(--wb-accent-soft); border-color:var(--wb-border); }
+.wb-file-detail { margin-top:20px; }
+.wb-file-detail .wb-definition-grid { padding:20px; }
+.wb-raw-table td { max-width:360px; min-width:120px; }
+.wb-raw-table td:first-child { min-width:70px; }
+.wb-shell .wb-file-name { max-width:480px; overflow-wrap:anywhere; }
+.wb-data-journey { display:flex; flex-wrap:wrap; gap:8px; color:var(--wb-muted); margin-bottom:18px; font-size:13px; }
+.wb-data-journey span { padding:5px 10px; border:1px solid var(--wb-border); border-radius:20px; background:var(--wb-surface); }
+@media(max-width:767px) {
+ .wb-main { padding:20px 14px 30px; }
+ .wb-header { padding:10px 12px; }
+ .wb-header-actions { gap:3px; }
+ .wb-shell .wb-icon-button { width:40px; min-height:44px; height:44px; }
+ .wb-page-heading { margin-bottom:18px; padding-bottom:14px; }
+ .wb-main h1 { font-size:25px; }
+ .wb-shell .wb-data-subnav button { min-height:44px; }
+ .wb-local-access { padding-left:6px; }
+ .wb-local-access small { max-width:105px; font-size:10px; }
+ .wb-shell .wb-appearance { width:100%; }
+ .wb-file-detail .wb-definition-grid { padding:16px; }
+}
+@media(forced-colors:active) { .wb-shell button[aria-current=page] { outline:2px solid Highlight; } .wb-shell :focus-visible { outline-color:Highlight; } }
+
+.wb-quick-backdrop { justify-content:center; align-items:flex-start; padding-top:min(15vh,110px); }
+.wb-quick-nav { width:min(100%,560px); max-height:85dvh; overflow-y:auto; box-shadow:var(--wb-shadow); }
+.wb-quick-results { display:grid; gap:4px; margin-top:16px; }
+.wb-shell .wb-quick-results button { justify-content:flex-start; padding:12px; border-color:transparent; }
+.wb-quick-results button span { flex:1; text-align:left; }
+.wb-shell .wb-quick-results .wb-quick-selected { background:var(--wb-accent-soft); border-color:var(--wb-accent); color:var(--wb-accent); }
+.wb-quick-row { flex-wrap:wrap; }
+.wb-quick-row > button:first-child { overflow-wrap:anywhere; }
+.wb-quick-order { flex-basis:100%; display:flex; justify-content:flex-end; gap:4px; }
+.wb-quick-display { display:flex; gap:8px; align-items:center; }
+.wb-quick-display input { flex:none; width:auto; }
+.wb-object-favorite { min-width:0; }
+.wb-object-favorite button { gap:6px; }
+.wb-object-favorite p { max-width:28rem; overflow-wrap:anywhere; }
+@media(max-width:767px) { .wb-quick-backdrop { padding:8px; padding-top:40px; } .wb-header-actions { flex-wrap:wrap; } }
+
+.wb-oko-onboarding { max-width:780px; margin:24px 0; padding:30px; text-align:left; background:var(--wb-surface); border:1px solid var(--wb-border); border-radius:var(--wb-radius); }
+.wb-oko-onboarding h2 { font-size:26px; margin:8px 0 12px; }
+.wb-oko-onboarding p { margin:0 0 22px; max-width:620px; }
+.wb-oko-onboarding > .wb-eyebrow { display:block; }
+@media(max-width:767px) { .wb-oko-onboarding { margin:16px 0; padding:22px 18px; } .wb-oko-onboarding h2 { font-size:23px; } .wb-welcome { position:static; margin:12px 14px; max-width:none; } }
+
+.wb-file-detail .wb-table-scroll { max-height:min(60vh,620px); overflow:auto; border:1px solid var(--wb-border); }
+
+.wb-raw-provenance dd { min-width:0; overflow-wrap:anywhere; }
+.wb-raw-provenance code { white-space:normal; overflow-wrap:anywhere; }
+#wb-quick-help { margin-top:10px; }
+
+/* Keep short file metadata readable; wide tables scroll inside their wrapper. */
+.wb-shell .wb-raw-file-list th { white-space:nowrap; overflow-wrap:normal; }
+.wb-shell .wb-raw-file-list th:nth-child(2),.wb-shell .wb-raw-file-list td:nth-child(2) { min-width:110px; }
+.wb-shell .wb-raw-file-list th:nth-child(3),.wb-shell .wb-raw-file-list td:nth-child(3) { min-width:132px; }
+.wb-shell .wb-raw-file-list th:nth-child(4),.wb-shell .wb-raw-file-list td:nth-child(4) { min-width:84px; white-space:nowrap; }
+.wb-shell .wb-raw-file-list th:last-child,.wb-shell .wb-raw-file-list td:last-child { min-width:144px; }

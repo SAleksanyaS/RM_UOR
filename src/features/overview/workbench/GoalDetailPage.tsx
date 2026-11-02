@@ -9,6 +9,7 @@ import { BasisInspector } from './BasisInspector';
 import { ResultSummary } from './ResultSummary';
 import { ContextLink, displayExact, goalRequest, QueryFeedback, ResultModeSelector } from './goal-view-utils';
 import { useGoalRead } from './use-goal-read';
+import { PersonalFavoriteButton } from '../../../app/workbench/PersonalFavoriteButton';
 
 const tabs = ['Состояние', 'Работы и решения', 'Методика', 'Расчёт', 'Обогащённые данные', 'Исходные строки', 'История'] as const;
 function RowState({ row, basis, method, names, deliveries }: { row: GoalReadRow; basis?: EvaluationBasis; method?: MethodVersion; names: Record<string, string>; deliveries: Record<string, 'git' | 'local-cache'> }) {
@@ -61,7 +62,7 @@ export function WorkbenchGoalDetailPage({ goalId }: { goalId: string }) {
   };
   const settingsControl = session?.allowedCommands.includes('goal.draft.save') && <button type="button" className="wb-goal-settings" aria-label="Настроить цель" title="Настроить цель" onClick={() => setSetup(true)}><Settings2 size={17} aria-hidden="true" /><span>Настроить цель</span></button>;
   return <section className="wb-goal-detail" aria-label="Карточка цели">
-    <div className="wb-goal-title"><div className="wb-goal-title-heading"><div><span className="wb-eyebrow">{data ? `Цель · ${data.goal.mode === 'numeric' ? 'Числовой результат' : 'Ручной статус'}` : 'Цель'}</span><h2>{data?.goal.title ?? 'Загружаем цель…'}</h2></div>{settingsControl}</div>{data?.goal.description && <p>{data.goal.description}</p>}</div>
+    <div className="wb-goal-title"><div className="wb-goal-title-heading"><div><span className="wb-eyebrow">{data ? `Цель · ${data.goal.mode === 'numeric' ? 'Числовой результат' : 'Ручной статус'}` : 'Цель'}</span><h2>{data?.goal.title ?? 'Загружаем цель…'}</h2></div>{data && <PersonalFavoriteButton favorite={{kind:'goal',id:data.goal.id}} label={data.goal.title} />}{settingsControl}</div>{data?.goal.description && <p>{data.goal.description}</p>}</div>
     {setup && <WorkbenchGoalSetupWizard goalRef={{entityType:'core_goal_definition',id:goalId}} onClose={() => setSetup(false)} />}<ResultModeSelector goalId={goalId} selectedSnapshot={data?.rows[0]?.snapshot} /><QueryFeedback loading={query.loading} error={query.error} operation={query.errorOperation} />
     {data && <>
       <div className="wb-goal-source-note"><Database size={14} aria-hidden="true" /><span>Дата данных: {data.tabs.enriched[0]?.capture.sourceUpdatedAt ?? 'Неизвестна'}</span><span>Основание доступно в исходных строках</span></div>

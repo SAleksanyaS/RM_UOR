@@ -17,3 +17,5 @@ playwright/.auth/
 test-results/
 playwright-report/
 .superpowers/
+
+/runtime/

@@ -45,6 +45,7 @@ export async function composeBrowserFixture(args: { options: BrowserFixtureOptio
     async finish() { liveRecording = false; return { recordingId: fixtureId(881000 + recordingSerial), startUrl: recordedUrl, authenticatedSelector: recordedMarker, steps: [{ action: 'goto' as const, url: recordedUrl }, ...scenario.steps], parameterNames: ['period'], screenshotHandles: [], hasDownload: completed }; },
     async waitForCompletion() { return runtime.finish({} as never); },
     async openLogin() { return { handleId: fixtureId(880003), state: 'open', mode: 'login' }; }, async observeLogin() { return true; },
+    async prepareLogin(input) { if (input.loginHandleId !== fixtureId(880003) || input.preparationId !== source.id) throw new WorkbenchHttpError(404, 'BROWSER_HANDLE_NOT_FOUND', 'Unknown synthetic login'); return { state: 'ready', expiresAt: new Date(Date.parse(clock.now()) + 900000).toISOString() }; },
     async replay() { await replayGate; return { name: 'synthetic.csv', bytes: Uint8Array.from(Buffer.from('demo_row_key,demo_scope_id,demo_metric_id,demo_value,demo_date\nr1,dit,m1,92,2026-10-28\n')) as Buffer, contentType: 'text/csv' }; },
     async inspectExport(input) { return { ...input, publishedAssignment: refs.assignment, observedAt: clock.now(), expiresAt: new Date(Date.parse(clock.now()) + 60000).toISOString(), selectionVerified: true, allPagesExported: !args.options.partial, reportedRows: 1 }; },
     async closeOwned() {}, async screenshot() { throw Error('No synthetic screenshot'); },

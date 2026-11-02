@@ -18,10 +18,13 @@ it.each([
   await expect(openBrowser(root, profile, { launcher: { async launchPersistent(_profile, _folder, options) {
     attempts.push(options);
     throw Error('Synthetic host sandbox denial');
-  } } })).rejects.toMatchObject({ code: 'configuration_required' });
+  } } })).rejects.toMatchObject({ code: 'browser_launch' });
+  await expect(openBrowser(root, profile, { launcher: { async launchPersistent() { throw Error('Running as root without --no-sandbox is not supported'); } } })).rejects.toMatchObject({ code: 'browser_launch' });
   expect(attempts).toHaveLength(1);
   expect(attempts[0].chromiumSandbox).toBe(true);
   expect(attempts[0].args ?? []).not.toContain('--no-sandbox');
   expect(attempts[0].ignoreHTTPSErrors).toBe(false);
+  // Fresh report launches block service workers. Explicit login uses a separate
+  // phase and must pass the native worker retirement barrier before report replay.
   expect(attempts[0].serviceWorkers).toBe('block');
 });

@@ -275,6 +275,54 @@ export function createDraftService({ repository, store, clock, prepareEvaluation
         return { result: { draftId, objectId: entityRef.id, entityRef, editToken }, changedRefs: [entityRef], editToken };
       }).result;
     },
+    /** Trusted bounded business import. Uses the ordinary package, audit, frozen versions and CAS. */
+    prepareDefinitions(context: CommandContext, input: { packageId: string | null; entries: Array<{entityType:string;id:string;definition:Record<string,unknown>}> }) {
+      assertContext(context);
+      return commitCommandEffect(context, () => {
+        const allowed = new Set(['directory_entity','directory_link','metric_definition','method_version','template','core_goal_definition','source_definition','source_field_mapping','goal_assignment']);
+        if (!input.entries.length || input.entries.length > 500) return fail('IMPORT_SIZE_LIMIT');
+        const existing = input.packageId ? ownPackage(context,input.packageId) : null;
+        if (existing) store.assertToken(existing.packageId,expectedToken(context));
+        else if(expectedToken(context)!==null) return fail('REVISION_CONFLICT',409);
+        const packageId=existing?.packageId ?? newUuid();
+        const seen=new Set<string>();
+        const prepared=input.entries.map(entry=>{
+          if(!allowed.has(entry.entityType)) return fail('IMPORT_TYPE_UNSUPPORTED');
+          const key=entry.entityType+'/'+entry.id;if(seen.has(key)) return fail('IMPORT_DUPLICATE_ID');seen.add(key);
+          const old=existing?.entries.find(e=>e.entityRef.entityType===entry.entityType&&e.entityRef.id===entry.id);
+          const base=repository.readPublishedHead<Header>({entityType:entry.entityType,id:entry.id});
+          const header:Header=old?.header??{schemaVersion:1,id:entry.id,revision:(base?.revision??0)+1,recordedAt:clock.now(),actor:context.actor,publicationAnchorId:null};
+          const value=validatedEntity(entry.entityType,{...header,...entry.definition}) as WorkbenchEntity;
+          // Header comes exclusively from this command, never an import row.
+          if(Object.keys(entry.definition).some(k=>headerKeys.has(k))) return fail('IMPORT_HEADER_FORBIDDEN');
+          return {...entry,old,base,header,value};
+        });
+        const resolveImported=(ref:EntityRef|VersionRef):Header|null=>{
+          const candidate=prepared.find(e=>e.entityType===ref.entityType&&e.id===ref.id&&(!('revision'in ref)||e.header.revision===ref.revision));
+          return candidate?.value??(existing?(()=>{try{return resolve(context,ref,existing);}catch{return null;}})():('revision'in ref?repository.readVersion(ref):repository.readPublishedHead(ref)));
+        };
+        for(const entry of prepared)validateReferences(entityReferences(entry.entityType as WorkbenchEntityType,entry.value),resolveImported);
+        const directory=new Map(repository.readPublishedCatalog().filter(e=>e.entityType==='directory_entity'||e.entityType==='directory_link').map(e=>[e.entityType+'/'+e.value.id,{type:e.entityType,value:e.value}]));
+        for(const e of existing?.entries??[])if(['directory_entity','directory_link'].includes(e.entityRef.entityType))directory.set(e.entityRef.entityType+'/'+e.entityRef.id,{type:e.entityRef.entityType,value:{...e.header,...e.definition} as Header});
+        const existingProblems=validateDirectoryChanges({entities:[...directory.values()].filter(e=>e.type==='directory_entity').map(e=>e.value as DirectoryEntity),links:[...directory.values()].filter(e=>e.type==='directory_link').map(e=>e.value as DirectoryLink)});
+        for(const e of prepared)if(['directory_entity','directory_link'].includes(e.entityType))directory.set(e.entityType+'/'+e.id,{type:e.entityType,value:e.value});
+        const graphProblems=validateDirectoryChanges({entities:[...directory.values()].filter(e=>e.type==='directory_entity').map(e=>e.value as DirectoryEntity),links:[...directory.values()].filter(e=>e.type==='directory_link').map(e=>e.value as DirectoryLink)});
+        const issueKey=(p:FieldProblem)=>JSON.stringify([p.code,p.ref]);
+        const newProblems=graphProblems.filter(p=>!existingProblems.some(old=>issueKey(old)===issueKey(p)));
+        if(newProblems.length)throw new WorkbenchHttpError(422,'DIRECTORY_INVALID','Исправьте связи справочника',newProblems);
+        if(!existing)store.createPackage({packageId,installationId:context.installationId,ownerPersonId:context.ownAccess.personId!,baseCommit:null});
+        const changedRefs:EntityRef[]=[];
+        for(const e of prepared){
+          if(e.old&&JSON.stringify(e.old.definition)===JSON.stringify(e.definition))continue;
+          if(e.old)store.save(e.old.draftId,e.definition,true,[],context.actor,clock.now());
+          else store.add({draftId:newUuid(),packageId,entityRef:{entityType:e.entityType,id:e.id},baseRef:e.base?refOf(e.entityType,e.base):null,definition:e.definition,complete:true,problems:[],header:e.header});
+          changedRefs.push({entityType:e.entityType,id:e.id});
+        }
+        freezeReadyForms(context,packageId);
+        const pkg=store.getPackage(packageId)!;
+        return {result:{packageId,added:changedRefs.length,entryCount:pkg.entries.length},changedRefs,editToken:store.token(pkg)};
+      }).result;
+    },
     async saveDefinition(context: CommandContext, input: DraftSaveInput, expectedTypes?: string[]): Promise<DraftSaveResult> {
       const entry = own(context, input.draftId, expectedTypes); if (!definitionTypes.has(entry.entityRef.entityType)) return fail('DRAFT_SPECIAL_COMMAND_REQUIRED');
       return write(context, input.draftId, input.definition as Record<string, unknown>);

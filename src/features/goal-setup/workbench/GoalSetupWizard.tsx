@@ -8,7 +8,7 @@ import { PackageDiff, packageDraftLabels } from '../../publishing/workbench/Pack
 import { privateCalculationPreviewSchema, privateMethodConfigurationSchema, privateManualTipSchema, type SourceMappingHints, type PrivateCalculationPreview } from '../../evaluation/workbench/private-preview-contracts';
 import { displayExact } from '../../overview/workbench/goal-view-utils';
 import { WorkbenchApiError } from '../../../app/workbench/api-client';
-import { useGlobalContext, useWorkbench } from '../../../app/workbench/context';
+import { useGlobalContext, useWorkbench,useWorkbenchQuery } from '../../../app/workbench/context';
 import { useUnsavedChanges } from '../../../app/workbench/use-unsaved-changes';
 import { workbenchErrorMessage } from '../../../app/workbench/WorkbenchShell';
 import { WorkbenchSourceSetupWizard } from '../../sources/workbench/SourceSetupWizard';
@@ -27,6 +27,7 @@ export function WorkbenchGoalSetupWizard({ goalRef, packageRef, onClose }: {
     onClose: () => void;
 }) {
     const { client, session } = useWorkbench(), { context } = useGlobalContext();
+    const templates=useWorkbenchQuery<Array<{id:string;name:string}>>('goal.templates',{context:null,filter:{},sort:[],page:{limit:100,cursor:null}});
     const [storedModel, setModel] = useState<SetupSession | null>(null), live = useRef<SetupSession | null>(null), [step, setStep] = useState(0), [busy, setBusy] = useState(false), [error, setError] = useState<unknown>(null), [saved, setSaved] = useState(false), [preview, setPreview] = useState<PackagePreviewResult | null>(null), [extraProblems, setExtraProblems] = useState<FieldProblem[]>([]), [templateId, setTemplateId] = useState(''), [templateLoaded, setTemplateLoaded] = useState(''), [transition, setTransition] = useState<Definition>({}), [manualEntry, setManualEntry] = useState<Entry | null>(null);
     const [mappingHints, setMappingHints] = useState<SourceMappingHints>();
     const [activeMetrics, setActiveMetrics] = useState<Array<{
@@ -291,7 +292,7 @@ export function WorkbenchGoalSetupWizard({ goalRef, packageRef, onClose }: {
         <div hidden={step !== 2}><label><input type="radio" name="method-kind" checked={object(model.assignment.definition.methodBinding).kind === 'standalone'} onChange={() => { if (model.method)
             patch(model.assignment, { ...model.assignment.definition, methodBinding: { kind: 'standalone', methodRef: model.method.versionRef } });
         else
-            void run(async () => { const method = await ensureMethod(); patch(model.assignment, { ...model.assignment.definition, methodBinding: { kind: 'standalone', methodRef: method.versionRef } }); }); }}/>Самостоятельная методика</label><label><input type="radio" name="method-kind" checked={object(model.assignment.definition.methodBinding).kind === 'template'} onChange={() => patch(model.assignment, { ...model.assignment.definition, methodBinding: { kind: 'template', ...(templateLoaded ? { templateId: templateLoaded } : {}) } })}/>Шаблон</label><label>Идентификатор опубликованного шаблона<input value={templateId} onChange={e => {setTemplateId(e.target.value);setDirty(true);}}/></label><button type="button" onClick={() => void run(async () => {
+            void run(async () => { const method = await ensureMethod(); patch(model.assignment, { ...model.assignment.definition, methodBinding: { kind: 'standalone', methodRef: method.versionRef } }); }); }}/>Самостоятельная методика</label><label><input type="radio" name="method-kind" checked={object(model.assignment.definition.methodBinding).kind === 'template'} onChange={() => patch(model.assignment, { ...model.assignment.definition, methodBinding: { kind: 'template', ...(templateLoaded ? { templateId: templateLoaded } : {}) } })}/>Шаблон</label><label>Готовая методика<select value={templateId} onChange={e=>{setTemplateId(e.target.value);setDirty(true);}}><option value="">Выберите шаблон</option>{templates.data?.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</select></label>{templates.data?.length===0&&<p>Опубликованных шаблонов пока нет. Подготовьте методику в базе знаний или настройте свою.</p>}<label>Идентификатор опубликованного шаблона<input value={templateId} onChange={e => {setTemplateId(e.target.value);setDirty(true);}}/></label><button type="button" onClick={() => void run(async () => {
                 const form = await client.query<WorkbenchReadModels['forms.describe']>('forms.describe', request({ formKind: 'template', ref: { entityType: 'template', id: templateId } }, model.context));
                 if (!form.data.values)
                     throw Error('Шаблон не найден');

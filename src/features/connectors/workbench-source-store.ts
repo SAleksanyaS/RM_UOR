@@ -1,3 +1,4 @@
+import { assertDirectoryContextGraph } from '../catalog/workbench-search';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import type { Capture, CoreGoalDefinition, DirectoryEntity, DirectoryLink, FileArtifactRef, GoalAssignment, MethodVersion, MetricDefinition, ObservedFact, SourceDefinition, SourceFieldMapping, Template } from '../../domain/workbench/entities';
@@ -48,7 +49,7 @@ const fail = (code = 'SOURCE_INVALID_CONFIGURATION'): never => { throw new Workb
 const key = (scope: ScopeRef) => `${scope.kind}/${scope.id}`;
 export const bindingSchema = z.strictObject({ goalRef: versionRefSchema, sourceRef: versionRefSchema, mappingRef: versionRefSchema, assignmentRef: versionRefSchema, templateRef: versionRefSchema.nullable(), methodRef: versionRefSchema, metricRefs: z.array(versionRefSchema), directoryEntityRefs: z.array(versionRefSchema), directoryLinkRefs: z.array(versionRefSchema), directoryRevision: revisionTokenSchema });
 export const savedSchema = z.strictObject({ installationId: uuidSchema, goalId: uuidSchema, context: globalContextSchema, revision: revisionTokenSchema });
-const edges = { dit_cluster: ['dit', 'cluster'], cluster_product: ['cluster', 'product'], cluster_team: ['cluster', 'team'], product_team: ['product', 'team'] } as const;
+const edges = { block_tribe: ['block','tribe'], tribe_cluster: ['tribe','cluster'], dit_cluster: ['dit', 'cluster'], cluster_product: ['cluster', 'product'], cluster_team: ['cluster', 'team'], product_team: ['product', 'team'] } as const;
 export function sourceScopeReachable(from: ScopeRef, to: ScopeRef, links: DirectoryLink[]): boolean {
   const pending = [key(from)], seen = new Set<string>();
   while (pending.length) { const current = pending.pop()!; if (current === key(to)) return true; if (seen.has(current)) continue; seen.add(current); for (const link of links) if (link.kind !== 'leader') { const [parent, child] = edges[link.kind]; if (current === `${parent}/${link.from.id}`) pending.push(`${child}/${link.to.id}`); } }
@@ -108,11 +109,9 @@ export function createSourceStore({ repository, ownership }: { repository: Workb
   };
   const assertContext = (context: GlobalContext, cfg: ReturnType<typeof loadConfiguration>) => {
     if (context.resultMode !== 'current' || context.snapshotId !== null || context.goalId !== null && context.goalId !== cfg.goal.id || context.time.kind !== cfg.goal.measurementMode) return fail();
-    const path = context.scopePath;
-    const scopes: ScopeRef[] = [{ kind: 'dit', id: path.ditId }, ...(path.clusterId ? [{ kind: 'cluster' as const, id: path.clusterId }] : []), ...(path.productId ? [{ kind: 'product' as const, id: path.productId }] : []), ...(path.teamId ? [{ kind: 'team' as const, id: path.teamId }] : [])];
-    for (const scope of scopes) if (!cfg.directoryEntities.some(e => e.kind === scope.kind && e.id === scope.id)) return fail();
-    for (let i = 1; i < scopes.length; i++) if (!sourceScopeReachable(scopes[i - 1], scopes[i], cfg.directoryLinks)) return fail();
-    if (key(scopes.at(-1)!) !== key(cfg.assignment.scope)) return false;
+    try { assertDirectoryContextGraph(context,cfg.directoryEntities,cfg.directoryLinks); } catch { return fail(); }
+    const path=context.scopePath;const selected=path.teamId?{kind:'team',id:path.teamId}:path.productId?{kind:'product',id:path.productId}:path.clusterId?{kind:'cluster',id:path.clusterId}:{kind:path.rootKind??'dit',id:path.ditId};
+    if(selected.kind!==cfg.assignment.scope.kind||selected.id!==cfg.assignment.scope.id)return false;
     for (const scope of cfg.assignment.expectedPopulation ?? []) if (!cfg.directoryEntities.some(e => e.kind === scope.kind && e.id === scope.id) || !sourceScopeReachable(cfg.assignment.scope, scope, cfg.directoryLinks)) return fail();
     return true;
   };

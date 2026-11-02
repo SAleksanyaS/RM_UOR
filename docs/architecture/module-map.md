@@ -1,4 +1,30 @@
-# Карта модулей Workbench 0.5.0
+# Карта модулей — актуальная композиция 0.6.0
+
+Входы остаются `src/server/main.ts` → `createWorkbenchRuntime` → `createWorkbenchApp` и `src/app/main.tsx` → `WorkbenchApp`. Ни один новый экран не использует legacy application/database как обход. Ниже — дополнения0.6; последующая исходная карта сохраняет общие доменные контракты.
+
+| Ответственность | Владелец / точка расширения | Сохраняемый контракт |
+| --- | --- | --- |
+| Личный исходник и повтор ОКО | `connectors/workbench-workflow-*`, `workbench-browser-recorder`, `workbench-raw-acquisition` | Owner/capture/bytes/hash/receipt; raw сохраняется до разбора; `source.browser.*` отдельно от `oko.workflow.*` |
+| Передача ручного входа | `workbench-browser-runtime`, `workbench-browser-binding`, `browser`, `workbench-browser-picker` | Одноразовая подготовка в памяти; exact owner/source/profile/revision/URL/marker; сохраняются native context/tab/lease; credentials не экспортируются; личный record.start проходит async waiting_user/retry |
+| Обзор таблицы | `tabular-import/workbench-parser`, `sources/workbench/RawFilesPage` | Ограниченный raw-preview; server paging/search/sort; исходник неизменяем |
+| Справочники | `knowledge/workbench-*` | Canonical directory/version/relationship; собственный draft и previewDigest; materialsFor учитывает владельца |
+| Методика зрелости | `maturity/workbench-evaluate`, `workbench-materials` | Явный ожидаемый состав; source claims отдельно от консервативной оценки |
+| Эффективная матрица | `evaluation/workbench/effective-matrix`, `catalog/workbench-dashboard-read` | Точные версии метода/метрики/корректировки и ожидаемые пропуски; ссылки на lineage |
+| Отчёты | `reporting/workbench` | Неизменяемый ReportSnapshot/effectiveBases, CAS definition, один semantic projection для UI/OOXML/PDF; archive module reporting |
+| Недельная сводка | `weekly-report/workbench`, `connectors/gigachat-browser-*` | Frozen evidence + согласие/id/revision/bindingHash, retained intent/reconcile, actions; archive module weekly |
+| Общая настройка | `workspace-maintenance/workbench/setup-package-*` | Типизированный manifest/hash/closure, selected approved bytes, explicit rescue port; archive module setup |
+| Кодовые уведомления | `system/workbench/update-channel`, `update-provider` | Owner/release/durable poll/read/snooze/outcome; делегирует inspect/activation каноническому update; archive module updates |
+| Среда и запуск | `scripts/local-launcher.mjs`, `install-local.mjs`, `start-rm-uor.mjs`, `system/workbench/environment-query` | Pinned runtime, physical root, create-once config, limited diagnostics; один modern runtime |
+
+`runtime-storage.ts` регистрирует новые codecs на активной и staged БД. `bootstrap.ts` соединяет общий setup с Knowledge/Maturity/Report/Weekly consumers, независимой maintenance rescue, browser assertIdle и notification lifecycle. Изменение только UI без owner/schema/recovery/archive не завершает модуль.
+
+Добавляя adapter/preset, задайте строгую схему, полномочия, владельца, идемпотентность, отмену/неопределённый ответ, reference closure, миграцию/codec и доказанный пользовательский путь. Схема отчёта допускает чтение старых снимков без optional effectiveBases без изменения digest; отсутствие основания помечается явно. Общий пакет не является plugin runtime и не переносит личные сеансы.
+
+[Текущий гайд](../guides/product-0.6.md) · [Проверки](../validation/product-2026-11-02.md)
+
+---
+
+# Сохраняемые общие контракты Workbench
 
 Новый штатный запуск — локальный модульный монолит: React → HTTP v1 → команды/запросы → предметные сервисы → один активный SQLite и принадлежащие ему файлы. Проверенные общие определения распространяются через Git. Доступ, браузерный профиль и внешняя аутентификация остаются локальными.
 
@@ -11,7 +37,7 @@
 | Схемы и модель | `domain/workbench/`, `domain/app-version.ts` | Header, ссылки, десятичные строки, типизированные сущности и отдельные версии форматов. |
 | Чистый расчёт | `features/evaluation/workbench/` | Отбор фактов, применимость, reducers, точная арифметика, basis/result, подтверждение, пятничная динамика; без сети и UI. |
 | Репозиторий | `server/storage/workbench-repository.ts`, `workbench-runtime-repository.ts`, `workbench-ownership.ts` | Версии/индексы/транзакции; стабильная оболочка следует активному native SQLite; закрытая транзакция не пишет в новый набор. |
-| Контекст и оболочка | `app/workbench/context.tsx`, `route-state.ts`, `GlobalContextControls.tsx`, `WorkbenchShell.tsx` | Опубликованная область и время, URL/back с page selector, личные настройки, пять экранов, брендовая sidebar и доступное с клавиатуры мобильное меню, обслуживание и поиск. |
+| Контекст и оболочка | `app/workbench/context.tsx`, `route-state.ts`, `GlobalContextControls.tsx`, `WorkbenchShell.tsx` | Опубликованная область и время, URL/back с page selector, личные настройки, шесть основных разделов, сворачиваемая sidebar и доступное с клавиатуры мобильное меню, обслуживание и поиск. |
 | Цели и черновики | `features/catalog/workbench-drafts.ts`, `workbench-draft-store.ts`, `features/goal-setup/workbench/` | Неполные формы, точный CAS и package closure; пример не создаёт факт, pending ручной переход имеет собственное proof. |
 | Запросы и поиск | `features/catalog/workbench-read-models.ts`, `workbench-read-index.ts`, `workbench-search.ts`, `features/search/workbench/` | Подтверждённые общие данные и разрешённая собственная проекция; paging/cursors и канонический контекст. |
 | Источники и импорт | `features/connectors/workbench-source-*.ts`, `features/tabular-import/workbench-*.ts`, `features/sources/workbench/` | Получение, нормализация, точное обогащение, принятие, артефакты и lineage разделены; generic adapter не определяется по наличию файла. |

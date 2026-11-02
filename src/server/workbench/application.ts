@@ -16,7 +16,7 @@ import type { NotificationRuntime } from '../../features/execution/workbench-not
 import { globalContextSchema, WorkbenchHttpError, type ApiSuccess, type GlobalContext, type Meta } from './protocol';
 import { registerWorkbenchQueries } from '../../features/catalog/workbench-query-registration';
 import type { WorkbenchReadPorts } from '../../features/catalog/workbench-read-models';
-import { assertContextGraph } from '../../features/catalog/workbench-search';
+import { assertContextGraph, rootDirectoryEntities } from '../../features/catalog/workbench-search';
 import { moscowLocalDate } from '../../features/execution/workbench-reminders';
 import { pageResultSchema } from './protocol';
 
@@ -31,6 +31,8 @@ export type WorkbenchApplicationDeps = {
   readState?: { defaultContext?(context: QueryContext): Promise<GlobalContext | null>; publishedCommit(): string | null };
   queryPorts?:WorkbenchReadPorts;
   browserResults?: { read(context: QueryContext, resultId: UUIDv4, kind: 'original' | 'enriched'): Promise<BrowserResultArtifact> };
+  rawFile?: { read(context: QueryContext, id: UUIDv4): Promise<BrowserResultArtifact> };
+  browserExport?: { read(context: QueryContext, exportId: UUIDv4): Promise<BrowserResultArtifact> };
   browserRecordings?: { screenshot(context: QueryContext, recordingId: string, handleId: string): Promise<{ bytes: Uint8Array; mediaType: 'image/png' }> };
 };
 
@@ -69,8 +71,9 @@ export function createWorkbenchApplication(deps: WorkbenchApplicationDeps): Work
       const saved=deps.queryPorts.preferences?.get(ctx.installationId,ctx.ownAccess.personId).context;
       if(saved) {try {assertContextGraph(saved,deps.queryPorts.index);defaultContext=saved;}catch { /* An old preference cannot invent a valid current path. */ }}
       if(!defaultContext) {
-        const dit=deps.queryPorts.index.list('directory_entity').find(entity=>entity.kind==='dit');
-        if(dit) defaultContext={scopePath:{ditId:dit.id,clusterId:null,productId:null,teamId:null},goalId:null,time:{kind:'as_of',date:moscowLocalDate(ctx.clock.now())},resultMode:'current',snapshotId:null};
+        const roots=rootDirectoryEntities(deps.queryPorts.index);
+        const dit=roots.find(entity=>entity.kind==='dit')??roots.find(entity=>entity.kind==='block')??roots.find(entity=>entity.kind==='tribe');
+        if(dit) defaultContext={scopePath:{ditId:dit.id,clusterId:null,productId:null,teamId:null,...(dit.kind==='dit'?{}:{rootKind:dit.kind as 'block'|'tribe'})},goalId:null,time:{kind:'as_of',date:moscowLocalDate(ctx.clock.now())},resultMode:'current',snapshotId:null};
       }
     }
     return { ...own, allowedCommands: deps.commands.listNames().filter(name => { const capability = deps.commands.getCapability(name); return capability !== null && canUseCapability(own, capability); }), csrfToken: local.csrfToken, defaultContext: defaultContext === null ? null : globalContextSchema.parse(defaultContext) };
@@ -82,7 +85,7 @@ export function createWorkbenchApplication(deps: WorkbenchApplicationDeps): Work
     async upload(input, request) {
       const ctx = await context(request);
       const purpose = filePurposeSchema.safeParse(input.purpose); if (!purpose.success) throw new WorkbenchHttpError(422, 'VALIDATION_FAILED', 'Invalid file purpose');
-      const personalDirectory = purpose.data === 'oko-directory';
+      const personalDirectory = purpose.data === 'oko-directory' || purpose.data === 'raw-file';
       if (!canUseCapability(ctx.ownAccess, purpose.data === 'workspace-restore' ? 'workspace.backup' : personalDirectory ? 'personal.write' : 'uor.prepare') || personalDirectory && ctx.ownAccess.personId === null) throw new WorkbenchHttpError(403, 'ACCESS_DENIED', 'The current own profile does not permit this upload');
       return envelope(await deps.files.stage({ ...input, purpose: purpose.data, installationId: deps.installationId, profilePersonId: ctx.ownAccess.personId }), request);
     },
@@ -97,6 +100,16 @@ export function createWorkbenchApplication(deps: WorkbenchApplicationDeps): Work
       const ctx = await context(local);
       if (!deps.browserResults) throw new WorkbenchHttpError(404, 'RESULT_NOT_FOUND', 'Result not found');
       return deps.browserResults.read(ctx, resultId, kind);
+    },
+    async rawFile(id, local) {
+      const ctx = await context(local);
+      if (!deps.rawFile) throw new WorkbenchHttpError(404, 'FILE_NOT_FOUND', 'File not found');
+      return deps.rawFile.read(ctx, id);
+    },
+    async browserExport(exportId, local) {
+      const ctx = await context(local);
+      if (!deps.browserExport) throw new WorkbenchHttpError(404, 'EXPORT_NOT_FOUND', 'Export not found');
+      return deps.browserExport.read(ctx, exportId);
     },
     async browserScreenshot(recordingId, handleId, local) {
       const ctx = await context(local);

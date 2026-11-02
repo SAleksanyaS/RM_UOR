@@ -1,3 +1,4 @@
+import {effectiveCells} from '../evaluation/workbench/effective-matrix';
 import type { DashboardDef, EvaluationInput } from '../../domain/workbench/entities';
 import type { EntityRef, VersionRef } from '../../domain/workbench/primitives';
 import type { HistorySeries } from '../history/workbench-history-contracts';
@@ -14,6 +15,8 @@ export function buildDashboardBlocks(input:{definition:DashboardDef;goals:GoalRe
   return input.definition.blocks.map(block=>{
     const type=block.typeId.slice('uor.dashboard.'.length,-'.v1'.length);
     const settings=block.settings.value;const base={id:block.id,layout:settings.layout as Layout};
+    if(type==='goal-matrix'){const config=settings as unknown as {limit:number;attentionOnly:boolean};return {...base,type,groups:input.goals.filter(row=>!config.attentionOnly||goalAttention(row)).slice(0,config.limit).map(row=>{const actual=input.inputFor(row);return {row,methodRef:actual?{entityType:'method_version',id:actual.method.id,revision:actual.method.revision}:null,cells:actual?effectiveCells(actual):[],unavailableReason:input.unavailableReason??(!actual?row.unavailableReason??'HISTORICAL_EVALUATION_TIME_UNAVAILABLE':actual.method.mode!=='numeric'?'MANUAL_STATUS_HAS_NO_METRIC_MATRIX':null)};})};}
+    if(type==='goal-comparison'){const config=settings as unknown as {limit:number;attentionOnly:boolean};return {...base,type,items:input.goals.filter(row=>!config.attentionOnly||goalAttention(row)).slice(0,config.limit)};}
     if(type==='goal-table') {const config=settings as unknown as {columns:Extract<DashboardBlockRead,{type:'goal-table'}>['columns'];limit:number;attentionOnly:boolean};return {...base,type,columns:config.columns,items:input.goals.filter(row=>!config.attentionOnly||goalAttention(row)).slice(0,config.limit)};}
     if(type==='execution-table') {const config=settings as unknown as {columns:Extract<DashboardBlockRead,{type:'execution-table'}>['columns'];limit:number;attentionOnly:boolean;kind:'all'|'work'|'decision'};return {...base,type,columns:config.columns,items:input.execution.filter(item=>(config.kind==='all'||item.kind===config.kind)&&(!config.attentionOnly||workAttention(item))).slice(0,config.limit)};}
     if(type==='data-issues') {const config=settings as unknown as {kinds:DashboardIssue['kind'][];limit:number};return {...base,type,items:input.issues.filter(issue=>config.kinds.includes(issue.kind)).slice(0,config.limit)};}

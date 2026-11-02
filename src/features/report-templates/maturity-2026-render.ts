@@ -1,0 +1,30 @@
+import pptxgen from 'pptxgenjs';
+import { inspectTemplate } from './ooxml';
+import { maturity2026ProfileSchema,recognizeMaturity2026Template,inspectMaturity2026Template,type Maturity2026Profile } from './maturity-2026-profile';
+import { maturitySnapshotSchema,type MaturitySnapshot } from '../maturity/workbench-contracts';
+const C={bg:'F6F7FB',ink:'24283A',muted:'7D88A8',purple:'7353D6',green:'009B78',amber:'C66A00',line:'DDE2EE'};
+const stateLabel={met:'Выполнено',not_met:'Ниже порога',missing:'Нет данных',exception:'Исключение без утверждённого основания',no_event:'Нет PR · применимость не утверждена',conflict:'Конфликт данных'};
+/** This separately versioned preset produces editable native OOXML, using frozen names and counts. */
+export async function renderMaturity2026Template(bytes:Buffer,raw:Maturity2026Profile,input:MaturitySnapshot):Promise<Buffer>{
+ const profile=maturity2026ProfileSchema.parse(raw),snapshot=maturitySnapshotSchema.parse(input);
+ if(!recognizeMaturity2026Template(await inspectMaturity2026Template(bytes)))throw Error('MATURITY_2026_TEMPLATE_INCOMPATIBLE');
+ const deck=new pptxgen();deck.layout='LAYOUT_WIDE';deck.author='УОР';deck.subject='Версионированный снимок зрелости';deck.title='Модель зрелости '+snapshot.period;deck.company='УОР';
+ const base=(title:string,subtitle:string)=>{const s=deck.addSlide();s.background={color:C.bg};s.addText('УОР / МОДЕЛЬ ЗРЕЛОСТИ',{x:.45,y:.2,w:10,h:.25,fontFace:'Arial',fontSize:10,color:C.muted,margin:0});s.addText(snapshot.period,{x:10.6,y:.2,w:2.2,h:.25,fontSize:10,color:C.muted,align:'right',margin:0});s.addText(title,{x:.45,y:.67,w:12.3,h:.53,fontFace:'Arial',fontSize:26,bold:true,color:C.ink,margin:0,breakLine:false});s.addText(subtitle,{x:.45,y:1.28,w:12.3,h:.6,fontFace:'Arial',fontSize:12,color:C.muted,margin:0,fit:'shrink'});s.addText('Фиксированная методика · исходные заявления показаны отдельно · УОР не подтвердил',{x:.45,y:7.03,w:11.6,h:.22,fontSize:9,color:C.muted,margin:0});return s;};
+ const table=(slide:ReturnType<typeof deck.addSlide>,rows:string[][],widths:number[],y=2.05)=>slide.addTable(rows.map(row=>row.map(text=>({text}))),{x:.45,y,w:12.4,colW:widths,rowH:rows.length>9?.38:.42,fontFace:'Arial',fontSize:rows.length>9?10:12,color:C.ink,border:{pt:.5,color:C.line},fill:{color:'FFFFFF'},margin:rows.length>9?.04:.07,autoPage:false,verbose:false});
+ const counts=snapshot.evaluation.counts;
+ const first=base('Модель зрелости ДИТ','Ожидаемая матрица: '+snapshot.teams.length+' команд × '+snapshot.metrics.length+' метрик. '+(snapshot.evaluation.complete?'Полные данные.':'Основание неполное; подтверждение недоступно.'));
+ [['Выполнено / ожидается',`${counts.met}/${counts.expected}`,C.purple],['Ниже порога',String(counts.notMet),C.amber],['Нет данных',String(counts.missing),C.amber],['Требуют применимости',String(counts.exception+counts.noEvent),C.muted]].forEach(([label,value,color],i)=>{const x=.45+i*3.15;first.addShape(deck.ShapeType.roundRect,{x,y:2,w:2.95,h:1.2,fill:{color:'FFFFFF'},line:{color:C.line}});first.addText(label,{x:x+.15,y:2.15,w:2.65,h:.25,fontSize:12,color:C.muted,margin:0});first.addText(value,{x:x+.15,y:2.5,w:2.65,h:.5,fontSize:28,bold:true,color,margin:0});});
+ table(first,[['Метрика','Выполнено','Ожидается','Неполно'],...snapshot.metrics.map(m=>{const slots=snapshot.evaluation.slots.filter(s=>s.metricId===m.id);return [m.name,String(slots.filter(s=>s.state==='met').length),String(slots.length),String(slots.filter(s=>!['met','not_met'].includes(s.state)).length)];})],[8.2,1.4,1.4,1.4],3.5);
+ const reported=snapshot.reportedClaims.map(c=>`${c.period}: источник заявил ${c.teamsMet}/${c.teamsAvailable} команд и ${c.metricsMet}/${c.metricsAvailable} метрик`).join(' · ');
+ first.addText(reported+'\n80% — ориентир презентации; полномочия и подтверждение не установлены.',{x:.45,y:6.25,w:12.4,h:.6,fontSize:10,color:C.amber,margin:0,fit:'shrink'});
+ const teamSlots=(id:string)=>snapshot.evaluation.slots.filter(s=>s.teamId===id);
+ for(let start=0;start<snapshot.leaders.length;start+=8){const leaders=snapshot.leaders.slice(start,start+8),s=base('Результат по каждому лидеру','Ответственность из выбранной презентации. Все команды оцениваются по пяти ожидаемым метрикам.');table(s,[['Руководитель','Команд','Метрик выполнено','Ниже порога','Неполно'],...leaders.map(l=>{const slots=l.teamIds.flatMap(teamSlots);return [l.name,String(l.teamIds.length),slots.filter(s=>s.state==='met').length+'/'+slots.length,String(slots.filter(s=>s.state==='not_met').length),String(slots.filter(s=>!['met','not_met'].includes(s.state)).length)];})],[3.6,1.2,2.8,2.3,2.5]);}
+ for(const leader of snapshot.leaders){
+  const teams=leader.teamIds.map(id=>snapshot.teams.find(t=>t.id===id)).filter((t):t is MaturitySnapshot['teams'][number]=>!!t);
+  for(let start=0;start<teams.length;start+=profile.rowsPerSlide){const chunk=teams.slice(start,start+profile.rowsPerSlide),s=base(leader.name+' — результат команд',`${snapshot.period} · ${leader.teamIds.length} команд${teams.length>profile.rowsPerSlide?' · страница '+(Math.floor(start/profile.rowsPerSlide)+1):''}`);
+   table(s,[['Команда и код','Выполнено / ожидается','Факты и ограничения'],...chunk.map(t=>{const slots=teamSlots(t.id);const notes=slots.filter(s=>s.state==='not_met').map(s=>`${snapshot.metrics.find(m=>m.id===s.metricId)?.name}: ${s.value}% / ${s.target}%`);for(const state of ['exception','no_event','missing','conflict'] as const){const n=slots.filter(s=>s.state===state).length;if(n)notes.push(n>1?`${stateLabel[state]}: ${n} позиции`:stateLabel[state]);}return [t.name+'\n'+t.code,slots.filter(s=>s.state==='met').length+'/'+slots.length,notes.join('; ')||'Все пять ожидаемых метрик выполнены'];})],[4.5,2,5.9]);
+   const missing=chunk.some(t=>teamSlots(t.id).some(s=>s.state==='missing'));if(missing)s.addText('Нет данных: отсутствие значения сохраняется в ожидаемой матрице.',{x:.45,y:6.6,w:12.2,h:.3,fontSize:11,color:C.amber,margin:0});
+  }
+ }
+ return Buffer.from(await deck.write({outputType:'nodebuffer'}) as Buffer);
+}

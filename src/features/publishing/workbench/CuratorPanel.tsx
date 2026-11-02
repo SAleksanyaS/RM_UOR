@@ -14,7 +14,7 @@ import './publishing.css';
 
 type PackageRead=WorkbenchReadModels['uor.package'];
 type Queue=WorkbenchReadModels['uor.queue'];
-const request=(context:GlobalContext,filter:Record<string,unknown>={},cursor:string|null=null)=>({context,filter,sort:[],page:{limit:50,cursor}});
+const request=(context:GlobalContext|null,filter:Record<string,unknown>={},cursor:string|null=null)=>({context,filter,sort:[],page:{limit:50,cursor}});
 const clients=new WeakMap<WorkbenchClient,number>();let serial=0;
 function clientKey(client:WorkbenchClient){if(!clients.has(client))clients.set(client,++serial);return clients.get(client)!;}
 const busyJob=(job:JobSnapshot|null)=>!!job&&['queued','running'].includes(job.status);
@@ -25,11 +25,11 @@ const unfinished=(job:JobSnapshot|null)=>!!job&&['queued','running','waiting_use
 const stateLabels={draft:'Черновик',validating:'Проверяется',preview_ready:'Проверен',publishing:'Публикуется',open_pr:'PR открыт',needs_rework:'Нужна доработка',merged:'Принят',declined:'Отклонён'};
 export function WorkbenchCuratorPanel(){
  const {client,session}=useWorkbench();const {context}=useGlobalContext();
- if(!session||!context)return <p>Выберите область и период.</p>;
+ if(!session)return <p>Проверяем доступ к собственным пакетам…</p>;
  if(!session.allowedCommands.includes('package.preview'))return <p>Панель УОР доступна при действующем допуске куратора.</p>;
  return <CuratorPanel key={JSON.stringify([clientKey(client),session.personId,context])} context={context}/>;
 }
-function CuratorPanel({context}:{context:GlobalContext}){
+function CuratorPanel({context}:{context:GlobalContext|null}){
  const {client,session,loading:checking}=useWorkbench();
  const [items,setItems]=useState<Queue['items']>([]),[cursor,setCursor]=useState<string|null>(null),[selected,setSelected]=useState(''),[pkg,setPackage]=useState<PackageRead|null>(null);
  const [job,setJob]=useState<JobSnapshot|null>(null),[preview,setPreview]=useState<{value:PackagePreviewResult;draftRevision:number;serverNow:number;receivedAt:number}|null>(null),[status,setStatus]=useState<PackageStatusResult|null>(null);
@@ -91,7 +91,7 @@ function CuratorPanel({context}:{context:GlobalContext}){
  const canSubmit=!!preview&&exact&&!expired&&!preview.value.errors.length&&!preview.value.changes.some(change=>change.conflict)&&!!session?.allowedCommands.includes('package.submit')&&!unfinished(job)&&!terminalPackage&&pkg?.summary.publication?.sent?.contentHash!==preview.value.packageRevision.contentHash;
  const disabled=busy||checking||unknown;
  const zones=[...new Map(items.flatMap(item=>item.zones??[]).map(scope=>[scope.id,scope])).values()];
- const zoneId=zone==='context'?context.scopePath.teamId??context.scopePath.productId??context.scopePath.clusterId??context.scopePath.ditId:zone;
+ const zoneId=zone==='context'?context?.scopePath.teamId??context?.scopePath.productId??context?.scopePath.clusterId??context?.scopePath.ditId??null:zone;
  const visibleItems=items.filter(item=>zone==='all'||item.zones?.some(scope=>scope.id===zoneId));
  const selectedOutside=!!selected&&!visibleItems.some(item=>item.packageRef.id===selected);
  return <><div className="wb-curator-panel" inert={setup?true:undefined}>
@@ -102,7 +102,7 @@ function CuratorPanel({context}:{context:GlobalContext}){
   {error!==null&&<div role="alert"><p>{workbenchErrorMessage(error)}</p>{error instanceof WorkbenchApiError&&<p>{error.problem.code}: {error.problem.message}</p>}</div>}
   {unknown&&<p>Результат запроса не подтверждён. Повторная проверка использует тот же идентификатор операции.</p>}
   {unknown&&pending.current&&<button disabled={busy||checking} onClick={()=>{const value=pending.current!;void execute(value.name,value.payload,value.baseRevision);}}>Проверить результат запроса</button>}
-  <div className="wb-page-toolbar"><label className="wb-field"><span>Зона просмотра</span><select aria-label="Зона просмотра" value={zone} onChange={event=>setZone(event.target.value)}><option value="all">Все области</option><option value="context">Выбранная область</option>{zones.map(scope=><option key={scope.id} value={scope.id}>{scope.name??'Область без названия'}</option>)}</select></label></div><p className="wb-status-note">Фильтр меняет только просмотр. Проверяется и отправляется весь пакет.</p>
+  <div className="wb-page-toolbar"><label className="wb-field"><span>Зона просмотра</span><select aria-label="Зона просмотра" value={zone} onChange={event=>setZone(event.target.value)}><option value="all">Все области</option>{context&&<option value="context">Выбранная область</option>}{zones.map(scope=><option key={scope.id} value={scope.id}>{scope.name??'Область без названия'}</option>)}</select></label></div><p className="wb-status-note">Фильтр меняет только просмотр. Проверяется и отправляется весь пакет.</p>
   <div className="wb-publishing-actions"><label className="wb-field"><span>Собственные пакеты</span><select aria-label="Собственные пакеты" value={selected} disabled={disabled||busyJob(job)} onChange={event=>setSelected(event.target.value)}><option value="">Выберите пакет</option>{selectedOutside&&<option value={selected}>Текущий пакет вне фильтра</option>}{visibleItems.map(item=><option value={item.packageRef.id} key={item.packageRef.id}>Пакет {items.indexOf(item)+1} · {item.publication?(stateLabels[item.publication.state]??`Неизвестное состояние: ${item.publication.state}`):'Черновик'}</option>)}</select></label>{cursor&&<button disabled={disabled} onClick={()=>void loadQueue(cursor)}>Показать ещё пакеты</button>}<button disabled={disabled||!selected} onClick={()=>void refresh()}><RefreshCw size={16} aria-hidden="true" />Обновить состояние пакета</button></div>
   {zone!=='all'&&!visibleItems.length&&<p>Среди загруженных пакетов нет явно связанных с этой областью. {cursor?'Загрузите следующую страницу.':''}</p>}
   {queueLoading&&!items.length&&<p role="status">Загружаем собственные пакеты…</p>}

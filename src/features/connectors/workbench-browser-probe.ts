@@ -139,15 +139,20 @@ export async function probeOkoBrowser(unparsed: OkoBrowserProbeInput, deps: Deps
     const login = await deps.runtime.openLogin(loginInput, signal); ownedHandles.add(login.handleId);
     await abortable(trusted.operator.login({ handleId: login.handleId, signal }), signal); await ensureCurrent();
     if (!await deps.runtime.observeLogin({ owner, handleId: login.handleId })) throw new Stop('AUTH_REQUIRED');
-    await deps.runtime.finish({ owner, handleId: login.handleId, save: false }); ownedHandles.delete(login.handleId); add('LOGIN_OBSERVED');
+    add('LOGIN_OBSERVED');
     // A recording is private and reviewable. Never save a scenario/draft or accept a capture here.
-    await ensureCurrent(); const recording = await deps.runtime.startRecording(loginInput, signal); ownedHandles.add(recording.handleId);
+    await ensureCurrent(); const recording = await deps.runtime.startRecording({ ...loginInput, loginHandleId: login.handleId }, signal); ownedHandles.delete(login.handleId); ownedHandles.add(recording.handleId);
     await abortable(trusted.operator.record({ handleId: recording.handleId, signal }), signal);
     await ensureCurrent();
     const recorded = await abortable(deps.runtime.waitForCompletion({ owner, handleId: recording.handleId }), signal); ownedHandles.delete(recording.handleId); await ensureCurrent();
     if (!recorded.hasDownload || recorded.steps.at(-1)?.action !== 'download') throw new Stop('RECORDING_REQUIRED', 'failed'); add('RECORDING_COMPLETE');
+    // Recording closes only after its artifact is verified. Session-only SSO
+    // therefore needs another explicit operator login for this independent replay.
+    await ensureCurrent(); const replayLogin = await deps.runtime.openLogin(loginInput, signal); ownedHandles.add(replayLogin.handleId);
+    await abortable(trusted.operator.login({ handleId: replayLogin.handleId, signal }), signal); await ensureCurrent();
+    if (!await deps.runtime.observeLogin({ owner, handleId: replayLogin.handleId })) throw new Stop('AUTH_REQUIRED');
     const started = deps.clock.now(); await ensureCurrent();
-    const download = await deps.runtime.replay({ owner, profile, scenario }, signal); await ensureCurrent();
+    const download = await deps.runtime.replay({ owner, profile, scenario, loginHandleId: replayLogin.handleId }, signal); ownedHandles.delete(replayLogin.handleId); await ensureCurrent();
     let validated: Awaited<ReturnType<typeof validateBrowserExport>>, normalized: ReturnType<typeof normalizeParsedWorkbenchTable>;
     try {
       if (download.bytes.length > profile.maxBytes) throw Error();

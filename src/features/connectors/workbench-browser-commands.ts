@@ -33,8 +33,8 @@ export function registerBrowserCommands(registry: CommandRegistry, services: Bro
       try { result = await action(context, payload); }
       catch (error) {
         if (error instanceof ConnectorError) {
-          const code = 'diagnosticCode' in error && (error.diagnosticCode === 'SELECTOR_NOT_FOUND' || error.diagnosticCode === 'SELECTOR_NOT_UNIQUE') ? error.diagnosticCode : ({ configuration_required: 'BROWSER_CONFIGURATION_REQUIRED', manual_required: 'AUTH_REQUIRED', manual_login_required: 'AUTH_REQUIRED', access_denied: 'SOURCE_ACCESS_DENIED', network: 'SOURCE_UNAVAILABLE', certificate: 'SOURCE_CERTIFICATE_REQUIRED', timeout: 'SOURCE_TIMEOUT', format: 'SOURCE_SCHEMA_CHANGED', incomplete: 'DOWNLOAD_REQUIRED', cancelled: 'SOURCE_CANCELLED' } as const)[error.code];
-          throw new WorkbenchHttpError(422, code, 'Browser operation did not complete');
+          const code = 'diagnosticCode' in error && (error.diagnosticCode === 'SELECTOR_NOT_FOUND' || error.diagnosticCode === 'SELECTOR_NOT_UNIQUE') ? error.diagnosticCode : ({ configuration_required: 'BROWSER_CONFIGURATION_REQUIRED', manual_required: 'AUTH_REQUIRED', manual_login_required: 'AUTH_REQUIRED', access_denied: 'SOURCE_ACCESS_DENIED', network: 'SOURCE_UNAVAILABLE', certificate: 'SOURCE_CERTIFICATE_REQUIRED', timeout: 'SOURCE_TIMEOUT', format: 'SOURCE_SCHEMA_CHANGED', incomplete: 'DOWNLOAD_REQUIRED', cancelled: 'SOURCE_CANCELLED', browser_launch: 'BROWSER_LAUNCH_FAILED' } as const)[error.code];
+          throw new WorkbenchHttpError(422, code, error.message, error.detail ? [{ path: '/cause', code: error.reason ?? code, message: error.detail, ref: null }] : []);
         }
         if (error instanceof WorkbenchError) throw new WorkbenchHttpError(['REFERENCE_NOT_FOUND','BROKEN_REFERENCE'].includes(error.code) ? 404 : 422, error.code, 'Browser definition validation failed'); throw error;
       }

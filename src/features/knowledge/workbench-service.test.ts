@@ -1,0 +1,103 @@
+import {afterEach,it,expect} from 'vitest';
+import {draftFixture,draftCleanups} from '../../../tests/fixtures/workbench/drafts';
+import {createKnowledgeService} from './workbench-service';
+import {registerKnowledgeCommands} from './workbench-commands';
+import {loadMaturityMaterials} from '../maturity/workbench-materials';
+afterEach(async()=>{while(draftCleanups.length)await draftCleanups.pop()!();});
+function fixture(){const f=draftFixture(),materials=loadMaturityMaterials(),service=createKnowledgeService({repository:f.repository,drafts:f.service,materials});registerKnowledgeCommands(f.registry,{drafts:f.service,service});return {...f,knowledge:service,materials};}
+it('prepares real structures as one own package, retries without duplicate and rejects stale CAS/reader',async()=>{
+ const f=fixture(),input={packageId:null,curatorPersonId:null};
+ const first=await f.execute('knowledge.materials.prepare',input,{commandId:'10000000-0000-4000-8000-000000000001'});
+ const again=await f.execute('knowledge.materials.prepare',input,{commandId:'10000000-0000-4000-8000-000000000001',baseRevision:null});expect(again).toEqual(first);
+ const packageId=(first.result as any).packageId,pkg=f.service.readOwnPackage(f.context,packageId);
+ expect(pkg.entries.filter(e=>e.entityRef.entityType==='directory_entity')).toHaveLength(94);
+ expect(pkg.entries.filter(e=>e.entityRef.entityType==='directory_link'&&e.definition.kind==='leader')).toHaveLength(58);
+ expect(pkg.entries.filter(e=>e.entityRef.entityType==='metric_definition')).toHaveLength(5);
+ expect(f.count('observed_fact')).toBe(0);expect(f.count('attestation')).toBe(0);expect(f.repository.readPublishedCatalog().some(e=>f.materials.teams.some(t=>t.id===e.value.id))).toBe(false);
+ await expect(f.execute('knowledge.materials.prepare',{...input,packageId},{baseRevision:'draft:'+packageId+':0'})).rejects.toMatchObject({code:'REVISION_CONFLICT'});
+ const duplicate=await f.execute('knowledge.materials.prepare',{...input,packageId});expect((duplicate.result as any).added).toBe(0);
+ f.context.ownAccess.role='viewer';await expect(f.execute('knowledge.materials.prepare',{...input,packageId})).rejects.toMatchObject({statusCode:403});
+});
+it('uses an explicit business curator and never creates account rights or applicability',async()=>{
+ const f=fixture(),curatorPersonId=f.materials.leaders[0].id;
+ const result=await f.execute('knowledge.materials.prepare',{packageId:null,curatorPersonId});
+ const p=f.service.readOwnPackage(f.context,(result.result as any).packageId);
+ expect(p.entries.filter(e=>e.entityRef.entityType==='goal_assignment')).toHaveLength(58);
+ expect(p.entries.find(e=>e.entityRef.entityType==='core_goal_definition')!.definition.primaryCuratorPersonId).toBe(curatorPersonId);
+ expect(p.entries.some(e=>['applicability','attestation'].includes(e.entityRef.entityType))).toBe(false);
+ const preview=await f.knowledge.preview(f.context,{rows:[{kind:'team',name:'Unmapped',code:'X',parentId:null}],packageId:null});
+ expect(preview.problems.some(p=>p.code==='TEAM_CLUSTER_REQUIRED')).toBe(true);
+});
+it('applies reviewed CSV rows despite command metadata and rejects changed directory previews',async()=>{
+ const f=fixture();const p=await f.knowledge.preview(f.context,{packageId:null,rows:[{kind:'person',name:'Reviewed person',code:'P1',parentId:null}]});
+ const result=await f.execute('knowledge.import.apply',{input:{packageId:null,rows:p.rows},previewDigest:p.previewDigest},{baseRevision:null});
+ const pkg=f.service.readOwnPackage(f.context,(result.result as any).packageId);expect(pkg.entries[0].definition.name).toBe('Reviewed person');
+ const stale=await f.knowledge.preview(f.context,{packageId:pkg.packageId,rows:[{kind:'person',name:'Changed',code:'P2',parentId:null}]});
+ await f.execute('draft.open',{entityType:'directory_entity',ref:null,packageId:pkg.packageId});
+ await expect(f.execute('knowledge.import.apply',{input:{packageId:pkg.packageId,rows:stale.rows},previewDigest:stale.previewDigest})).rejects.toMatchObject({code:'PREVIEW_STALE'});
+});
+it('archives a source object without deleting its source code or historical version',async()=>{
+ const f=fixture(),seed=await f.execute('knowledge.materials.prepare',{packageId:null,curatorPersonId:null}),packageId=String(seed.result.packageId),team=f.materials.teams[0];
+ const p=await f.knowledge.preview(f.context,{packageId,rows:[{id:team.id,kind:'team',name:team.name,code:team.code,parentId:null,lifecycle:'archived'}]});expect(p.diff[0].action).toBe('update');
+ await f.execute('knowledge.import.apply',{input:{packageId,rows:p.rows},previewDigest:p.previewDigest});
+ expect(f.knowledge.list(f.context,{packageId}).items.some(i=>i.value.id===team.id)).toBe(false);
+ const archived=f.knowledge.list(f.context,{packageId,includeArchived:true}).items.find(i=>i.value.id===team.id)!;expect(archived.value.sourceMetadata).toMatchObject({externalCode:team.code,importVersion:'maturity-ooxml-v1'});
+ expect(f.service.readDraftVersions(packageId).filter(v=>v.entityRef.id===team.id)).toHaveLength(2);
+});
+it('supplements missing material dependencies while preserving user names lifecycle aliases and chosen curator',async()=>{
+ const f=fixture();const first=await f.execute('knowledge.materials.prepare',{packageId:null,curatorPersonId:null});const packageId=String(first.result.packageId),team=f.materials.teams[0];
+ const original=f.service.readOwnPackage(f.context,packageId).entries.find(e=>e.entityRef.id===team.id)!;
+ await f.execute('organization.draft.save',{draftId:original.draftId,definition:{...original.definition,name:'Reviewed renamed team',lifecycle:'archived',externalKeys:[{sourceId:f.input.goal.sourceId,key:'user-reviewed-alias'}]}});
+ await f.execute('knowledge.materials.prepare',{packageId,curatorPersonId:f.materials.leaders[0].id});
+ const after=f.service.readOwnPackage(f.context,packageId),saved=after.entries.find(e=>e.entityRef.id===team.id)!;
+ expect(saved.definition).toMatchObject({name:'Reviewed renamed team',lifecycle:'archived'});
+ expect(saved.definition.externalKeys).toContainEqual({sourceId:f.input.goal.sourceId,key:'user-reviewed-alias'});
+ expect(saved.definition.externalKeys).toHaveLength(2);
+ const aliases=structuredClone(saved.definition.externalKeys);const revisions=f.service.readDraftVersions(packageId).length;
+ await f.execute('knowledge.materials.prepare',{packageId,curatorPersonId:null});
+ await f.execute('knowledge.materials.prepare',{packageId,curatorPersonId:f.materials.leaders[1].id});
+ const final=f.service.readOwnPackage(f.context,packageId);
+ expect(final.entries.find(e=>e.entityRef.id===team.id)!.definition).toMatchObject({name:'Reviewed renamed team',lifecycle:'archived',externalKeys:aliases});
+ expect(final.entries.find(e=>e.entityRef.entityType==='core_goal_definition')!.definition.primaryCuratorPersonId).toBe(f.materials.leaders[0].id);
+ expect(f.service.readDraftVersions(packageId)).toHaveLength(revisions);
+});
+it('repeats parent-bearing imports and name updates while retaining the existing source edge',async()=>{
+ const f=fixture(),first=await f.execute('knowledge.materials.prepare',{packageId:null,curatorPersonId:null}),packageId=String(first.result.packageId),team=f.materials.teams[0];
+ const apply=async(rows:any[])=>{const p=await f.knowledge.preview(f.context,{packageId,rows});expect(p.problems).toEqual([]);return f.execute('knowledge.import.apply',{input:{packageId,rows:p.rows},previewDigest:p.previewDigest});};
+ const sourceLink=f.service.readOwnPackage(f.context,packageId).entries.find(e=>e.entityRef.entityType==='directory_link'&&e.definition.kind==='cluster_team'&&(e.definition.to as any).id===team.id)!;
+ await apply([{id:team.id,kind:'team',name:'Reviewed source team',code:team.code,parentId:team.clusterId}]);
+ const row={kind:'team',name:'New child',code:'new-child',parentId:team.clusterId};await apply([row]);
+ const count=f.service.readOwnPackage(f.context,packageId).entries.length;
+ const again=await apply([row]);expect(again.result.added).toBe(0);
+ await apply([{...row,name:'Changed child name'}]);
+ const pkg=f.service.readOwnPackage(f.context,packageId);expect(pkg.entries).toHaveLength(count);
+ expect(pkg.entries.filter(e=>e.entityRef.entityType==='directory_link'&&(e.definition.to as any)?.id===team.id)).toMatchObject([{entityRef:sourceLink.entityRef}]);
+ const other=f.materials.teams.find(t=>t.clusterId!==team.clusterId)!;
+ const move=await f.knowledge.preview(f.context,{packageId,rows:[{id:team.id,kind:'team',name:'Move request',code:team.code,parentId:other.clusterId}]});
+ expect(move.problems.map(p=>p.code)).toContain('TEAM_CLUSTER_MOVE_UNSUPPORTED');
+ await expect(f.execute('knowledge.import.apply',{input:{packageId,rows:move.rows},previewDigest:move.previewDigest})).rejects.toMatchObject({code:'DIRECTORY_INVALID'});
+ expect(f.service.readOwnPackage(f.context,packageId).entries.find(e=>e.draftId===sourceLink.draftId)!.definition).toEqual(sourceLink.definition);
+});
+it('previews an allowed parent replacement and keeps its edge ID plus unrelated descendant links',async()=>{
+ const f=fixture(),seed=await f.execute('knowledge.materials.prepare',{packageId:null,curatorPersonId:null}),packageId=String(seed.result.packageId),tribe=f.materials.organizations.find(o=>o.kind==='tribe')!;
+ const before=f.service.readOwnPackage(f.context,packageId),parentLink=before.entries.find(e=>e.entityRef.entityType==='directory_link'&&e.definition.kind==='block_tribe'&&(e.definition.to as any).id===tribe.id)!;
+ const childLinks=before.entries.filter(e=>e.entityRef.entityType==='directory_link'&&(e.definition.from as any)?.id===tribe.id);
+ const create=await f.knowledge.preview(f.context,{packageId,rows:[{kind:'block',name:'Explicitly added block',code:'B2',parentId:null}]});
+ await f.execute('knowledge.import.apply',{input:{packageId,rows:create.rows},previewDigest:create.previewDigest});
+ const blockId=create.diff[0].id;
+ const move=await f.knowledge.preview(f.context,{packageId,rows:[{id:tribe.id,kind:'tribe',name:tribe.name,code:'',parentId:blockId}]});
+ expect(move.problems).toEqual([]);expect(move.diff[0]).toMatchObject({action:'update',parentChange:{from:tribe.parentId,to:blockId}});
+ await f.execute('knowledge.import.apply',{input:{packageId,rows:move.rows},previewDigest:move.previewDigest});
+ const after=f.service.readOwnPackage(f.context,packageId);
+ expect(after.entries.find(e=>e.draftId===parentLink.draftId)!.definition).toMatchObject({from:{id:blockId},to:{id:tribe.id}});
+ for(const edge of childLinks)expect(after.entries.find(e=>e.draftId===edge.draftId)!.definition).toEqual(edge.definition);
+});
+it('provides all hierarchy objects independently of paginated table rows',async()=>{
+ const {QueryRegistry}=await import('../../server/workbench/query-registry');const {registerKnowledgeQueries}=await import('./workbench-query');const {knowledgeStableId}=await import('./workbench-service');
+ const f=fixture(),registry=new QueryRegistry();registerKnowledgeQueries(registry,{repository:f.repository,drafts:f.service,materials:f.materials});
+ f.repository.transaction(()=>{for(let n=0;n<215;n++)f.repository.append('directory_entity',{schemaVersion:1,id:knowledgeStableId('paging:'+n),revision:1,actor:f.context.actor,recordedAt:f.clock.now(),publicationAnchorId:f.input.goal.publicationAnchorId,kind:'person',name:'Paging person '+n,externalKeys:[]},null);});
+ const req={context:null,filter:{text:'Paging'},sort:[],page:{limit:200,cursor:null}} as const;
+ const first=await registry.execute('knowledge.list',req as any,f.context) as any;expect(first.items).toHaveLength(200);
+ const second=await registry.execute('knowledge.list',{...req,page:{limit:200,cursor:first.nextCursor}} as any,f.context) as any;expect(second.items).toHaveLength(15);
+ const tree=await registry.execute('knowledge.hierarchy',{...req,filter:{}} as any,f.context) as any;expect(tree.items.some((i:any)=>i.value.name==='Paging person 214')).toBe(true);expect(tree.items.length).toBeGreaterThan(215);
+});

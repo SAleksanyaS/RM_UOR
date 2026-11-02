@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { createHash } from 'node:crypto';
+import { stableJson } from '../../server/workbench/command-store';
 import { uuidSchema, type VersionRef } from '../../domain/workbench/primitives';
 import type { SourceDefinition } from '../../domain/workbench/entities';
 import type { QueryContext } from '../../server/workbench/query-registry';
@@ -10,6 +12,10 @@ import { canUseCapability } from '../identity/workbench-access-policy';
 export const browserOwnDraftSchema = z.strictObject({ packageId: uuidSchema, sourceDraftId: uuidSchema, editToken: revisionTokenSchema });
 export type BrowserOwnDraft = z.infer<typeof browserOwnDraftSchema>;
 export type BrowserSourceBinding = { sourceRef: VersionRef; ownDraft?: BrowserOwnDraft };
+/** Exact non-secret source/private-profile revision attached to an in-memory login. */
+export function browserPreparationRevision(input: BrowserSourceBinding, profileRevision: string | null): string {
+  return createHash('sha256').update(stableJson({ sourceRef: input.sourceRef, ownDraft: input.ownDraft ?? null, profileRevision })).digest('hex');
+}
 export function resolveBrowserSource(context: QueryContext, input: BrowserSourceBinding, drafts?: DraftService): Pick<SourceDefinition, 'id' | 'revision' | 'kind'> {
   if (input.sourceRef.entityType !== 'source_definition') throw new WorkbenchHttpError(404, 'SOURCE_NOT_FOUND', 'Source not found');
   if (input.ownDraft) {

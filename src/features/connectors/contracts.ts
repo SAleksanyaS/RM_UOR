@@ -26,9 +26,16 @@ export type BrowserStep = z.infer<typeof stepSchema>;
 export { privateProfileSchema, type PrivateProfile } from './private-profile-schema';
 import { privateProfileSchema } from './private-profile-schema';
 export const privateConfigSchema = z.object({ profiles: z.record(id, privateProfileSchema) }).strict();
-export type ConnectorErrorCode = 'configuration_required' | 'manual_required' | 'manual_login_required' | 'access_denied' | 'network' | 'certificate' | 'timeout' | 'format' | 'incomplete' | 'cancelled';
+export type ConnectorErrorCode = 'configuration_required' | 'manual_required' | 'manual_login_required' | 'access_denied' | 'network' | 'certificate' | 'timeout' | 'format' | 'incomplete' | 'cancelled' | 'browser_launch';
 export class ConnectorError extends ActionError {
-  constructor(public code: ConnectorErrorCode, message: string) { super(`${code}: ${message}`, code === 'access_denied' ? 403 : code === 'configuration_required' ? 409 : 422); }
+  /** Stable machine reason for the UI details; never contains secrets or full host paths. */
+  public readonly reason: string | undefined;
+  /** Safe single-line diagnostic detail (for example SANDBOX_DENIED: ...). */
+  public readonly detail: string | undefined;
+  constructor(public code: ConnectorErrorCode, message: string, options?: { reason?: string; detail?: string }) {
+    super(`${code}: ${message}`, code === 'access_denied' ? 403 : code === 'configuration_required' ? 409 : 422);
+    this.reason = options?.reason; this.detail = options?.detail;
+  }
 }
 export function connectorError(error: unknown): ConnectorError {
   if (error instanceof ConnectorError) return error;

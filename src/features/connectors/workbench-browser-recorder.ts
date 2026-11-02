@@ -1,5 +1,7 @@
+import { inspectBrowserArtifact } from './workbench-artifact-policy';
 import { randomUUID } from 'node:crypto';
-import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rm, stat } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import type { BrowserContext, Download, Frame, Locator, Page } from 'playwright';
 import { recordedBrowserStepSchema, type RecordedBrowserStep, type StableBrowserLocator } from '../../domain/workbench/browser-scenario';
@@ -11,7 +13,7 @@ import { resolveRecordedLocator } from './workbench-browser-locators';
 import type { Clock } from '../../domain/workbench/primitives';
 import type { DraftService } from '../catalog/workbench-drafts';
 import type { AccessPolicyService } from '../identity/workbench-access-policy';
-import { resolveBrowserSource, type BrowserSourceBinding } from './workbench-browser-binding';
+import { browserPreparationRevision, resolveBrowserSource, type BrowserSourceBinding } from './workbench-browser-binding';
 import type { WorkbenchRepository } from '../../server/storage/workbench-repository';
 import type { CommandContext } from '../../server/workbench/command-registry';
 import type { QueryContext } from '../../server/workbench/query-registry';
@@ -23,10 +25,17 @@ import type { BrowserRuntimePort, BrowserRecordingStatus, RecordedBrowserScenari
 
 type RecordState = { id: string; runtime: string; owner: string; context: BrowserContext; startUrl: string; selector: string;
   steps: RecordedBrowserStep[]; screenshots: string[]; queue: Promise<void>; downloads: Set<Promise<void>>; completed: boolean;
-  sample?: Downloaded; cancellation: AbortController;
+  requestSequence:number;navigationRequests:Array<{page:Page;frame:Frame;url:string;rootUrl:string;sequence:number}>;exportAction?:{page:Page;frame:Frame;url:string;index:number;boundary:number};replayGap?:boolean; sample?: Downloaded; exportSample?: Downloaded; cancellation: AbortController; downloadsPath?: string; startedAt: number; profile: PrivateProfile; exportUrls: string[];
   closed: boolean; problem?: ConnectorError; release(): void; terminal: Promise<void>; end(): void; timer: NodeJS.Timeout; retention?: NodeJS.Timeout };
 const records = new Map<string, RecordState>();
 const authPath = /login|sign.?in|sso|oauth|saml|authorize/i;
+/** Report the navigation failure but keep the window: the user may still enter or retry in it. */
+function navigationProblem(error: unknown): ConnectorError {
+  const text = `${(error as { name?: string } | null)?.name ?? ''} ${(error as Error | null)?.message ?? ''}`;
+  if (/net::ERR_BLOCKED_BY_CLIENT|net::ERR_ABORTED/i.test(text)) return new ConnectorError('configuration_required', 'Браузер заблокировал переход: адрес отчёта или входа вне разрешённых источников. Добавьте точный адрес SSO в личный профиль.', { reason: 'BROWSER_URL_BLOCKED', detail: 'navigation blocked by origin allow-list' });
+  if (/Timeout|timed out/i.test(text)) return new ConnectorError('timeout', 'Отчёт не открылся за отведённое время. Проверьте сеть и адрес; окно осталось открытым.', { reason: 'NAVIGATION_TIMEOUT' });
+  return new ConnectorError('network', 'Не удалось открыть отчёт. Проверьте сеть и адрес; окно осталось открытым — войдите вручную и продолжите.', { reason: 'NAVIGATION_FAILED', detail: 'navigation failed' });
+}
 export async function recordingReady(page: Page, selector: string, origin: string): Promise<boolean> {
   try { const url = new URL(page.url()); const marker = page.locator(selector);
     for (const frame of page.frames?.() ?? []) {
@@ -48,27 +57,48 @@ export async function assertRecordedField(locator: Locator): Promise<void> {
   });
   if (unsafe) throw new ConnectorError('configuration_required', 'Поля входа, скрытые поля и файлы не записываются');
 }
-export async function completedBrowserDownload(file: Download, profile: PrivateProfile, signal?: AbortSignal): Promise<Downloaded> {
-  let timer: NodeJS.Timeout | undefined;
-  let abort: (() => void) | undefined;
-  try {
-    const failure = await Promise.race([file.failure(), new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new ConnectorError('timeout', 'Файл не завершил загрузку за отведённое время')), profile.timeoutMs);
-      abort = () => reject(new ConnectorError('cancelled', 'Выгрузка отменена')); signal?.addEventListener('abort', abort, { once: true }); if (signal?.aborted) abort();
-    })]);
-    if (failure) throw new ConnectorError('incomplete', 'Браузер не завершил выгрузку');
-    const filename = await file.path();
-    const size = filename ? await stat(filename).then(info=>info.size,error=>{if(error.code==='ENOENT')return 0;throw error;}) : 0;
-    if (!filename || !size) throw new ConnectorError('incomplete', 'Выгрузка отсутствует или пуста');
-    if (size > profile.maxBytes) throw new ConnectorError('format', 'Выгрузка превышает ограничение размера');
-    const bytes = await readFile(filename), name = path.basename(file.suggestedFilename());
-    if (bytes.length !== size || !/\.(csv|xlsx)$/i.test(name) || /^\s*(?:<!doctype\s+html|<html|<form|<\?xml[^>]*>\s*<html)/i.test(bytes.subarray(0, 2048).toString('utf8').replace(/^\uFEFF/, ''))
-      || /\.xlsx$/i.test(name) && !(bytes[0] === 0x50 && bytes[1] === 0x4b) || /\.csv$/i.test(name) && bytes.includes(0))
-      throw new ConnectorError('format', 'Ожидалась непустая CSV/XLSX выгрузка отчёта');
-    return { bytes, name, contentType: /\.xlsx$/i.test(name) ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' : 'text/csv' };
-  } catch (error) { await file.cancel().catch(() => {}); throw error; }
-  finally { if (timer) clearTimeout(timer); if (abort) signal?.removeEventListener('abort', abort); }
+/** Diagnostics use fixed event names and bounded numeric/boolean fields only. */
+const trace=(_event:string,_detail:Record<string,unknown>={})=>{};
+export interface DownloadProbe {resolved?():Downloaded|null;directory:string;since:number;signal?:AbortSignal;idleMs?:number;acquire?():Promise<{path:string;size:number}|null>;fetchExport?(url:string):Promise<Downloaded|null>;exportUrls?():string[];exportSample?():Downloaded|null}
+const pause=(ms:number)=>new Promise(resolve=>setTimeout(resolve,ms));
+function raceAbort<T>(work:Promise<T>,signal?:AbortSignal):Promise<T>{
+ let listener:()=>void;const aborted=new Promise<never>((_,reject)=>{listener=()=>reject(new ConnectorError('cancelled','Выгрузка отменена'));signal?.addEventListener('abort',listener,{once:true});if(signal?.aborted)listener();});return Promise.race([work,aborted]).finally(()=>signal?.removeEventListener('abort',listener));
 }
+/** A completed Playwright path or engine final rename is proof; a paused .crdownload is never proof. */
+export async function completedBrowserDownload(file:Download,profile:PrivateProfile,probe:DownloadProbe):Promise<Downloaded>{
+ const name=path.basename(file.suggestedFilename().replace(/\\/g,'/')).slice(0,255)||'download';
+ let enginePath:string|null=null,engineFailure=false,pathSettled=false;
+ void file.path().then(value=>{enginePath=value;pathSettled=true;},()=>{engineFailure=true;pathSettled=true;});
+ const idleMs=probe.idleMs??Math.max(30000,profile.timeoutMs),seen=new Map<string,string>();let progress=Date.now();
+ for(;;){
+  probe.signal?.throwIfAborted();const committed=probe.resolved?.();if(committed)return committed;let candidates:Array<{file:string;size:number;partial:boolean}>=[];
+  for(const entry of await readdir(probe.directory,{withFileTypes:true}).catch(()=>[])){
+   if(!entry.isFile()||/\.tmp$/i.test(entry.name))continue;const candidate=path.join(probe.directory,entry.name),info=await stat(candidate).catch(()=>null);if(!info||info.mtimeMs<probe.since-1000)continue;
+   if(info.size>profile.maxBytes)throw new ConnectorError('format','Выгрузка превышает ограничение размера');
+   const stamp=`${info.size}/${info.mtimeMs}/${info.ino}`;if(seen.get(candidate)!==stamp){seen.set(candidate,stamp);progress=Date.now();}
+   candidates.push({file:candidate,size:info.size,partial:/\.crdownload$/i.test(entry.name)});
+  }
+  let target:string|null=enginePath;const finals=candidates.filter(c=>!c.partial);
+  // CDP can move a live context to capture-owned staging while Playwright keeps
+  // its launch-time downloadsPath. Rebase only that native Download's exact GUID
+  // onto a completed file in this operation's directory, never a latest file.
+  if(enginePath&&!await stat(enginePath).catch(()=>null)){
+   const guid=path.basename(enginePath);target=/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(guid)?finals.find(candidate=>candidate.file===path.join(probe.directory,guid))?.file??null:null;
+  }
+  if(!enginePath&&candidates.length===1&&finals.length===1)target=finals[0].file;
+  if(target){
+   const before=await stat(target).catch(()=>null);if(before){if(before.size<1)throw new ConnectorError('incomplete','Пустая выгрузка');if(before.size>profile.maxBytes)throw new ConnectorError('format','Слишком большая выгрузка');
+    const bytes=await readFile(target),after=await stat(target);if(before.size===after.size&&before.mtimeMs===after.mtimeMs&&bytes.length===after.size){const policy=await inspectBrowserArtifact(bytes,name,profile.maxBytes);return{bytes,name,contentType:policy.mimeType,formatStatus:policy.status};}
+   }
+  }
+  if(pathSettled&&!enginePath&&!candidates.length)throw new ConnectorError('incomplete','Завершённый файл отсутствует',{reason:'DOWNLOAD_NOT_AVAILABLE'});
+  if(Date.now()-progress>=idleMs)throw new ConnectorError('incomplete',engineFailure?'Окно закрылось; завершение файла не подтверждено':'Нет продвижения выгрузки; повторите или отмените',{reason:'DOWNLOAD_NO_PROGRESS'});
+  await raceAbort(pause(100),probe.signal);
+ }
+}
+// Without a correlated Download identity a directory entry is retained for recovery, never declared success.
+async function diskFinished(_record:RecordState):Promise<boolean>{return false;}
+function watchExportUrls(_context:BrowserContext,_record:RecordState):void { /* No speculative authenticated requests. */ }
 function own(runtime: string, owner: string, id: string): RecordState {
   const record = records.get(id);
   if (!record || record.runtime !== runtime || record.owner !== owner) throw new ConnectorError('access_denied', 'Запись не найдена');
@@ -121,41 +151,89 @@ async function framePath(page: Page, frame: Frame, origin: string, profile: Priv
 }
 export async function startWorkbenchRecording(runtime: string, owner: string, profile: PrivateProfile, startUrl: string, selector: string,
   onClosed: (() => void) | undefined, options: BrowserHelperOptions,
-  launch: (runtime: string, profile: PrivateProfile, options: BrowserHelperOptions) => Promise<BrowserContext>) {
+  launch: (runtime: string, profile: PrivateProfile, options: BrowserHelperOptions) => Promise<BrowserContext>,
+  existing?: { context: BrowserContext; page: Page; downloadsPath: string }) {
   const origin = checkedUrl(startUrl, profile).origin, id = randomUUID(), signal = options.signal ?? new AbortController().signal;
   let ready!: (record: RecordState) => void, failed!: (error: unknown) => void;
   const started = new Promise<RecordState>((resolve, reject) => { ready = resolve; failed = reject; });
-  void withProfileQueue(await browserProfilePath(runtime, profile), signal, async () => {
-    let context: BrowserContext | undefined;
+  const begin = async () => {
+    let context: BrowserContext | undefined, downloadsPath = existing?.downloadsPath ?? '';
+    // The launch reports its download directory before the window exists; every artifact of this export is
+    // written there under an engine-chosen name rather than the suggested one.
+    const launching: BrowserHelperOptions = { ...options, onDownloadsPath: directory => { downloadsPath = directory; trace('downloads-dir', { directory }); } };
     try {
-      signal.throwIfAborted(); context = await launch(runtime, { ...profile, browser: { ...profile.browser!, headless: false } }, options);
-      let release!: () => void, end!: () => void; const done = new Promise<void>(resolve => { release = resolve; }), terminal = new Promise<void>(resolve => { end = resolve; });
-      const record: RecordState = { id, runtime, owner, context, startUrl, selector, steps: [], screenshots: [], queue: Promise.resolve(), downloads: new Set(), completed: false, closed: false, cancellation: new AbortController(), release, end, terminal,
-        timer: setTimeout(() => { record.problem = new ConnectorError('timeout', 'Запись ограничена 15 минутами'); void close(); }, 15 * 60_000) };
-      const close = async () => { if (record.closed) return; record.closed = true; if (!record.completed) record.cancellation.abort(); clearTimeout(record.timer); await context!.close().catch(() => {}); release(); end(); };
-      const abort = () => { record.problem = new ConnectorError('cancelled', 'Запись отменена'); void close(); };
+      signal.throwIfAborted(); context = existing?.context ?? await launch(runtime, { ...profile, browser: { ...profile.browser!, headless: false } }, launching);
+      let release!: () => void, end!: () => void; const done = new Promise<void>(resolve => { release = resolve; }); let ended = false;
+      const terminal = new Promise<void>(resolve => { end = () => { if (ended) return; ended = true; resolve(); }; });
+      const record: RecordState = { id, runtime, owner, context, startUrl, selector, steps: [], screenshots: [], queue: Promise.resolve(), downloads: new Set(), completed: false, closed: false, cancellation: new AbortController(), release, end, terminal, downloadsPath: downloadsPath || undefined, startedAt: Date.now(), profile, exportUrls: [],requestSequence:0,navigationRequests:[],
+        timer: undefined as unknown as NodeJS.Timeout };
+      // The window stays open as long as it is needed: there is no session deadline and no cap on the
+      // download. It is closed only after the artifact is read from disk, or by the user himself.
+      let closing = false;
+      const close = async () => { trace('close-called', { closing, closed: record.closed, completed: record.completed, from: new Error().stack?.split('\n')[2]?.trim().slice(0, 160) }); if (closing) return; closing = true; clearTimeout(record.timer); record.closed = true; if (context!.pages().length) await context!.close().catch(() => {}); release(); end(); };
+      const abort = () => { record.cancellation.abort(); trace('signal-abort', { completed: record.completed }); record.problem = new ConnectorError('cancelled', 'Запись отменена'); void close(); };
       signal.addEventListener('abort', abort, { once: true });
-      context.once('close', () => { record.closed = true; if (!record.completed) record.cancellation.abort(); clearTimeout(record.timer); signal.removeEventListener('abort', abort); release(); end(); onClosed?.();
+      // `end()` waits for the in-flight download read, otherwise `finish` reports «Запись завершена
+      // без выгрузки» for a file that is still being copied.
+      context.once('close', () => { trace('window-closed', { completed: record.completed, downloads: record.downloads.size, title: context!.pages().length ? 'pages' : 'none' }); clearTimeout(record.timer); signal.removeEventListener('abort', abort); onClosed?.();
+        void (async () => {
+          // A window the report closed by itself is not an interruption while the artifact is still being
+          // written: the file on disk is proof that the export succeeded, and reading it needs no browser.
+          await Promise.all([...record.downloads]);
+          if (record.completed) return;
+          if (await diskFinished(record)) { trace('window-closed-with-file'); return; }
+          record.problem ??= new ConnectorError('incomplete', 'Окно записи закрылось до появления файла выгрузки. Откройте отчёт и повторите выгрузку', { reason: 'WINDOW_CLOSED_BEFORE_DOWNLOAD' });
+          record.cancellation.abort();
+        })().catch(() => {}).finally(() => { release(); end(); });
         record.retention = setTimeout(() => { records.delete(id); }, 15 * 60_000); record.retention.unref(); });
       signal.throwIfAborted();
       const enqueue = (run: () => Promise<void>) => { record.queue = record.queue.then(run).catch(error => { record.problem = error instanceof ConnectorError ? error : new ConnectorError('configuration_required', 'Действие не поддерживается. Повторите запись'); }); return record.queue; };
-      await context.exposeBinding('__uorRecord', ({ page, frame }, event: unknown) => enqueue(async () => {
+      await context.exposeBinding('__uorRecord', ({ page, frame }, event: unknown) => {const requestBoundary=record.requestSequence;return enqueue(async () => {
         if (record.closed || record.completed || !await recordingReady(page, selector, origin)) return;
         if (record.problem) return;
+        // The page script reports an unaddressable element as `unsupported`: it is a gap in the
+        // recording, not a failure. Leaving the state untouched keeps the window open and the
+        // following download working, so the gap must be handled before anything clears `problem`.
+        if ((event as { action?: unknown } | null)?.action === 'unsupported') {record.replayGap=true;return;}
+        // Navigation problems are advisory: a successful manual action in the window clears them.
+        record.problem = undefined;
         if (record.steps.length >= 100) throw new ConnectorError('configuration_required', 'Запись ограничена 100 действиями');
         const parsed = recordedBrowserStepSchema.safeParse(event);
-        if (!parsed.success || parsed.data.action === 'goto' || parsed.data.action === 'download') throw new ConnectorError('configuration_required', 'Действие или locator не поддерживается записью');
+        if (!parsed.success || parsed.data.action === 'goto' || parsed.data.action === 'download') throw new ConnectorError('configuration_required', 'Не удалось записать шаг: элемент или действие не поддерживается записью. Нажмите на кнопку или поле с подписью и повторите.');
         const frames = await framePath(page, frame, origin, profile), step = { ...parsed.data, ...(frames ? { framePath: frames } : {}) };
         const target = await resolveRecordedLocator(page, step.framePath, step.locator, profile); await assertRecordedField(target);
         const previous = record.steps.at(-1);
         // Browsers can emit change once from an explicit filter event and once
         // again on blur. A safe parameter has one confirmed value after review.
         if ((step.action === 'fill' || step.action === 'select') && JSON.stringify(previous) === JSON.stringify(step)) return;
+        record.exportAction=undefined;
         record.steps.push(step);
+        if(step.action==='click'){
+          const exportUrl=await target.evaluate(el=>{
+            const anchor=el.closest('a[href]') as HTMLAnchorElement|null;if(anchor)return anchor.href;
+            const control=el as HTMLInputElement|HTMLButtonElement,form=control.form;
+            if(!form||control.type!=='submit')return null;
+            try{
+              // Successful controls named action or method can shadow the form's properties.
+              // Native getters preserve URL resolution and the browser's default values.
+              const method=control.hasAttribute('formmethod')?control.formMethod:Object.getOwnPropertyDescriptor(HTMLFormElement.prototype,'method')!.get!.call(form);
+              if((method||'get').toLowerCase()!=='get')return null;
+              // GET replaces the action's query with successful controls and the submitter.
+              // HTML normalizes entry names, string values and filenames to CRLF before encoding.
+              const url=new URL(control.hasAttribute('formaction')?control.formAction:Object.getOwnPropertyDescriptor(HTMLFormElement.prototype,'action')!.get!.call(form));
+              const query=new URLSearchParams();
+              for(const [name,value] of new FormData(form,control))query.append(name.replace(/\r\n|\r|\n/g,'\r\n'),(typeof value==='string'?value:value.name).replace(/\r\n|\r|\n/g,'\r\n'));
+              // Even an empty entry list produces a query component: /export?.
+              url.search='';url.hash='';return url.href+'?'+query.toString();
+            }catch{return null;} // Missing URL proof must not discard a completed manual capture.
+          });
+          if(typeof exportUrl==='string'){try{checkedUrl(exportUrl,profile);record.exportAction={page,frame,url:exportUrl,index:record.steps.length-1,boundary:requestBoundary};}catch{/* Non-report targets cannot prove export replayability. */}}
+        }
+        trace('step', { n: record.steps.length, action: step.action, locator: step.locator });
         const directory = await safeArtifactPath(runtime, `connector-recordings/${id}`); await mkdir(directory, { recursive: true });
         const screenshot = path.join(directory, `${record.steps.length}.png`);
         if (await recordingReady(page, selector, origin)) await page.screenshot({ path: screenshot, mask: [page.locator('input,textarea,select,[contenteditable],[data-sensitive],iframe')], timeout: 3000 }).then(() => record.screenshots.push(screenshot)).catch(() => {});
-      }));
+      });});
       await context.addInitScript(({ authenticatedSelector }) => {
         const pending = new Set<Promise<void>>();
         // Object methods avoid free esbuild name helpers in the serialized browser callback.
@@ -173,39 +251,81 @@ export async function startWorkbenchRecording(runtime: string, owner: string, pr
           return role && text ? { kind: 'role', role, name: text, exact: true } : null;
         } };
         (window as unknown as { __uorRecorderDrain: () => Promise<void> }).__uorRecorderDrain = async () => { await Promise.all([...pending]); };
-        document.addEventListener('click', event => { const el = (event.target as Element)?.closest('button,a,[role="button"],input[type="checkbox"]'); if (!el || !recorder.safe(el)) return;
+        document.addEventListener('click', event => { if(!event.isTrusted)return;const el = (event.target as Element)?.closest('button,a,[role="button"],input[type="checkbox"]'); if (!el || !recorder.safe(el)) return;
           const target = recorder.locator(el); if (!target) { recorder.send({ action: 'unsupported' }); return; }
           recorder.send((el as HTMLInputElement).type === 'checkbox' ? { action: 'check', locator: target, checked: (el as HTMLInputElement).checked } : { action: 'click', locator: target }); }, true);
         document.addEventListener('change', event => { const el = event.target as HTMLInputElement; if (!recorder.safe(el) || !['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName) || ['password', 'file', 'checkbox', 'radio', 'hidden'].includes(el.type)) return;
           const target = recorder.locator(el); if (!target) { recorder.send({ action: 'unsupported' }); return; }
           recorder.send({ action: el.tagName === 'SELECT' ? 'select' : 'fill', locator: target, parameter: `field_${el.id || el.name}` }); }, true);
       }, { authenticatedSelector: selector });
-      const attach = (page: Page) => page.on('download', file => {
+      const attach = (page: Page) => {page.on('request',request=>{try{if(!request.isNavigationRequest()||request.method()!=='GET')return;const frame=request.frame();let root=request;while(root.redirectedFrom())root=root.redirectedFrom()!;record.navigationRequests.push({page,frame,url:request.url(),rootUrl:root.url(),sequence:++record.requestSequence});if(record.navigationRequests.length>200)record.navigationRequests.shift();}catch{/* Worker/unknown request provenance never certifies a recorded click. */}});page.on('download', file => {
         const task = (async () => {
           try {
-            if (!await recordingReady(page, selector, origin)) { await file.cancel(); return; }
-            const sample = await completedBrowserDownload(file, profile, record.cancellation.signal);
-            await page.evaluate(async () => { await (window as unknown as { __uorRecorderDrain?: () => Promise<void> }).__uorRecorderDrain?.(); }).catch(() => {});
+            // No `recordingReady` check here: the report may already have torn its page down, and the
+            // artifact on disk is the only thing that proves the export succeeded.
+            // The signal aborts only on an explicit cancellation of the whole recording (the user asks
+            // to close the windows). A window the report closes by itself never reaches this signal,
+            // so a file that is still being written is not discarded.
+            // The page is deliberately left alone: a report commonly closes or navigates on export,
+            // so any call into it may fail. The bytes are read from disk, which survives that close.
+            const sample = await completedBrowserDownload(file, profile, { directory: record.downloadsPath ?? '', since: record.startedAt,
+              signal: record.cancellation.signal,resolved:()=>options.capture?.sink.read?.()??null });
+            // The page is deliberately left alone: a report commonly closes or navigates on export,
+            // so any call into it may fail. Waiting keeps the context alive until the file landed.
+            await options.onCaptured?.(sample);
+            record.sample=sample;
             await record.queue;
+            if(sample.formatStatus==='quarantined')throw new ConnectorError('format','Файл сохранён, но содержимое выгрузки требует проверки');
             if (record.problem) throw record.problem;
+            // A download that follows a recorded click reuses that locator as the final step. When the
+            // click was not addressable (or was swallowed by the page) the file itself is the step.
             const last = record.steps.at(-1);
-            if (last?.action !== 'click') throw new ConnectorError('configuration_required', 'Выгрузка не связана с записанным нажатием. Повторите запись');
-            if (!await recordingReady(page, selector, origin)) throw new ConnectorError('manual_login_required', 'Сессия отчёта требует входа');
-            record.steps[record.steps.length - 1] = { ...last, action: 'download' }; record.sample = sample; record.completed = true; await file.delete(); await close();
+            const action=record.exportAction,downloadUrl=file.url();
+            const correlated=action&&action.page===page&&action.index===record.steps.length-1&&record.navigationRequests.some(request=>request.sequence>action.boundary&&request.page===page&&request.frame===action.frame&&request.rootUrl===action.url&&request.url===downloadUrl);
+            if (last?.action === 'click' && !record.replayGap&&correlated) record.steps[record.steps.length - 1] = { ...last, action: 'download' };
+            // A raw artifact without an addressable export action cannot prove a replay recipe.
+            else record.problem=undefined;
+            // The file is verified on disk before this point, so the window is closed only now.
+            record.sample = sample; record.completed = true; await file.delete().catch(() => {}); await close();
           } catch (error) { record.problem = error instanceof ConnectorError ? error : new ConnectorError('incomplete', 'Выгрузка не завершена'); await close(); }
         })();
         record.downloads.add(task); void task.finally(() => record.downloads.delete(task)); return task;
-      });
+      });};
       context.pages().forEach(attach); context.on('page', attach); records.set(id, record);
-      const page = context.pages()[0] ?? await context.newPage(); await page.goto(startUrl).catch(error => { if (!record.completed) throw error; }); ready(record); await done;
+      watchExportUrls(context, record);
+      const page = existing?.page ?? context.pages()[0] ?? await context.newPage();
+      // A failed first navigation must not close the recording window: the user may still
+      // finish a manual SSO step or correct the address while the window stays open.
+      if (existing) {
+        // The workflow has explicitly consumed an authenticated capability. A
+        // lost session must enter its manual-login/retry flow, never return a
+        // successful start command containing an already-failed recorder.
+        const loginRequired = () => new ConnectorError('manual_login_required', 'Окно больше не подтверждает вход в отчёт. Войдите в личном окне и продолжите запись.');
+        let response;
+        try { response = await page.goto(startUrl); }
+        catch { signal.throwIfAborted(); throw loginRequired(); }
+        if (response?.status() === 403) throw new ConnectorError('access_denied', 'Источник отказал в доступе к отчёту');
+        if (response?.status() === 401) throw loginRequired();
+        await page.locator(selector).waitFor({ state: 'visible', timeout: profile.timeoutMs }).catch(() => { throw loginRequired(); });
+        if (!await recordingReady(page, selector, origin)) throw loginRequired();
+      } else await page.goto(startUrl).catch(error => { trace('navigation-failed', { error: String((error as Error)?.message ?? error).slice(0, 200) }); record.problem = navigationProblem(error); });
+      trace('window-opened', { url: startUrl, marker: selector });
+      ready(record); await done;
     } catch (error) { await disposeWorkbenchRecording(runtime,owner,id); failed(error); } finally { await context?.close().catch(() => {}); }
-  }).catch(failed);
+  };
+  // A continued login retains its original queue lease until native close.
+  // Re-entering this same profile queue would wait forever behind ourselves.
+  if (existing) void begin().catch(failed);
+  else void withProfileQueue(await browserProfilePath(runtime, profile), signal, begin).catch(failed);
   const record = await started; return { recordingId: record.id, message: 'Выполните действия в отчёте. Запись закончится после завершённой выгрузки CSV/XLSX.' };
 }
 export async function finishWorkbenchRecording(runtime: string, owner: string, id: string, save: boolean) {
   const record = own(runtime, owner, id);
   if (save) throw new ConnectorError('configuration_required', 'Проверьте сценарий перед сохранением общего черновика');
-  await record.queue; await Promise.all([...record.downloads]);
+  await record.queue;
+  // `finish` must not overtake a download that is still being written: the window is closed below,
+  // and closing it first is exactly what lost the file.
+  await Promise.all([...record.downloads]);
   try {
     if (record.problem) throw record.problem;
     const steps = record.steps.flatMap<BrowserStep>(step => { if (step.action === 'goto') return [step]; if (step.locator.kind !== 'css' || step.framePath) return []; const { locator, framePath: _frames, ...rest } = step; return [{ ...rest, selector: locator.selector }]; });
@@ -244,12 +364,14 @@ export function createBrowserRecorderService({ runtime, repository, profiles, dr
     async selectMarker(context, input) {
       const profile = await checked(context, input); checkedUrl(input.startUrl, profile.profile!);
       if (!runtime.selectMarker) throw new WorkbenchHttpError(409, 'BROWSER_CONFIGURATION_REQUIRED', 'Marker selection is unavailable');
-      const result = await runtime.selectMarker({ owner: owner(context), profile: profile.profile!, startUrl: input.startUrl }, AbortSignal.timeout(120000));
-      await checked(context, input, profile.revision); return result;
+      const result = await runtime.selectMarker({ owner: owner(context), profile: profile.profile!, startUrl: input.startUrl, preparationId: input.sourceRef.id, preparationRevision: browserPreparationRevision(input, profile.revision) }, new AbortController().signal);
+      try { await checked(context, input, profile.revision); }
+      catch (error) { await runtime.discardPreparation?.({ owner: owner(context), preparationId: input.sourceRef.id }); throw error; }
+      return result;
     },
     async start(context, input) {
       const profile = await checked(context, input); checkedUrl(input.startUrl, profile.profile!);
-      const handle = await runtime.startRecording({ owner: owner(context), profile: profile.profile!, startUrl: input.startUrl, authenticatedSelector: input.authenticatedSelector }, new AbortController().signal);
+      const handle = await runtime.startRecording({ owner: owner(context), profile: profile.profile!, startUrl: input.startUrl, authenticatedSelector: input.authenticatedSelector, preparationId: input.sourceRef.id, preparationRevision: browserPreparationRevision(input, profile.revision), allowFreshContext: true }, new AbortController().signal);
       try { await checked(context, input, profile.revision); }
       catch (error) { await runtime.cancelRecording?.({ handleId: handle.handleId, owner: owner(context) }); throw error; }
       const timer = setTimeout(() => sessions.delete(handle.handleId), 30 * 60_000); timer.unref();

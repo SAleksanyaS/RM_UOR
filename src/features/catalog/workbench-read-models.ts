@@ -1,3 +1,4 @@
+import {effectiveCellSchema} from '../evaluation/workbench/effective-matrix';
 import { z } from 'zod';
 import type { AgreedSnapshot, CalculationResult, Capture, CoreGoalDefinition, EvaluationBasis, EvaluationInput, MethodVersion, MetricDefinition, GoalAssignment, NumericEvaluation, ObservedFact, WorkbenchEntityMap, WorkbenchEntityType } from '../../domain/workbench/entities';
 import type { EntityRef, Header, VersionRef } from '../../domain/workbench/primitives';
@@ -9,7 +10,7 @@ import type { QueryContext } from '../../server/workbench/query-registry';
 import { pageResultSchema, nextActionSchema, jobSnapshotSchema, WorkbenchHttpError, type GlobalContext, type QueryRequest } from '../../server/workbench/protocol';
 import type { DraftService } from './workbench-drafts';
 import type { PublicationReadPort } from '../publishing/workbench/package-store';
-import { packageZones } from '../publishing/workbench/package-zones';
+import { queryOwnUor } from './workbench-own-uor-query';
 import { publicationPackageRecordSchema,packageDeliverySchema,retainedPackageDeliverySchema } from '../publishing/workbench/contracts';
 import type { SourceStore, SourceCaptureView } from '../connectors/workbench-source-store';
 import { sourceIssueSchema } from '../connectors/workbench-source-contracts';
@@ -58,6 +59,7 @@ const metricBlock={...dashboardBase,assignmentRef:versionRefSchema.nullable(),me
 export const dashboardIssueSchema=z.strictObject({kind:z.enum(['stale','incomplete','missing','unmapped','error']),code:z.string(),message:z.string(),ref:entityRefSchema});
 export type DashboardIssue=z.infer<typeof dashboardIssueSchema>;
 export const dashboardBlockReadSchema=z.discriminatedUnion('type',[
+  z.strictObject({...dashboardBase,type:z.literal('goal-comparison'),items:z.array(goalReadRowSchema)}),z.strictObject({...dashboardBase,type:z.literal('goal-matrix'),groups:z.array(z.strictObject({row:goalReadRowSchema,methodRef:versionRefSchema.nullable(),cells:z.array(effectiveCellSchema),unavailableReason:z.string().nullable()}))}),
   z.strictObject({...metricBlock,type:z.literal('metric-card')}),z.strictObject({...metricBlock,type:z.literal('metric-trend')}),
   z.strictObject({...dashboardBase,type:z.literal('goal-table'),columns:z.array(z.enum(goalColumns)),items:z.array(goalReadRowSchema)}),
   z.strictObject({...dashboardBase,type:z.literal('execution-table'),columns:z.array(z.enum(executionColumns)),items:z.array(executionReadItemSchema)}),
@@ -101,7 +103,7 @@ function exact<T extends Header>(reference:VersionRef,context:QueryContext):T {
 }
 function inScope(assignment:GoalAssignment,context:GlobalContext,index:WorkbenchReadIndex):boolean {
   const target=contextForScope(assignment.scope,index,context); if(!target) return false;
-  return Object.entries(context.scopePath).every(([key,value])=>value===null || target.scopePath[key as keyof typeof target.scopePath]===value);
+  return Object.entries(context.scopePath).every(([key,value])=>value===null || (key==='rootKind'?(target.scopePath.rootKind??'dit')===value:target.scopePath[key as keyof typeof target.scopePath]===value));
 }
 function assignmentsFor(request:QueryRequest,ports:WorkbenchReadPorts):GoalAssignment[] {
   if(request.context.resultMode==='agreed' && request.context.snapshotId) {
@@ -128,9 +130,9 @@ function snapshotsInContext(request:QueryRequest,context:QueryContext,ports:Work
     return publication?[{ref:ref('agreed_snapshot',snapshot),snapshot,basis,publication}]:[];
   });
 }
-function savedEvaluationInput(row:GoalReadRow,request:QueryRequest,context:QueryContext):EvaluationInput|null {
+export function savedEvaluationInput(row:GoalReadRow,request:QueryRequest,context:QueryContext,frozen=false):EvaluationInput|null {
   if(!row.basisRef) return null;
-  const basis=exact<EvaluationBasis>(row.basisRef,context);if(request.context.resultMode==='agreed' && !basis.evaluatedAt) return null;
+  const basis=exact<EvaluationBasis>(row.basisRef,context);if((frozen || request.context.resultMode==='agreed') && !basis.evaluatedAt) return null;
   const assignment=exact<GoalAssignment>(basis.assignmentRef,context),goal=exact<CoreGoalDefinition>(basis.goalRef,context);
   const method=exact<z.infer<typeof schemas.methodVersionSchema>>(basis.methodRef,context);
   const metrics=method.mode==='numeric'?method.rules.map(rule=>exact<z.infer<typeof schemas.metricDefinitionSchema>>(rule.metricRef,context)):[];
@@ -142,7 +144,7 @@ function savedEvaluationInput(row:GoalReadRow,request:QueryRequest,context:Query
   for(const value of [assignment,goal,method,...metrics,...facts,...captures,...applicability,...corrections]) if(value.publicationAnchorId && !anchors.has(value.publicationAnchorId)) {
     const anchor=context.repository.readPublicationAnchor({entityType:'publication_anchor',id:value.publicationAnchorId});if(anchor) anchors.set(anchor.id,anchor);
   }
-  return {assignment,goal,method,metrics,facts,captures,applicability,corrections,context:{businessTime:basis.businessTime,evaluatedAt:request.context.resultMode==='agreed'?basis.evaluatedAt!:context.clock.now()},resolution:{basisRef:row.basisRef,templateRef:basis.templateRef,directoryLinkRefs:basis.directoryLinkRefs,publicationAnchors:[...anchors.values()],actor:basis.actor}};
+  return {assignment,goal,method,metrics,facts,captures,applicability,corrections,context:{businessTime:basis.businessTime,evaluatedAt:frozen || request.context.resultMode==='agreed'?basis.evaluatedAt!:context.clock.now()},resolution:{basisRef:row.basisRef,templateRef:basis.templateRef,directoryLinkRefs:basis.directoryLinkRefs,publicationAnchors:[...anchors.values()],actor:basis.actor}};
 }
 function goalRows(request:QueryRequest,context:QueryContext,ports:WorkbenchReadPorts):GoalReadRow[] {
   const rows:GoalReadRow[]=[];
@@ -299,19 +301,7 @@ export async function queryWorkbench(name:WorkbenchQueryName,request:QueryReques
     const own=filter.packageRef?{drafts:ports.drafts,packageId:(filter.packageRef as EntityRef).id}:undefined;
     return describeWorkbenchForm({formKind:filter.formKind as string,ref:filter.ref as EntityRef??null},context,own);
   }
-  if(name==='uor.queue' || name==='uor.package') {
-    const packages=name==='uor.package'?[ports.drafts.readOwnPackage(context,(filter.packageRef as EntityRef).id)]:ports.drafts.listOwnPackages(context);
-    const running=ports.jobs.recoveryCandidates(context.installationId);
-    const summaries=packages.map(pkg=>{
-      const publication=ports.publishing.readOwnPackage(context,pkg.packageId);
-      const activeJob=running.find(job=>job.resourceKey==='package:'+pkg.packageId)?.snapshot??null;
-      // Metadata state alone never enables submission. A new preview command
-      // followed by assertPreview remains the authoritative drift/TTL gate.
-      return {packageRef:{entityType:'publication_package',id:pkg.packageId},revision:pkg.revision,editToken:`draft:${pkg.packageId}:${pkg.revision}`,incomplete:pkg.entries.filter(e=>!e.complete).length,publication,activeJob,previewCurrent:null,delivery:ports.publishing.readOwnDelivery?.(context,pkg.packageId)??null,retainedDelivery:ports.publishing.readOwnRetainedDelivery?.(context,pkg.packageId)??null,zones:packageZones(pkg.entries,ports.index)};
-    });
-    if(name==='uor.queue') return paged(summaries);
-    return {summary:summaries[0],entries:packages[0].entries.map(({draftId,entityRef,versionRef,baseRef,definition,complete,problems})=>({draftId,entityRef,versionRef,baseRef,definition,complete,problems}))};
-  }
+  if(name==='uor.queue' || name==='uor.package') return queryOwnUor(name,request,context,ports);
   if(name==='execution.list') return paged(execution(request,ports).filter(item=>!filter.kind || filter.kind==='all' || item.kind===filter.kind));
   if(name==='execution.detail') {const reference=filter.ref as EntityRef;const item=execution(request,ports).find(item=>item.ref.entityType===reference.entityType && item.ref.id===reference.id);if(!item) return fail('REFERENCE_NOT_FOUND',404);const workId=item.kind==='work'?item.value.id:item.value.workId;return {item,dependencies:ports.index.list('work_dependency').filter(d=>d.predecessorWorkId===workId||d.successorWorkId===workId),decisions:ports.index.list('decision').filter(d=>d.workId===workId)};}
   if(name==='snapshots.list') return paged(snapshotsInContext(request,context,ports));

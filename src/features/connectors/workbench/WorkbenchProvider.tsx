@@ -1,11 +1,14 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { JobSnapshot, SessionView } from '../../../server/workbench/protocol';
-import type { OkoWorkspaceView, OkoWorkflowView } from '../workbench-workflow-contracts';
+import type { OkoWorkspaceView, OkoWorkflowView, OkoExportsView } from '../workbench-workflow-contracts';
 import { OkoClient, OkoClientError } from './client';
 
-type Workspace = { client: OkoClient; session: SessionView | null; workspace: OkoWorkspaceView | null; current: OkoWorkflowView | null; loading: boolean; busy: boolean; error: string; job: JobSnapshot | null; recoveryPending: boolean; refresh(): Promise<void>; recover(): Promise<void>; open(id?: string, title?: string): Promise<void>; run(name: string, payload: Record<string, unknown>): Promise<unknown>; select(id: string): Promise<void>; clearError(): void };
+type Workspace = { client: OkoClient; session: SessionView | null; workspace: OkoWorkspaceView | null; current: OkoWorkflowView | null; exports: OkoExportsView | null; loading: boolean; busy: boolean; error: string; job: JobSnapshot | null; recoveryPending: boolean; refresh(): Promise<void>; refreshExports(): Promise<void>; recover(): Promise<void>; open(id?: string, title?: string, source?:{sourceKind:'oko'|'confluence';sourceMetadata?:{pageUrl?:string;attachmentId?:string;version?:number}}): Promise<void>; run(name: string, payload: Record<string, unknown>): Promise<unknown>; select(id: string): Promise<void>; clearError(): void };
 const Context = createContext<Workspace | null>(null);
 const defaultClient = new OkoClient();
+const clientIds = new WeakMap<object, number>();
+let clientSequence = 0;
+function clientIdentity(client: OkoClient) { let id=clientIds.get(client); if(id===undefined){id=++clientSequence;clientIds.set(client,id);}return id; }
 const releaseCommand = 'source.browser.record.cancel';
 type PendingJob = { personId: string | null; workflowId: string; jobId: string; kind: 'marker' | 'replay' };
 // Deliberately contains no payload, URL, title or filter values. Receipts are read from the own server.
@@ -21,12 +24,12 @@ function clearForeignMetadata(personId: string | null) { try { const own = perso
 return { commandKey, releaseKey, readPending, rememberPending, readCommand, clearForeignMetadata };
 }
 export function WorkbenchProvider({ children, client = defaultClient }: { children: React.ReactNode; client?: OkoClient }) {
-  return <PersonalProviderState key={client.storageScope ?? ''} client={client}>{children}</PersonalProviderState>;
+  return <PersonalProviderState key={(client.storageScope ?? '')+':'+clientIdentity(client)} client={client}>{children}</PersonalProviderState>;
 }
 function PersonalProviderState({ children, client }: { children: React.ReactNode; client: OkoClient }) {
   const storage = useMemo(() => createRecoveryStorage(client.storageScope ?? ''), [client.storageScope]);
   const { commandKey, releaseKey, readPending, rememberPending, readCommand, clearForeignMetadata } = storage;
-  const [session, setSession] = useState<SessionView | null>(null), [workspace, setWorkspace] = useState<OkoWorkspaceView | null>(null);
+  const [session, setSession] = useState<SessionView | null>(null), [workspace, setWorkspace] = useState<OkoWorkspaceView | null>(null), [exports, setExports] = useState<OkoExportsView | null>(null);
   const [loading, setLoading] = useState(true), [busy, setBusy] = useState(false), [error, setError] = useState(''), [job, setJob] = useState<JobSnapshot | null>(null);
   const selected = useRef<string | undefined>(undefined), mounted = useRef(true), generation = useRef(0), pollGeneration = useRef(0), ownPerson = useRef<string | null | undefined>(undefined);
   const pendingCommand = useRef<PendingCommand | null>(readCommand());
@@ -42,11 +45,12 @@ function PersonalProviderState({ children, client }: { children: React.ReactNode
     clearForeignMetadata(own.personId);
     if (pendingCommand.current?.personId !== own.personId) pendingCommand.current = null;
     if (pendingRelease.current?.personId !== own.personId) rememberCommand(null, true);
-    if (changed) { selected.current = undefined; ++pollGeneration.current; setJob(null); setWorkspace(null); }
+    if (changed) { selected.current = undefined; ++pollGeneration.current; setJob(null); setWorkspace(null); setExports(null); setError(''); }
     ownPerson.current = own.personId; setSession(own);
     return changed;
   }, [storage]);
-  const refresh = useCallback(async () => { const ticket = ++generation.current; const own = await client.session(); if (!mounted.current || ticket !== generation.current) return; acceptSession(own); const pending = readPending(); if (!selected.current && pending?.personId === own.personId) selected.current = pending.workflowId; if (!selected.current && pendingCommand.current?.workflowId) selected.current = pendingCommand.current.workflowId; const value = await client.workspace(selected.current); if (mounted.current && ticket === generation.current) { setWorkspace(value); if (value.current) selected.current = value.current.workflowId; } }, [client, acceptSession]);
+  const refreshExports = useCallback(async () => { const ticket = generation.current, personId = ownPerson.current; const value = await client.exports(); if (mounted.current && ticket === generation.current && personId === ownPerson.current) setExports(value); }, [client]);
+  const refresh = useCallback(async () => { const ticket = ++generation.current; const own = await client.session(); if (!mounted.current || ticket !== generation.current) return; acceptSession(own); const pending = readPending(); if (!selected.current && pending?.personId === own.personId) selected.current = pending.workflowId; if (!selected.current && pendingCommand.current?.workflowId) selected.current = pendingCommand.current.workflowId; const value = await client.workspace(selected.current); if (mounted.current && ticket === generation.current) { setWorkspace(value); if (value.current) selected.current = value.current.workflowId; } await refreshExports(); }, [client, acceptSession, refreshExports]);
   const poll = useCallback(async (id: string) => {
     const ticket = ++pollGeneration.current, personId = ownPerson.current; setBusy(true);
     const forget = () => { if (readPending()?.jobId === id) rememberPending(null); };
@@ -141,8 +145,8 @@ function PersonalProviderState({ children, client }: { children: React.ReactNode
     lane.current = { name, workflowId, promise }; return promise;
   }, [client, acceptSession, reconcile, finish]);
   const select = async (id: string) => { selected.current = id; setError(''); try { await refresh(); } catch (failure) { setError((failure as Error).message); } };
-  const open = async (workflowId?: string, title?: string) => { await run('source.browser.workflow.open', { ...(workflowId ? { workflowId } : {}), ...(title ? { title } : {}) }); };
+  const open = async (workflowId?: string, title?: string, source?:{sourceKind:'oko'|'confluence';sourceMetadata?:{pageUrl?:string;attachmentId?:string;version?:number}}) => { await run('source.browser.workflow.open', { ...(workflowId ? { workflowId } : {}), ...(title ? { title } : {}), ...source }); };
   useEffect(() => { if (workspace?.current?.recording.state !== 'recording') return; const timer = setInterval(() => { void refresh().catch(failure => setError((failure as Error).message)); }, 1200); return () => clearInterval(timer); }, [workspace?.current?.recording.state, refresh]);
-  return <Context.Provider value={{ client, session, workspace, current: workspace?.current ?? null, loading, busy, error, job, recoveryPending: Boolean(pendingCommand.current || pendingRelease.current), refresh, recover, open, run, select, clearError: () => setError('') }}>{children}</Context.Provider>;
+  return <Context.Provider value={{ client, session, workspace, current: workspace?.current ?? null, exports, loading, busy, error, job, recoveryPending: Boolean(pendingCommand.current || pendingRelease.current), refresh, refreshExports, recover, open, run, select, clearError: () => setError('') }}>{children}</Context.Provider>;
 }
 export function useWorkbench() { const context = useContext(Context); if (!context) throw new Error('WorkbenchProvider is required'); return context; }

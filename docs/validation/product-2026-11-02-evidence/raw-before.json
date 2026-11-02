@@ -1,0 +1,68 @@
+{
+  "measuredAt": "2026-11-02T00:46:56.880Z",
+  "node": "v22.16.0",
+  "platform": "linux",
+  "arch": "x64",
+  "kernel": "6.18.57",
+  "cpu": "AMD EPYC 9V74 80-Core Processor",
+  "logicalCpus": 9,
+  "totalMemory": 10451427328,
+  "source": {
+    "src/features/connectors/workbench-raw-acquisition.ts": "39384d8012f5a14ad72a76cf6b196a01d14b8cf4a2497bb973ea6760df8dc29b",
+    "src/features/tabular-import/workbench-parser.ts": "aed86ba0788a3be74a2b442120250ed09cafde005058c974c3f19f8195bc8132"
+  },
+  "conditions": "One real local HTTP/SQLite runtime; after restart cold parse; 20 sequential warm samples per operation; 50 returned rows. RSS includes harness, app and retained V8 memory. Concurrent engineering jobs may share the host. Synthetic five-column CSV; no banking traffic.",
+  "measurements": [
+    {
+      "rows": 10000,
+      "columns": 5,
+      "bytes": 351804,
+      "fixtureSha256": "c1cc292dd290e607759b86dada015e485b560ee82173d12cd2cd8bbad061fa29",
+      "acquisitionMs": 87.21532900000011,
+      "coldDetailMs": 33.560269999999946,
+      "parseState": "parsed",
+      "issue": null,
+      "rssBefore": 327213056,
+      "rssPeak": 499560448,
+      "rssAfter": 454512640,
+      "timings": {
+        "page": {
+          "n": 20,
+          "p50": 22.719049999999697,
+          "p95": 27.959709000000657,
+          "max": 50.01605099999961
+        },
+        "search": {
+          "n": 20,
+          "p50": 18.308864000000085,
+          "p95": 23.72845799999959,
+          "max": 26.409427999999934
+        },
+        "sort": {
+          "n": 20,
+          "p50": 409.1637560000004,
+          "p95": 489.9459939999997,
+          "max": 540.4568790000003
+        }
+      }
+    },
+    {
+      "rows": 100000,
+      "columns": 5,
+      "bytes": 3617814,
+      "fixtureSha256": "c5946da5e2596ed41b2e856d4de02384233925fb92a6163cb7fa11f4ce9a73ea",
+      "acquisitionMs": 105.26502900000014,
+      "coldDetailMs": 64.90258100000028,
+      "parseState": "failed",
+      "issue": "TABLE_LIMIT_EXCEEDED",
+      "rssBefore": 477175808,
+      "rssPeak": 519778304,
+      "rssAfter": 519778304,
+      "timings": {
+        "page": null,
+        "search": null,
+        "sort": null
+      }
+    }
+  ]
+}

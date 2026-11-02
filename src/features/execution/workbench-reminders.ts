@@ -4,10 +4,11 @@ import { entityRefSchema, moscowDateSchema, utcInstantSchema, uuidSchema, type E
 import { businessCalendarSchema, reminderSettingsSchema } from '../../domain/workbench/schemas/extensions';
 import { moscowEnd } from '../../domain/workbench/time';
 
-export type NotificationCause = { provider: string; objectRef: EntityRef; sourceVersion: string; kind: string; recipientPersonIds: UUIDv4[]; route: string; goalIds?: UUIDv4[]; recurring?: boolean };
+export type NotificationCause = { provider: string; objectRef: EntityRef; sourceVersion: string; kind: string; recipientPersonIds: UUIDv4[]; route: string; goalIds?: UUIDv4[]; recurring?: boolean; localOwner?: {installationId:UUIDv4;personId:UUIDv4|null} };
 export type ReminderPlan = { localDate: MoscowDate; cause: NotificationCause };
 export const notificationCauseSchema = z.strictObject({
   provider: z.string().min(1), objectRef: entityRefSchema, sourceVersion: z.string().min(1), kind: z.string().min(1), recipientPersonIds: z.array(uuidSchema),
+  localOwner:z.strictObject({installationId:uuidSchema,personId:uuidSchema.nullable()}).optional(),
   goalIds: z.array(uuidSchema).optional(), recurring: z.boolean().optional(),
   route: z.string().refine(route => {
     if (route.startsWith('/') && !route.startsWith('//') && !route.includes('\\')) return true;

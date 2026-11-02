@@ -1,5 +1,6 @@
+import { browserPolicyCdpFixture, browserPolicyPageFixture } from '../../../tests/fixtures/workbench/browser-policy-cdp';
 import { testBrowserSelection } from '../../../tests/fixtures/workbench/test-browser-selection';
-import { afterEach, expect, it } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 import { draftCleanups, draftFixture } from '../../../tests/fixtures/workbench/drafts';
 import { fixtureId, makeHeader, makeNumericFixture } from '../../../tests/fixtures/workbench/factories';
 import type { SourceDefinition, SourceFieldMapping, DirectoryEntity, Capture } from '../../domain/workbench/entities';
@@ -42,9 +43,10 @@ async function fixture() {
   const runtime: BrowserScenarioRuntimePort = {
     openLogin: async () => ({ handleId: fixtureId(880002), mode: 'login', state: 'open' }),
     observeLogin: async () => visible,
-    finish: async () => { authenticated = visible; return { recordingId: fixtureId(880002), startUrl: scenario.startUrl, authenticatedSelector: scenario.authenticatedSelector, steps: [], parameterNames: [], screenshotHandles: [], hasDownload: false }; },
+    prepareLogin: vi.fn(async () => { authenticated = visible; return { state: 'ready' as const, expiresAt: new Date(Date.parse(f.clock.now()) + 900000).toISOString() }; }),
+    finish: async () => { return { recordingId: fixtureId(880002), startUrl: scenario.startUrl, authenticatedSelector: scenario.authenticatedSelector, steps: [], parameterNames: [], screenshotHandles: [], hasDownload: false }; },
     startRecording: unavailable, screenshot: unavailable, waitForCompletion: unavailable, closeOwned: async () => {},
-    replay: async (_input, signal) => { active++; try { if (!authenticated) throw new ConnectorError('manual_login_required', 'Expired'); await hook?.(); signal.throwIfAborted(); return { bytes, name: 'synthetic.csv', contentType: 'text/csv' }; } finally { active--; } },
+    replay: vi.fn(async (_input, signal) => { active++; try { if (!authenticated) throw new ConnectorError('manual_login_required', 'Expired'); await hook?.(); signal.throwIfAborted(); return { bytes, name: 'synthetic.csv', contentType: 'text/csv' }; } finally { active--; } }),
     inspectExport: async binding => proof ? { ...binding, publishedAssignment: ref('goal_assignment', f.input.assignment), observedAt: f.clock.now(), expiresAt: new Date(Date.parse(f.clock.now()) + 60000).toISOString(), selectionVerified: true, allPagesExported: true, reportedRows: 1 } : null,
   };
   const profiles = createBrowserProfileService({ runtimeRoot: f.root, repository: f.repository, clock: f.clock });
@@ -122,7 +124,7 @@ it('review_I1_missing_checkpoint_cannot_advertise_or_run_recovery', async () => 
   const restarted = await restartCapture(f); expect(restarted.jobs.get(original.jobId, f.context.installationId)).toMatchObject({ retryAvailable: false, cancelAvailable: false });
   await expect(restarted.retry(original.jobId)).rejects.toMatchObject({ code: 'RETRY_NOT_AVAILABLE' }); expect(restarted.resolved()).toBe(0);
 });
-it.each(['401', '403', 'login', 'fetch401', 'form403', 'unrelated403', 'cancel'] as const)('review_I2_real_export_click_handles_%s', async mode => {
+it.skipIf(!process.env.UOR_TEST_BROWSER_EXECUTABLE).each(['401', '403', 'login', 'fetch401', 'form403', 'unrelated403', 'cancel'] as const)('review_I2_real_export_click_handles_%s', async mode => {
   const f = await fixture(); let responseMode = 'completed'; const contexts: BrowserContext[] = [];
   let exportReached!: () => void; const reached = new Promise<void>(resolve => { exportReached = resolve; });
   const csv = 'demo_row_key,demo_scope_id,demo_metric_id,demo_value,demo_date\nr1,dit,m1,92.00,2026-10-23\n';
@@ -141,7 +143,7 @@ it.each(['401', '403', 'login', 'fetch401', 'form403', 'unrelated403', 'cancel']
   try {
     const profile = await f.profiles.getOwn(f.context, f.source.id); await f.profiles.set(f.context, { sourceId: f.source.id, profileId: 'synthetic', expectedRevision: profile.revision, profile: privateProfileSchema.parse({ allowedOrigins: [origin], timeoutMs: 1500, browser: { ...testBrowserSelection(), profileDirectory: 'review-edge', headless: true } }) });
     f.repository.transaction(() => { f.repository.append('browser_scenario', { ...f.scenario, revision: 2, startUrl: origin + '/report' }, 1); const source = f.repository.readPublishedHead<SourceDefinition>({ entityType: 'source_definition', id: f.source.id })!; f.repository.append('source_definition', { ...source, revision: 3, browserScenarioRef: { ...ref('browser_scenario', f.scenario), revision: 2 } }, 2); });
-    f.runtime.replay = createBrowserRuntime({ runtimeRoot: f.root, launcher: { launchPersistent: async (_profile, folder, options) => { const context = await chromium.launchPersistentContext(folder, { ...options, headless: true }); contexts.push(context); return context; } } }).replay;
+    f.runtime.replay = createBrowserRuntime({ runtimeRoot: f.root, launcher: { launchPersistent: async (_profile, folder, options) => { expect(options.chromiumSandbox).toBe(true);const context = await chromium.launchPersistentContext(folder, { ...options, headless: true,...(process.env.UOR_TEST_CI_NO_SANDBOX==='1'?{chromiumSandbox:false}:{}) }); contexts.push(context); return context; } } }).replay;
     expect((await f.capture()).status).toBe('succeeded'); const previous = f.fallback(); responseMode = mode;
     const pending = f.capture();
     if (mode === 'cancel') { await reached; const running = f.jobs.recoveryCandidates(f.context.installationId).find(candidate => candidate.snapshot.status === 'running')!; await f.jobs.cancel(running.snapshot.jobId, f.context.installationId); }
@@ -160,14 +162,19 @@ it('published_browser_capture_preserves_real_raw_bytes_and_business_date', async
   expect(f.fallback().captureRef).toEqual(result.captureRef);
 });
 it('login_retry_reuses_job_and_never_accepts_login_html', async () => {
-  const f = await fixture(); const first = await f.capture(); f.auth(false); const waiting = await f.capture();
+  const f = await fixture(); const closeLogin = vi.spyOn(f.runtime, 'finish'); const first = await f.capture(); f.auth(false); const waiting = await f.capture();
   expect(waiting).toMatchObject({ status: 'waiting_user', stage: 'browser.auth', result: null, warnings: [{ code: 'AUTH_REQUIRED', provider: null }], nextAction: { commandName: 'source.browser.login.open' } });
   const opened = await f.send('source.browser.login.open', { sourceRef: { ...ref('source_definition', f.source), revision: 2 } });
   const loginId = opened.result!.loginId as string;
   expect(await f.login.finish(f.context, { loginId })).toMatchObject({ authenticated: false }); expect(f.fallback().captureRef).toEqual(first.result!.captureRef);
   f.marker(true); expect(await f.login.finish(f.context, { loginId })).toMatchObject({ authenticated: true });
+  expect(closeLogin).not.toHaveBeenCalled();
+  expect(f.runtime.prepareLogin).toHaveBeenCalledWith(expect.objectContaining({ loginHandleId: loginId, preparationId: f.source.id, preparationRevision: expect.stringMatching(/^[a-f0-9]{64}$/), startUrl: f.scenario.startUrl, authenticatedSelector: f.scenario.authenticatedSelector }));
+  const preparation = vi.mocked(f.runtime.prepareLogin!).mock.calls[0][0];
   expect(f.jobs.get(waiting.jobId, f.context.installationId)?.nextAction).toMatchObject({ commandName: 'job.retry', payload: { jobId: waiting.jobId } });
   await f.send('job.retry', { jobId: waiting.jobId }); expect(f.jobs.get(waiting.jobId, f.context.installationId)).toMatchObject({ status: 'succeeded', commandId: waiting.commandId });
+  expect(f.runtime.replay).toHaveBeenLastCalledWith(expect.objectContaining({ preparationId: preparation.preparationId, preparationRevision: preparation.preparationRevision, owner: preparation.owner, operationId: waiting.jobId }), expect.anything());
+  await expect(f.login.finish(f.context, { loginId })).rejects.toMatchObject({ code: 'BROWSER_HANDLE_NOT_FOUND' });
   expect(f.store.listOwnCaptures({ installationId: f.context.installationId, profilePersonId: f.context.ownAccess.personId })).toHaveLength(2);
   const accepted = f.fallback().captureRef; f.bytes('<html>login</html>'); expect(await f.capture()).toMatchObject({ status: 'failed', error: { code: 'SOURCE_SCHEMA_CHANGED' } }); expect(f.fallback().captureRef).toEqual(accepted);
 });
@@ -225,24 +232,24 @@ it.each(['payloadHash', 'scenarioHash', 'mappingRef', 'sourceRef', 'publishedAss
 it.each([0, 2])('requires_unique_selector_in_actual_runtime: %s matches', async count => {
   const f = await fixture(); await f.capture(); const previous = f.fallback().captureRef;
   const events = new EventEmitter(); let closed = false;
-  const page = { goto: async () => {}, url: () => f.scenario.startUrl, frames: () => [], locator: (selector: string) => ({ count: async () => selector === '#report' ? 1 : count, isVisible: async () => true, evaluateAll: async () => false }) };
-  const context = Object.assign(events, { setDefaultTimeout: () => {}, setDefaultNavigationTimeout: () => {}, pages: () => [page], newCDPSession: async () => Object.assign(new EventEmitter(), { send: async () => {}, detach: async () => {} }), route: async () => {}, routeWebSocket: async () => {}, close: async () => { closed = true; events.emit('close'); } }) as unknown as BrowserContext;
+  const page = browserPolicyPageFixture({ goto: async () => {}, url: () => f.scenario.startUrl, frames: () => [], locator: (selector: string) => ({ count: async () => selector === '#report' ? 1 : count, isVisible: async () => true, evaluateAll: async () => false }) });
+  const context = Object.assign(events, { setDefaultTimeout: () => {}, setDefaultNavigationTimeout: () => {}, pages: () => [page], newCDPSession: async () => browserPolicyCdpFixture(), setOffline: async () => {}, addInitScript: async () => {}, route: async () => {}, routeWebSocket: async () => {}, close: async () => { closed = true; events.emit('close'); } }) as unknown as BrowserContext;
   const runtime = createBrowserRuntime({ runtimeRoot: f.root, launcher: { launchPersistent: async () => context } }); f.runtime.replay = runtime.replay;
   expect(await f.capture()).toMatchObject({ status: 'failed', error: { code: count === 0 ? 'SELECTOR_NOT_FOUND' : 'SELECTOR_NOT_UNIQUE' } }); expect(closed).toBe(true); expect(f.fallback().captureRef).toEqual(previous);
 });
 it.each([401, 403])('actual_runtime_detects_http_auth_response: %s', async status => {
   const f = await fixture(); const events = new EventEmitter();
-  const page = { goto: async () => ({ status: () => status }), url: () => f.scenario.startUrl, frames: () => [], locator: () => ({ count: async () => 1, isVisible: async () => true, evaluateAll: async () => false }) };
-  const context = Object.assign(events, { setDefaultTimeout: () => {}, setDefaultNavigationTimeout: () => {}, pages: () => [page], newCDPSession: async () => Object.assign(new EventEmitter(), { send: async () => {}, detach: async () => {} }), route: async () => {}, routeWebSocket: async () => {}, close: async () => { events.emit('close'); } }) as unknown as BrowserContext;
+  const page = browserPolicyPageFixture({ goto: async () => ({ status: () => status }), url: () => f.scenario.startUrl, frames: () => [], locator: () => ({ count: async () => 1, isVisible: async () => true, evaluateAll: async () => false }) });
+  const context = Object.assign(events, { setDefaultTimeout: () => {}, setDefaultNavigationTimeout: () => {}, pages: () => [page], newCDPSession: async () => browserPolicyCdpFixture(), setOffline: async () => {}, addInitScript: async () => {}, route: async () => {}, routeWebSocket: async () => {}, close: async () => { events.emit('close'); } }) as unknown as BrowserContext;
   f.runtime.replay = createBrowserRuntime({ runtimeRoot: f.root, launcher: { launchPersistent: async () => context } }).replay;
   const job = await f.capture(); expect(status === 401 ? job.warnings[0]?.code : job.error?.code).toBe(status === 401 ? 'AUTH_REQUIRED' : 'SOURCE_ACCESS_DENIED');
 });
 it.each(['failed', 'missing', 'empty', 'html', 'completed'])('actual_runtime_requires_completed_nonempty_download: %s', async state => {
   const f = await fixture(); const events = new EventEmitter(); let closed = false;
   const filename = path.join(f.root, 'synthetic-download.csv'); await writeFile(filename, state === 'empty' ? '' : state === 'html' ? '<html>login</html>' : 'demo_row_key,demo_scope_id,demo_metric_id,demo_value,demo_date\nr1,dit,m1,92,2026-10-23\n');
-  const download = { failure: async () => state === 'failed' ? 'cancelled' : null, path: async () => state === 'missing' ? null : filename, suggestedFilename: () => 'synthetic.csv', cancel: async () => {}, delete: async () => {} };
-  const pageEvents = new EventEmitter(); const page = Object.assign(pageEvents, { goto: async () => {}, url: () => f.scenario.startUrl, frames: () => [], locator: () => ({ count: async () => 1, isVisible: async () => true, evaluateAll: async () => false, evaluate: async () => null, click: async () => { pageEvents.emit('download', download); } }) });
-  const context = Object.assign(events, { setDefaultTimeout: () => {}, setDefaultNavigationTimeout: () => {}, pages: () => [page], newCDPSession: async () => Object.assign(new EventEmitter(), { send: async () => {}, detach: async () => {} }), route: async () => {}, routeWebSocket: async () => {}, close: async () => { closed = true; events.emit('close'); } }) as unknown as BrowserContext;
+  const download = { failure: async () => state === 'failed' ? 'cancelled' : null, path: async () => {if(state==='failed')throw Error('Engine download failed');return state==='missing'?null:filename;}, suggestedFilename: () => 'synthetic.csv', cancel: async () => {}, delete: async () => {} };
+  const pageEvents = new EventEmitter(); const page = Object.assign(pageEvents, { goto: async () => {}, url: () => f.scenario.startUrl, frames: () => [], locator: () => ({ count: async () => 1, isVisible: async () => true, evaluateAll: async () => false, evaluate: async () => null, waitFor: async () => {}, click: async () => { pageEvents.emit('download', download); } }) });
+  const context = Object.assign(events, { setDefaultTimeout: () => {}, setDefaultNavigationTimeout: () => {}, pages: () => [page], newCDPSession: async () => browserPolicyCdpFixture(), setOffline: async () => {}, addInitScript: async () => {}, route: async () => {}, routeWebSocket: async () => {}, close: async () => { closed = true; events.emit('close'); } }) as unknown as BrowserContext;
   f.runtime.replay = createBrowserRuntime({ runtimeRoot: f.root, launcher: { launchPersistent: async () => context } }).replay;
   const job = await f.capture(); expect(job.status).toBe(state === 'completed' ? 'succeeded' : 'failed'); expect(closed).toBe(true);
   if (state !== 'completed') {expect(f.fallback().captureRef).toBeNull();expect(job.error?.code).toBe(state === 'html' ? 'SOURCE_SCHEMA_CHANGED' : 'DOWNLOAD_REQUIRED');}
@@ -272,8 +279,8 @@ it('removing_browser_scenario_cannot_switch_the_original_retry_to_another_adapte
 it('login_observation_requires_live_unique_report_marker_and_owned_handle', async () => {
   const f = await fixture(); let count = 0, closed = false, pageUrl = f.scenario.startUrl;
   const events = new EventEmitter();
-  const page = { goto: async () => {}, url: () => pageUrl, frames: () => [], locator: (selector: string) => ({ count: async () => count, isVisible: async () => !closed && count > 0, evaluateAll: async () => selector === '#report' }) };
-  const context = Object.assign(events, { setDefaultTimeout: () => {}, setDefaultNavigationTimeout: () => {}, pages: () => closed ? [] : [page], newCDPSession: async () => Object.assign(new EventEmitter(), { send: async () => {}, detach: async () => {} }), route: async () => {}, routeWebSocket: async () => {}, close: async () => { if (!closed) { closed = true; events.emit('close'); } } }) as unknown as BrowserContext;
+  const page = browserPolicyPageFixture({ goto: async () => {}, url: () => pageUrl, frames: () => [], locator: (selector: string) => ({ count: async () => count, isVisible: async () => !closed && count > 0, evaluateAll: async () => selector === '#report' }) });
+  const context = Object.assign(events, { setDefaultTimeout: () => {}, setDefaultNavigationTimeout: () => {}, pages: () => closed ? [] : [page], newCDPSession: async () => browserPolicyCdpFixture(), setOffline: async () => {}, addInitScript: async () => {}, route: async () => {}, routeWebSocket: async () => {}, close: async () => { if (!closed) { closed = true; events.emit('close'); } } }) as unknown as BrowserContext;
   const runtime = createBrowserRuntime({ runtimeRoot: f.root, launcher: { launchPersistent: async () => context } });
   const owner = { installationId: f.context.installationId, profilePersonId: f.context.ownAccess.personId };
   const opened = await runtime.openLogin({ owner, profile: (await f.profiles.getOwn(f.context, f.source.id)).profile!, startUrl: f.scenario.startUrl, authenticatedSelector: '#report' }, new AbortController().signal);

@@ -22,6 +22,16 @@ export function checkedUrl(value: string, profile: PrivateProfile, websocket = f
   if (['http:', 'ws:'].includes(url.protocol) && !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)) throw new ConnectorError('configuration_required', 'Корпоративное соединение требует TLS');
   return url;
 }
+/**
+ * Origins that may be loaded inside the manual login window: the report itself plus
+ * the corporate sign-in and its embedded widgets. Without them the identity provider
+ * and the SSO widgets render as ERR_BLOCKED_BY_CLIENT and the operator cannot log in.
+ * Downloads and recorded steps still require an exact match in `allowedOrigins`.
+ */
+export function loginUrlAllowed(value:string,profile:PrivateProfile):boolean {
+ try {checkedUrl(value,{...profile,allowedOrigins:[...profile.allowedOrigins,...(profile.loginAllowedOrigins??[])]});return true;}catch{return false;}
+}
+export function checkedBrowserUrl(value:string,profile:PrivateProfile,phase:'login'|'report'='report') {return checkedUrl(value,phase==='login'?{...profile,allowedOrigins:[...profile.allowedOrigins,...(profile.loginAllowedOrigins??[])]}:profile);}
 export function profileHeaders(profile: PrivateProfile): Record<string, string> {
   const headers: Record<string, string> = {};
   const env = (key: string) => { const v = process.env[key]; if (!v || /[\r\n]/.test(v)) throw new ConnectorError('configuration_required', 'Не задана переменная окружения профиля доступа'); return v; };
@@ -32,7 +42,7 @@ export function profileHeaders(profile: PrivateProfile): Record<string, string> 
 export async function tlsOptions(profile: PrivateProfile) {
   return { ...(profile.caFile ? { ca: await readFile(profile.caFile) } : {}), ...(profile.certFile ? { cert: await readFile(profile.certFile) } : {}), ...(profile.keyFile ? { key: await readFile(profile.keyFile) } : {}), ...(profile.passphraseEnv ? { passphrase: process.env[profile.passphraseEnv] } : {}), rejectUnauthorized: true as const };
 }
-export interface Downloaded { bytes: Buffer; name: string; contentType: string }
+export interface Downloaded { bytes: Buffer; name: string; contentType: string; captureReceipt?: import('./workbench-capture-contracts').CaptureReceipt; formatStatus?: 'supported'|'unsupported'|'quarantined' }
 /** Each redirect is validated before forwarding any private headers. */
 export async function download(value: string, profile: PrivateProfile, signal: AbortSignal): Promise<Downloaded> {
   const tls = await tlsOptions(profile), headers = profileHeaders(profile);

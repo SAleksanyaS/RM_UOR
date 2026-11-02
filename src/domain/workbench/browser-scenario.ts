@@ -30,8 +30,9 @@ export const browserScenarioDefinitionSchema = z.strictObject({
   ...headerShape, sourceId: uuidSchema, startUrl: endpoint, authenticatedSelector: text,
   steps: z.array(recordedBrowserStepSchema).min(1).max(100).refine(steps => steps.at(-1)?.action === 'download' && steps.filter(step => step.action === 'download').length === 1, 'Exactly one final download required'),
   parameters: z.record(text, z.string().max(2000).refine(value => !/^\s*(Bearer|Basic)\s+\S|-----BEGIN .*PRIVATE KEY-----/i.test(value), 'Secret value forbidden')),
-  expectedExport: z.strictObject({ format: z.enum(['csv', 'xlsx']), requiredColumns: z.array(z.string().trim().min(1).max(1000)).min(1).max(1000).refine(columns => new Set(columns).size === columns.length) }),
+  expectedExport: z.strictObject({ format: z.enum(['csv', 'xlsx', 'raw']), requiredColumns: z.array(z.string().trim().min(1).max(1000)).max(1000).refine(columns => new Set(columns).size === columns.length) }),
 }).superRefine((scenario, context) => {
+  if(scenario.expectedExport.format!=='raw'&&!scenario.expectedExport.requiredColumns.length)context.addIssue({code:'custom',path:['expectedExport','requiredColumns'],message:'TYPED_EXPORT_COLUMNS_REQUIRED'});
   for (const step of scenario.steps) if ((step.action === 'fill' || step.action === 'select') && !Object.hasOwn(scenario.parameters, step.parameter)) context.addIssue({ code: 'custom', path: ['parameters', step.parameter], message: 'PARAMETER_REQUIRED' });
 });
 export type BrowserScenarioDefinition = z.infer<typeof browserScenarioDefinitionSchema>;

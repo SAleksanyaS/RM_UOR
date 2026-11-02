@@ -1,23 +1,203 @@
 import { readFile, mkdir, writeFile, stat, lstat, rm } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
-import type { BrowserContext, Page, Locator, Download, Frame } from 'playwright';
+import type { BrowserContext, Page, Locator, Download, Frame, CDPSession } from 'playwright';
 import { safeArtifactPath } from '../../server/workspace/paths';
 import { ConnectorError, scenarioSchema, stepSchema, type PrivateProfile, type BrowserScenario, type BrowserStep } from './contracts';
-import { browserProfilePath, checkedUrl, withProfileQueue, type Downloaded } from './transport';
+import { describeLaunchFailure, inspectBrowserEnvironment, launchHint, safeErrorDetail, type BrowserEnvironmentReport } from './workbench-browser-diagnostics';
+import { browserProfilePath, checkedUrl, checkedBrowserUrl, loginUrlAllowed, withProfileQueue, type Downloaded } from './transport';
 import { assertRecordedField, cancelWorkbenchRecording, completedBrowserDownload, finishWorkbenchRecording, hasWorkbenchRecording, recordingReady, startWorkbenchRecording, waitForWorkbenchRecordingComplete, readWorkbenchRecordingScreenshot } from './workbench-browser-recorder';
 import type { RecordedBrowserStep } from '../../domain/workbench/browser-scenario';
 import { resolveRecordedLocator } from './workbench-browser-locators';
+import { releaseStaleProfileLocks, acquireBrowserProfileLease } from './workbench-browser-profile-locks';
 export const waitForRecordingComplete = waitForWorkbenchRecordingComplete;
 export const readRecordingScreenshot = readWorkbenchRecordingScreenshot;
 export async function cancelRecording(runtime: string, owner: string, id: string): Promise<boolean> {
   if (hasWorkbenchRecording(id)) return cancelWorkbenchRecording(runtime, owner, id);
   await finishRecording(runtime, owner, id, false); return false;
 }
+const profileReleases=new Map<string,Promise<void>>();
+const browserDownloads=new WeakMap<BrowserContext,string>();
 const browserLimits = new WeakMap<BrowserContext,{error?:ConnectorError}>();
+interface BrowserPolicy {
+  phase: 'login' | 'report'; transitioning: boolean; retainedPage?: Page;
+  guards: Map<Page, Promise<CDPSession>>; downloads: string;
+  capture?: BrowserHelperOptions['capture']; activeDownloads: Set<string>;
+  downloadSession?: CDPSession; detachDownloads?: () => void;
+  limit: { error?: ConnectorError };
+}
+const browserPolicies = new WeakMap<BrowserContext, BrowserPolicy>();
+const browserClosures = new WeakMap<BrowserContext, Promise<void>>();
+/** Concurrent native close calls can acknowledge before the first close finishes.
+ * Policy rejection, cancellation and replay cleanup share that first promise. */
+function closeBrowserContext(context: BrowserContext): Promise<void> {
+  let closing = browserClosures.get(context);
+  if (!closing) { closing = context.close().catch(() => {}); browserClosures.set(context, closing); }
+  return closing;
+}
+
+const reportWorkerPolicyError = () => new ConnectorError('configuration_required',
+  'Браузер не подтвердил безопасный режим отчёта без фоновых workers. Проверьте поддержку целевого браузера; вход повторно не открывался.',
+  { reason: 'REPORT_WORKER_POLICY_UNAVAILABLE', detail: 'REPORT_WORKER_POLICY_UNAVAILABLE' });
+// A string is intentional: this runs in the native production loader and must
+// not refer to TypeScript/esbuild helpers or extract any authentication state.
+const reportWorkerGuard = `(() => {
+  if (globalThis.ServiceWorkerContainer) Object.defineProperty(ServiceWorkerContainer.prototype, 'register', {
+    configurable: false, writable: false,
+    value: function () { return Promise.reject(new DOMException('Report worker policy', 'SecurityError')); }
+  });
+})();`;
+const reportDocumentMaxBytes = 16 * 1024 * 1024;
+// Engine-level single-tab boundary: reject popup creation before its first
+// request, while preserving scripts, cookies, forms and same-tab downloads.
+const reportDocumentPolicy = "worker-src 'none'; sandbox allow-scripts allow-same-origin allow-forms allow-downloads allow-modals allow-pointer-lock allow-orientation-lock allow-presentation allow-top-navigation";
+const reportWindowPolicyError = () => new ConnectorError('configuration_required',
+  'Источник открыл новое окно во время получения отчёта. Настройте выгрузку в текущей вкладке.',
+  { reason: 'REPORT_NEW_WINDOW_UNSUPPORTED', detail: 'REPORT_NEW_WINDOW_UNSUPPORTED' });
+function rejectReportWindow(context: BrowserContext, policy: BrowserPolicy) {
+  policy.limit.error = reportWindowPolicyError(); void closeBrowserContext(context);
+}
+
+/** Header-only CDP continuation silently ignores added CSP in the tested engine.
+ * Fulfil the original document bytes explicitly, in bounded transient memory.
+ * No document, cookie, token or storage snapshot is persisted or logged. */
+async function protectReportDocument(guard: CDPSession, event: { requestId: string; responseStatusCode?: number; responseStatusText?: string; responseHeaders?: Array<{ name: string; value: string }> }) {
+  const headers = event.responseHeaders ?? [];
+  const declaredSize = headers.find(header => header.name.toLowerCase() === 'content-length')?.value;
+  if (declaredSize && /^\d+$/.test(declaredSize) && Number(declaredSize) > reportDocumentMaxBytes) throw reportWorkerPolicyError();
+  const { stream } = await guard.send('Fetch.takeResponseBodyAsStream', { requestId: event.requestId });
+  const chunks: Buffer[] = []; let length = 0;
+  try {
+    for (;;) {
+      const part = await guard.send('IO.read', { handle: stream, size: 64 * 1024 });
+      const bytes = Buffer.from(part.data, part.base64Encoded ? 'base64' : 'utf8');
+      length += bytes.length; if (length > reportDocumentMaxBytes) throw reportWorkerPolicyError();
+      chunks.push(bytes); if (part.eof) break;
+    }
+    // Chromium provides decoded body bytes. Reusing compression/framing headers
+    // would corrupt the response; all source security and cookie headers remain.
+    await guard.send('Fetch.fulfillRequest', { requestId: event.requestId, responseCode: event.responseStatusCode!, responsePhrase: event.responseStatusText,
+      responseHeaders: [...headers.filter(header => !/^(content-encoding|content-length|transfer-encoding)$/i.test(header.name)),
+        { name: 'Content-Length', value: String(length) }, { name: 'Content-Security-Policy', value: reportDocumentPolicy }],
+      body: Buffer.concat(chunks, length).toString('base64') });
+  } finally { chunks.length = 0; await guard.send('IO.close', { handle: stream }).catch(() => {}); }
+}
+
+/** Bind current capture state, not the original login options. Browser events
+ * must journal the GUID/path before a receipt can be committed or a window closes. */
+async function bindBrowserDownloads(context: BrowserContext, policy: BrowserPolicy, profile: PrivateProfile, page: Page) {
+  policy.detachDownloads?.();
+  const cdp = await context.newCDPSession(page); policy.downloadSession = cdp;
+  const begin = (event: { url: string; guid: string; suggestedFilename: string }) => {
+    policy.activeDownloads.add(event.guid);
+    try {
+      if (policy.transitioning) throw reportWorkerPolicyError();
+      checkedUrl(event.url, profile);
+      policy.capture?.sink.stage?.({ directory: policy.downloads, guid: event.guid, name: event.suggestedFilename });
+    } catch {
+      policy.limit.error = new ConnectorError('incomplete', 'Не удалось связать выгрузку с операцией');
+      void cdp.send('Browser.cancelDownload', { guid: event.guid }).catch(() => {});
+    }
+  };
+  const progress = (event: { guid: string; state: string; receivedBytes: number; totalBytes: number }) => {
+    if (event.state === 'completed' || event.state === 'canceled') policy.activeDownloads.delete(event.guid);
+    if (event.receivedBytes > profile.maxBytes || event.totalBytes > profile.maxBytes) {
+      policy.limit.error = new ConnectorError('format', 'Браузерная выгрузка превышает допустимый размер');
+      void cdp.send('Browser.cancelDownload', { guid: event.guid }).catch(() => {});
+    }
+  };
+  cdp.on('Browser.downloadWillBegin', begin); cdp.on('Browser.downloadProgress', progress);
+  policy.detachDownloads = () => { cdp.off('Browser.downloadWillBegin', begin); cdp.off('Browser.downloadProgress', progress); };
+  await cdp.send('Browser.setDownloadBehavior', { behavior: 'allowAndName', downloadPath: policy.downloads, eventsEnabled: true });
+  browserDownloads.set(context, policy.downloads);
+}
+
+/** A login is not a report security boundary: workers can make redirects and
+ * sockets outside page routes. Retire every old realm/worker before resuming the
+ * same context. Report CSP deliberately excludes dedicated/shared workers too;
+ * worker-dependent reports require a separate target-browser acceptance check. */
+async function enterReportPolicy(context: BrowserContext, policy: BrowserPolicy, profile: PrivateProfile, page: Page, callerSignal?: AbortSignal) {
+  const deadline = AbortSignal.timeout(profile.timeoutMs), signal = callerSignal ? AbortSignal.any([callerSignal, deadline]) : deadline;
+  const abort = () => { void closeBrowserContext(context); };
+  signal.addEventListener('abort', abort, { once: true });
+  const sessions: CDPSession[] = [];
+  policy.transitioning = true; policy.retainedPage = page; policy.phase = 'report';
+  const waitFor = async (check: () => boolean, subscribe: (changed: () => void) => () => void) => {
+    signal.throwIfAborted(); if (check()) return;
+    await new Promise<void>((resolve, reject) => {
+      const changed = () => { if (check()) { cleanup(); resolve(); } };
+      const aborted = () => { cleanup(); reject(signal.reason); };
+      const closed = () => { cleanup(); reject(reportWorkerPolicyError()); };
+      const unsubscribe = subscribe(changed);
+      const cleanup = () => { unsubscribe(); signal.removeEventListener('abort', aborted); context.off('close', closed); };
+      signal.addEventListener('abort', aborted, { once: true }); context.once('close', closed); changed();
+      if (signal.aborted) aborted();
+    });
+  };
+  const inventory = async () => {
+    const cdp = await context.newCDPSession(page); sessions.push(cdp);
+    const registrations = new Map<string, { scopeURL: string; isDeleted: boolean }>();
+    const versions = new Map<string, { runningStatus: string }>();
+    let registrationsSeen = false, versionsSeen = false;
+    const listeners = new Set<() => void>();
+    const subscribe = (changed: () => void) => { listeners.add(changed); return () => { listeners.delete(changed); }; };
+    cdp.on('ServiceWorker.workerRegistrationUpdated', event => { registrationsSeen = true; for (const entry of event.registrations) registrations.set(entry.registrationId, entry); for (const changed of listeners) changed(); });
+    cdp.on('ServiceWorker.workerVersionUpdated', event => { versionsSeen = true; for (const entry of event.versions) versions.set(entry.versionId, entry); for (const changed of listeners) changed(); });
+    await cdp.send('ServiceWorker.enable');
+    // The enable reply arrives BEFORE its asynchronous snapshots, including the
+    // two empty snapshots. A command acknowledgement alone proves nothing here.
+    await waitFor(() => registrationsSeen && versionsSeen, subscribe);
+    return { cdp, registrations, versions, subscribe };
+  };
+  try {
+    signal.throwIfAborted(); await context.setOffline(true);
+    await context.addInitScript({ content: reportWorkerGuard });
+    for (const guid of policy.activeDownloads) await policy.downloadSession?.send('Browser.cancelDownload', { guid });
+    policy.activeDownloads.clear();
+    for (const other of context.pages()) if (other !== page) await other.close();
+    // Same tab: sessionStorage survives; no cookies/storageState are read/copied.
+    await page.goto('about:blank');
+    for (const other of context.pages()) if (other !== page) await other.close();
+    const workers = await inventory();
+    await workers.cdp.send('ServiceWorker.stopAllWorkers');
+    for (const entry of workers.registrations.values()) if (!entry.isDeleted) await workers.cdp.send('ServiceWorker.unregister', { scopeURL: entry.scopeURL });
+    await waitFor(() => [...workers.registrations.values()].every(entry => entry.isDeleted) && [...workers.versions.values()].every(entry => entry.runningStatus === 'stopped'), workers.subscribe);
+    const { targetInfo } = await workers.cdp.send('Target.getTargetInfo');
+    if (!targetInfo.browserContextId) throw reportWorkerPolicyError();
+    const contextId = targetInfo.browserContextId, workerTypes = new Set(['worker', 'shared_worker', 'service_worker']);
+    const destroyed = new Set<string>(), changed = new Set<() => void>();
+    workers.cdp.on('Target.targetDestroyed', event => { destroyed.add(event.targetId); for (const listener of changed) listener(); });
+    await workers.cdp.send('Target.setDiscoverTargets', { discover: true });
+    const ownedTargets = (await workers.cdp.send('Target.getTargets')).targetInfos.filter(target => target.browserContextId === contextId && workerTypes.has(target.type));
+    for (const target of ownedTargets) {
+      await workers.cdp.send('Target.closeTarget', { targetId: target.targetId });
+      await waitFor(() => destroyed.has(target.targetId), listener => { changed.add(listener); return () => { changed.delete(listener); }; });
+    }
+    // SharedWorkers with extended lifetime can outlive every old document.
+    // Verify their actual target retirement, scoped to this owned context only.
+    if ((await workers.cdp.send('Target.getTargets')).targetInfos.some(target => target.browserContextId === contextId && workerTypes.has(target.type))) throw reportWorkerPolicyError();
+    const final = await inventory();
+    if ([...final.registrations.values()].some(entry => !entry.isDeleted) || [...final.versions.values()].some(entry => entry.runningStatus !== 'stopped')) throw reportWorkerPolicyError();
+    signal.throwIfAborted();
+  } catch (error) {
+    if (callerSignal?.aborted) callerSignal.throwIfAborted();
+    policy.limit.error = reportWorkerPolicyError(); throw policy.limit.error;
+  } finally {
+    signal.removeEventListener('abort', abort);
+    // A closing target may never acknowledge detach; native close owns cleanup.
+    if (!signal.aborted) for (const cdp of sessions) await cdp.detach().catch(() => {});
+  }
+}
+
+/** Never blocks a launch failure: diagnostics must stay read-only and best-effort. */
+async function browserEnvironment(browser: NonNullable<PrivateProfile['browser']>): Promise<BrowserEnvironmentReport> {
+  try { return await inspectBrowserEnvironment(browser); }
+  catch { return { executablePath: browser.executablePath ?? null, channel: browser.channel ?? null, executable: { exists: true, isFile: true, executable: true, directory: false, mode: null },
+    sandbox: { chromeSandbox: null, mode: null, setuidRoot: null }, profileDirectory: { writable: null }, platform: process.platform, uid: null, userns: { cloneAllowed: 'unknown' }, appArmorChromium: { restricted: 'unknown' } }; }
+}
 export type BrowserLaunchOptions = NonNullable<Parameters<typeof import('playwright')['chromium']['launchPersistentContext']>[1]>;
-export interface BrowserLauncherPort { launchPersistent(profile: PrivateProfile, profilePath: string, options: BrowserLaunchOptions): Promise<BrowserContext> }
-export type BrowserHelperOptions = { launcher?: BrowserLauncherPort; signal?: AbortSignal; authenticatedSelector?: string; workbenchRecording?: boolean; workbenchSteps?: RecordedBrowserStep[] };
+export interface BrowserLauncherPort { readonly requiresProfileLease?:boolean; launchPersistent(profile: PrivateProfile, profilePath: string, options: BrowserLaunchOptions): Promise<BrowserContext> }
+export type BrowserHelperOptions = { launcher?: BrowserLauncherPort; signal?: AbortSignal; authenticatedSelector?: string; workbenchRecording?: boolean; workbenchSteps?: RecordedBrowserStep[]; onDownloadsPath?: (directory: string) => void; phase?:'login'|'report'; onCaptured?:(download:Downloaded)=>Promise<void>;capture?:import('./workbench-capture-contracts').BrowserCapture };
 
 export async function openBrowser(runtime: string, profile: PrivateProfile, options: BrowserHelperOptions = {}): Promise<BrowserContext> {
   const browser = profile.browser; if (!browser) throw new ConnectorError('configuration_required', 'Настройте executable/channel и приватный профиль браузера');
@@ -26,28 +206,110 @@ export async function openBrowser(runtime: string, profile: PrivateProfile, opti
     catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
   }
   const folder = await browserProfilePath(runtime, profile); await mkdir(folder, { recursive: true });
+  const needsProfileLease=!options.launcher||options.launcher.requiresProfileLease===true;
+  if(needsProfileLease)await releaseStaleProfileLocks(folder).catch(()=>[]);
   let chromium: typeof import('playwright')['chromium'];
   try { ({ chromium } = await import('playwright')); } catch { throw new ConnectorError('configuration_required', 'Установите Playwright и Chromium либо укажите executablePath'); }
   const certs = await Promise.all((browser.clientCertificates ?? []).map(async c => ({ origin: checkedUrl(c.origin, profile).origin, cert: await readFile(c.certFile), key: await readFile(c.keyFile), ...(c.passphraseEnv ? { passphrase: process.env[c.passphraseEnv] } : {}) })));
-  const downloads=await safeArtifactPath(runtime,`browser-downloads/${randomUUID()}`);await mkdir(downloads,{recursive:true});
+  const downloads=await safeArtifactPath(runtime,`browser-downloads/${options.capture?.intent.captureId??randomUUID()}`);await mkdir(downloads,{recursive:true});
+  // The recording reads the artifact straight from this directory: the engine names every file by GUID
+  // and keeps it as `.crdownload` while no live connection is left to rename it.
+  options.onDownloadsPath?.(downloads);
+  await profileReleases.get(folder);
+  const releaseProfile=!needsProfileLease?async()=>{}:await acquireBrowserProfileLease(folder).catch(()=>{throw new ConnectorError('browser_launch','Профиль занят; закройте собственные окна автоматизации',{reason:'PROFILE_LOCKED'});});
   let context: BrowserContext;
-  const launchOptions: BrowserLaunchOptions = { executablePath: browser.executablePath, channel: browser.channel, headless: browser.headless, chromiumSandbox: true, serviceWorkers:'block', downloadsPath:downloads, acceptDownloads: true, ignoreHTTPSErrors: false, clientCertificates: certs };
+  const launchOptions: BrowserLaunchOptions = { executablePath: browser.executablePath, channel: browser.channel, headless: browser.headless, chromiumSandbox: true, downloadsPath:downloads, acceptDownloads: true, serviceWorkers: options.phase==='login'?'allow':'block', ignoreHTTPSErrors: false, clientCertificates: certs };
   try { context = options.launcher ? await options.launcher.launchPersistent(profile, folder, launchOptions) : await chromium.launchPersistentContext(folder, launchOptions); }
-  catch { await rm(downloads,{recursive:true,force:true}).catch(()=>{});throw new ConnectorError('configuration_required', 'Не удалось запустить браузер с включённой защитой. Проверьте путь или канал Chrome/Edge, занятость профиля и разрешение Chromium sandbox в ОС. Защита не отключается автоматически.'); }
+  catch (error) { await releaseProfile(); await rm(downloads,{recursive:true,force:true}).catch(()=>{});
+    const environment = await browserEnvironment(browser), diagnosis = describeLaunchFailure(error, environment);
+    throw new ConnectorError('browser_launch', `Не удалось запустить браузер с включённой защитой. ${launchHint(diagnosis.reason, environment)}`, { reason: diagnosis.reason, detail: diagnosis.detail });
+  }
+  context.once('close',()=>{const releasing=releaseProfile();profileReleases.set(folder,releasing);void releasing.finally(()=>{if(profileReleases.get(folder)===releasing)profileReleases.delete(folder);});});
   try{
   context.setDefaultTimeout(profile.timeoutMs); context.setDefaultNavigationTimeout(profile.timeoutMs);
-  const limit:{error?:ConnectorError}={};browserLimits.set(context,limit);
-  const page=context.pages()[0]??await context.newPage(),cdp=await context.newCDPSession(page);
-  // Chromium response interception stops cross-origin redirects before the browser follows them.
-  const protectRedirects=async(target:Page)=>{const guard=await context.newCDPSession(target);await guard.send('Fetch.enable',{patterns:[{urlPattern:'*',requestStage:'Response'}]});guard.on('Fetch.requestPaused',event=>{void(async()=>{try{checkedUrl(event.request.url,profile);const location=event.responseHeaders?.find(header=>header.name.toLowerCase()==='location')?.value;if(location&&event.responseStatusCode&&event.responseStatusCode>=300&&event.responseStatusCode<400)checkedUrl(new URL(location,event.request.url).href,profile);await guard.send('Fetch.continueRequest',{requestId:event.requestId});}catch{await guard.send('Fetch.failRequest',{requestId:event.requestId,errorReason:'BlockedByClient'}).catch(()=>{});}})();});};
-  await protectRedirects(page);context.on('page',popup=>{void protectRedirects(popup).catch(()=>popup.close());});
-  await cdp.send('Browser.setDownloadBehavior',{behavior:'allowAndName',downloadPath:downloads,eventsEnabled:true});
-  cdp.on('Browser.downloadProgress',event=>{if(event.receivedBytes>profile.maxBytes||event.totalBytes>profile.maxBytes){limit.error=new ConnectorError('format','Браузерная выгрузка превышает допустимый размер');void cdp.send('Browser.cancelDownload',{guid:event.guid}).catch(()=>{});}});
-  context.once('close',()=>{void rm(downloads,{recursive:true,force:true}).catch(()=>{});});
-  await context.route('**/*', async route => { try { checkedUrl(route.request().url(), profile); await route.continue(); } catch { await route.abort('blockedbyclient'); } });
-  await context.routeWebSocket('**/*',route=>{try{checkedUrl(route.url(),profile,true);route.connectToServer();}catch{route.close({code:1008,reason:'Origin not allowed'});}});
+  const policy: BrowserPolicy = { phase: options.phase ?? 'report', transitioning: false, guards: new Map(), downloads, capture: options.capture, activeDownloads: new Set(), limit: {} };
+  browserPolicies.set(context, policy); browserLimits.set(context, policy.limit);
+  const page = context.pages()[0] ?? await context.newPage();
+  // Every page response (including popup/frame redirects) is checked before the
+  // next hop. Additional CSP preserves the source's own policies and headers.
+  const protectPage = (target: Page): Promise<CDPSession> => {
+    let guarded = policy.guards.get(target);
+    if (!guarded) {
+      guarded = (async () => {
+        const guard = await context.newCDPSession(target);
+        guard.on('Fetch.requestPaused', event => { void (async () => {
+          // Login requests can settle after the report transition has begun.
+          // Their retirement is not a failure of the new report policy.
+          const reportResponse = policy.phase === 'report' && !policy.transitioning;
+          try {
+            if (policy.transitioning) {
+              await guard.send('Fetch.failRequest', { requestId: event.requestId, errorReason: 'BlockedByClient' });
+              return;
+            }
+            const location = event.responseHeaders?.find(header => header.name.toLowerCase() === 'location')?.value;
+            if (location && event.responseStatusCode && event.responseStatusCode >= 300 && event.responseStatusCode < 400) checkedBrowserUrl(new URL(location, event.request.url).href, profile, policy.phase);
+            checkedBrowserUrl(event.request.url, profile, policy.phase);
+            const headers = event.responseHeaders ?? [];
+            const attachment = headers.some(header => header.name.toLowerCase() === 'content-disposition' && /^attachment\b/i.test(header.value));
+            // A same-origin text/plain or JSON frame also exposes its Worker
+            // constructor to its parent. MIME type cannot exempt that realm.
+            const activeDocument = event.resourceType === 'Document' && !attachment;
+            if (policy.phase === 'report' && activeDocument && event.responseStatusCode && (event.responseStatusCode >= 200 && event.responseStatusCode < 300 || event.responseStatusCode >= 400) && ![204, 205].includes(event.responseStatusCode)) {
+              await protectReportDocument(guard, event);
+            } else await guard.send('Fetch.continueRequest', { requestId: event.requestId });
+          } catch (error) {
+            await guard.send('Fetch.failRequest', { requestId: event.requestId, errorReason: 'BlockedByClient' }).catch(() => {});
+            if (reportResponse && (!(error instanceof ConnectorError) || error.reason === 'REPORT_WORKER_POLICY_UNAVAILABLE')) { policy.limit.error = reportWorkerPolicyError(); void closeBrowserContext(context); }
+          }
+        })(); });
+        await guard.send('Fetch.enable', { patterns: [{ urlPattern: '*', requestStage: 'Response' }] });
+        return guard;
+      })();
+      policy.guards.set(target, guarded);
+      target.once('close', () => policy.guards.delete(target));
+      // Chromium denies sandboxed popup creation before creating a Page. Keep
+      // that native denial actionable without returning its URL-bearing text.
+      target.on('console', message => {
+        if (policy.phase === 'report' && message.type() === 'error' && /sandbox.*allow-popups|allow-popups.*sandbox/i.test(message.text())) rejectReportWindow(context, policy);
+      });
+    }
+    return guarded;
+  };
+  await protectPage(page);
+  context.on('page', popup => {
+    if (policy.phase === 'report' && popup !== policy.retainedPage) { rejectReportWindow(context, policy); return; }
+    void protectPage(popup).catch(() => { policy.limit.error = reportWorkerPolicyError(); void closeBrowserContext(context); });
+  });
+  await context.route('**/*', async route => {
+    try {
+      if (policy.transitioning) throw reportWorkerPolicyError();
+      checkedBrowserUrl(route.request().url(), profile, policy.phase);
+      // Routing pauses a popup's first request until its response guard exists.
+      if (!route.request().serviceWorker()) {
+        let target: Page | undefined;
+        try { target = route.request().frame().page(); } catch { /* A popup's first navigation may precede its frame. */ }
+        if (policy.phase === 'report' && target !== policy.retainedPage) {
+          // Login popups can establish the retained authenticated tab. Once the
+          // report starts, every navigation must belong to that one tab.
+          rejectReportWindow(context, policy); throw policy.limit.error;
+        }
+        if (target) await protectPage(target);
+      }
+      else if (policy.phase === 'report') throw reportWorkerPolicyError();
+      await route.continue();
+    } catch { await route.abort('blockedbyclient').catch(() => {}); }
+  });
+  await context.routeWebSocket('**/*', route => {
+    try { if (policy.transitioning) throw reportWorkerPolicyError(); checkedUrl(route.url(), profile, true); route.connectToServer(); }
+    catch { route.close({ code: 1008, reason: 'Origin not allowed' }); }
+  });
+  if (policy.phase === 'report') await enterReportPolicy(context, policy, profile, page, options.signal);
+  policy.transitioning = false;
+  await bindBrowserDownloads(context, policy, profile, page);
+  if (policy.phase === 'report') await context.setOffline(false);
+  // Staging survives context loss and is removed only by verified capture cleanup.
   return context;
-  }catch(error){await context.close().catch(()=>{});await rm(downloads,{recursive:true,force:true}).catch(()=>{});throw error;}
+  }catch(error){await closeBrowserContext(context);await rm(downloads,{recursive:true,force:true}).catch(()=>{});throw error;}
 }
 async function assertSafeField(page: Page, selector: string) {
   const unsafe = await page.locator(selector).evaluate(el => {
@@ -64,6 +326,11 @@ export async function readScenario(runtime: string, id: string): Promise<Browser
  * fetch when the report button has no declarative URL. Images, styles, scripts
  * and background requests cannot turn an otherwise valid export into auth loss. */
 async function waitForBrowserExport(context: BrowserContext, page: Page, locator: Locator, profile: PrivateProfile, signal: AbortSignal, selector: string, sourceOrigin: string): Promise<Download> {
+  // A prepared link may still carry a placeholder URL while hidden. Bind the
+  // target after readiness; context cancellation and the profile timeout bound this wait.
+  signal.throwIfAborted();
+  await locator.waitFor({ state: 'visible', timeout: profile.timeoutMs });
+  signal.throwIfAborted();
   const target = await locator.evaluate(element => {
     const link = element.closest('a[href]') as HTMLAnchorElement | null;
     if (link) return { url: link.href, kind: 'link' as const };
@@ -74,7 +341,7 @@ async function waitForBrowserExport(context: BrowserContext, page: Page, locator
   if (expected) { expected.hash = ''; if (!expected.search) expected.search = ''; }
   const matchesTarget = (url: string) => { if (!expected) return false; const actual = new URL(url); actual.hash = ''; if (!actual.search) actual.search = ''; return target?.kind === 'form' ? actual.origin === expected.origin && actual.pathname === expected.pathname : actual.href === expected.href; };
   const observation = await context.newCDPSession(page);
-  const requests = new Set<string>();
+  const requests = new Set<string>(),selectedUrls=new Set<string>();
   let settled = false, started = false, timer: NodeJS.Timeout | undefined;
   let resolve!: (file: Download) => void, reject!: (error: unknown) => void;
   const waiting = new Promise<Download>((yes, no) => { resolve = yes; reject = no; });
@@ -89,11 +356,11 @@ async function waitForBrowserExport(context: BrowserContext, page: Page, locator
   const onRequest = (event: { requestId: string; type?: string; hasUserGesture?: boolean; request: { url: string }; redirectResponse?: { status: number; url: string } }) => {
     if (!started || settled) return;
     if (requests.has(event.requestId) || reportUrl(event.request.url) && ['Document', 'XHR', 'Fetch'].includes(event.type ?? '') && (expected ? matchesTarget(event.request.url) : event.hasUserGesture === true)) {
-      requests.add(event.requestId); if (event.redirectResponse) response(event.redirectResponse.status, event.redirectResponse.url); if (authUrl(event.request.url)) auth();
+      requests.add(event.requestId);selectedUrls.add(event.request.url); if (event.redirectResponse) response(event.redirectResponse.status, event.redirectResponse.url); if (authUrl(event.request.url)) auth();
     }
   };
   const onResponse = (event: { requestId: string; response: { status: number; url: string } }) => { if (requests.has(event.requestId) && !settled) response(event.response.status, event.response.url); };
-  const onDownload = (file: Download) => { if (!settled) { settled = true; resolve(file); } };
+  const onDownload = (file: Download) => { if(expected&&file.url()!==expected.href&&!selectedUrls.has(file.url()))return; if (!settled) { settled = true; resolve(file); } };
   const inspectBoundary = async () => {
     if (started && !settled && !await recordingReady(page, selector, sourceOrigin)) auth();
   };
@@ -113,16 +380,22 @@ async function waitForBrowserExport(context: BrowserContext, page: Page, locator
     settled = true; if (timer) clearTimeout(timer); signal.removeEventListener('abort', onAbort);
     page.off('download', onDownload); page.off('framenavigated', onNavigated); page.off('domcontentloaded', onReady); page.off('close', onClosed);
     observation.off('Network.requestWillBeSent', onRequest); observation.off('Network.responseReceived', onResponse);
-    await observation.detach().catch(() => {});
+    // CDP detach may never acknowledge once cancellation closes its target. Native context close owns final teardown.
+    if(!signal.aborted){let cleanupTimer:NodeJS.Timeout|undefined;await Promise.race([observation.detach().catch(()=>{}),new Promise<void>(resolve=>{cleanupTimer=setTimeout(resolve,1000);})]).finally(()=>{if(cleanupTimer)clearTimeout(cleanupTimer);});}
   }
 }
 export async function executeBrowser(runtime: string, profile: PrivateProfile, scenario: BrowserScenario, parameters: Record<string, string>, signal: AbortSignal, options: BrowserHelperOptions = {}): Promise<Downloaded> {
-  return withProfileQueue(await browserProfilePath(runtime, profile), signal, async () => executeBrowserContext(await openBrowser(runtime, profile, options), profile, scenario, parameters, signal, options));
+  return withProfileQueue(await browserProfilePath(runtime, profile), signal, async () => {
+    // The directory is known only after the launch creates it; the replay reads the artifact from there.
+    let directory = ''; const context = await openBrowser(runtime, profile, { ...options, signal, onDownloadsPath: value => { directory = value; } });
+    return executeBrowserContext(context, profile, scenario, parameters, signal, options, directory);
+  });
 }
-async function executeBrowserContext(context: BrowserContext, profile: PrivateProfile, scenario: BrowserScenario, parameters: Record<string, string>, signal: AbortSignal, options: BrowserHelperOptions): Promise<Downloaded> {
+async function executeBrowserContext(context: BrowserContext, profile: PrivateProfile, scenario: BrowserScenario, parameters: Record<string, string>, signal: AbortSignal, options: BrowserHelperOptions, downloads = ''): Promise<Downloaded> {
+    const startedAt = Date.now();
     let closing: Promise<void> | undefined;
-    const close = () => closing ??= context.close().catch(() => {}), abort = () => { void close(); }; signal.addEventListener('abort', abort, { once: true });
-    const totalTimer=setTimeout(()=>{const limit=browserLimits.get(context)!;limit.error=new ConnectorError('timeout','Истекло общее время браузерного сбора');void close();},Math.min(120000,profile.timeoutMs*4));
+    const close = () => closing ??= closeBrowserContext(context), abort = () => { void close(); }; signal.addEventListener('abort', abort, { once: true });
+
     try {
       signal.throwIfAborted(); const page = context.pages()[0] ?? await context.newPage();
       const navigate = async (url: string) => {
@@ -150,7 +423,7 @@ async function executeBrowserContext(context: BrowserContext, profile: PrivatePr
           const file = options.workbenchSteps && options.authenticatedSelector
             ? await waitForBrowserExport(context, page, locator, profile, signal, options.authenticatedSelector, new URL(scenario.startUrl).origin)
             : (await Promise.all([page.waitForEvent('download'), locator.click()]))[0];
-          if (options.workbenchSteps) { downloaded = await completedBrowserDownload(file, profile, signal); await file.delete(); continue; }
+          if (options.workbenchSteps) { downloaded = await completedBrowserDownload(file, profile, { directory: downloads, since: startedAt, signal,resolved:()=>options.capture?.sink.read?.()??null }); await options.onCaptured?.(downloaded);if(downloaded.formatStatus==='quarantined')throw new ConnectorError('format','Файл сохранён для проверки; содержимое не является подтверждённой выгрузкой отчёта'); await file.delete().catch(() => {}); continue; }
           if (await file.failure()) throw new ConnectorError('incomplete', 'Браузер не завершил выгрузку');
           const filePath = await file.path(); const fileSize = filePath ? (await stat(filePath)).size : 0; if (!filePath || fileSize === 0 || fileSize > profile.maxBytes) throw new ConnectorError('format', 'Выгрузка отсутствует, пуста или превышает ограничение размера');
           downloaded = { bytes: await readFile(filePath), name: file.suggestedFilename(), contentType: '' }; await file.delete();
@@ -158,17 +431,63 @@ async function executeBrowserContext(context: BrowserContext, profile: PrivatePr
       }
       if (!downloaded) throw new ConnectorError('incomplete', 'Сценарий не получил файл. Добавьте действие download'); return downloaded;
     } catch(error){if(signal.aborted)signal.throwIfAborted();throw browserLimits.get(context)?.error??error;}
-    finally { clearTimeout(totalTimer);signal.removeEventListener('abort', abort); await close(); }
+    finally { signal.removeEventListener('abort', abort); await close(); }
 }
 
-interface Recording { id: string; owner: string; context: BrowserContext; scenario: BrowserScenario; observing: boolean; release: () => void; expires: NodeJS.Timeout; parameters: Record<string, string>; screenshots: string[]; pendingDownload?:boolean }
+interface Recording { runtime:string; id: string; owner: string; context: BrowserContext; scenario: BrowserScenario; observing: boolean; release: () => void; expires: NodeJS.Timeout; expiresAt: number; parameters: Record<string, string>; screenshots: string[]; pendingDownload?:boolean }
 const recordings = new Map<string, Recording>();
+/** Process-local access to a login whose existing queue lease is still held. */
+export function ownedBrowserLoginContext(owner: string, id: string, startUrl: string): BrowserContext {
+  const record = recordings.get(id);
+  if (!record || record.owner !== owner || record.observing || record.scenario.startUrl !== startUrl || record.expiresAt <= Date.now() || !record.context.pages().length) throw new ConnectorError('manual_login_required', 'Окно входа закрыто или истекло. Откройте личное окно и продолжите вход.');
+  return record.context;
+}
+/** A selected marker gets its own bounded readiness interval; no auth is copied. */
+export function retainBrowserLogin(owner: string, id: string, startUrl: string): number {
+  ownedBrowserLoginContext(owner, id, startUrl);
+  const record = recordings.get(id)!;
+  clearTimeout(record.expires); record.expiresAt = Date.now() + 15 * 60_000;
+  record.expires = setTimeout(record.release, 15 * 60_000); record.expires.unref();
+  return record.expiresAt;
+}
 /** The login keeps its profile queue lease until this same native context closes.
  * Authentication never leaves the browser as cookies, storage state or recipe data. */
-export async function replayBrowserLogin(owner: string, id: string, profile: PrivateProfile, scenario: BrowserScenario, parameters: Record<string, string>, signal: AbortSignal, options: BrowserHelperOptions): Promise<Downloaded> {
+async function activateBrowserLogin(owner: string, id: string, profile: PrivateProfile, startUrl: string, signal: AbortSignal, options: BrowserHelperOptions) {
   const record = recordings.get(id);
-  if (!record || record.owner !== owner || record.observing || record.scenario.startUrl !== scenario.startUrl) throw new ConnectorError('access_denied', 'Own report login context is unavailable');
-  return executeBrowserContext(record.context, profile, scenario, parameters, signal, options);
+  const context = ownedBrowserLoginContext(owner, id, startUrl), policy = browserPolicies.get(context);
+  // Replay now owns cancellation/timeout; an almost-expired login must not
+  // release the existing queue lease in the middle of a valid download.
+  clearTimeout(record!.expires); record!.observing = true;
+  const abort = () => { void closeBrowserContext(context); };
+  signal.addEventListener('abort', abort, { once: true });
+  try {
+    signal.throwIfAborted(); if (!policy) throw reportWorkerPolicyError();
+    let page: Page | undefined;
+    for (const candidate of context.pages()) {
+      if (options.authenticatedSelector && await recordingReady(candidate, options.authenticatedSelector, checkedUrl(startUrl, profile).origin)) { page = candidate; break; }
+    }
+    if (!page) throw new ConnectorError('manual_login_required', 'Завершите вход в нужный отчёт в открытом окне');
+    await enterReportPolicy(context, policy, profile, page, signal);
+    const downloads = await safeArtifactPath(record!.runtime, `browser-downloads/${options.capture?.intent.captureId ?? randomUUID()}`);
+    await mkdir(downloads, { recursive: true });
+    policy.downloads = downloads; policy.capture = options.capture; delete policy.limit.error;
+    await bindBrowserDownloads(context, policy, profile, page); options.onDownloadsPath?.(downloads);
+    signal.throwIfAborted(); policy.transitioning = false; await context.setOffline(false);
+    return { context, page, downloadsPath: downloads };
+  } catch (error) { await closeBrowserContext(context); if (signal.aborted) signal.throwIfAborted(); throw policy?.limit.error ?? error; }
+  finally { signal.removeEventListener('abort', abort); }
+}
+export async function replayBrowserLogin(owner: string, id: string, profile: PrivateProfile, scenario: BrowserScenario, parameters: Record<string, string>, signal: AbortSignal, options: BrowserHelperOptions): Promise<Downloaded> {
+  const active = await activateBrowserLogin(owner, id, profile, scenario.startUrl, signal, options);
+  return executeBrowserContext(active.context, profile, scenario, parameters, signal, { ...options, phase: 'report' }, active.downloadsPath);
+}
+/** First recording consumes an authenticated login exactly like replay does. */
+export async function recordBrowserLogin(owner: string, id: string, profile: PrivateProfile, startUrl: string, selector: string, onClosed: (() => void) | undefined, options: BrowserHelperOptions) {
+  const context = ownedBrowserLoginContext(owner, id, startUrl), record = recordings.get(id)!;
+  try {
+    const active = await activateBrowserLogin(owner, id, profile, startUrl, options.signal ?? new AbortController().signal, { ...options, authenticatedSelector: selector });
+    return await startWorkbenchRecording(record.runtime, owner, profile, startUrl, selector, onClosed, options, openBrowser, active);
+  } catch (error) { await closeBrowserContext(context); throw browserLimits.get(context)?.error ?? error; }
 }
 export async function observeBrowserLogin(owner: string, id: string, profile: PrivateProfile, selector: string, startUrl: string): Promise<boolean> {
   const record = recordings.get(id);
@@ -192,10 +511,10 @@ export async function startRecording(runtime: string, owner: string, profile: Pr
     try {
       clearTimeout(queueTimer);
       context = await openBrowser(runtime, { ...profile, browser: { ...profile.browser!, headless: false } }, options);
-      const ownedContext=context,abort=()=>{void ownedContext.close();};signal.addEventListener('abort',abort,{once:true});
+      const ownedContext=context,abort=()=>{void closeBrowserContext(ownedContext);};signal.addEventListener('abort',abort,{once:true});
       context.once('close',()=>signal.removeEventListener('abort',abort));signal.throwIfAborted();
       let release!: () => void; const done = new Promise<void>(resolve => { release = resolve; });
-      const record: Recording = { id, owner, context, scenario: { id: `scenario-${id}`, startUrl, steps: [] }, observing: observe, release, expires: setTimeout(() => release(), 15 * 60_000), parameters: {}, screenshots: [] };
+      const record: Recording = { runtime, id, owner, context, scenario: { id: `scenario-${id}`, startUrl, steps: [] }, observing: observe, release, expires: setTimeout(() => release(), 15 * 60_000), expiresAt: Date.now() + 15 * 60_000, parameters: {}, screenshots: [] };
       const sourceOrigin = new URL(startUrl).origin;
       if(observe){
       await context.exposeBinding('__uorRecord', async ({ page, frame }, event: unknown) => {
@@ -229,10 +548,17 @@ export async function startRecording(runtime: string, owner: string, profile: Pr
       context.pages().forEach(attach); context.on('page', attach);
       }
       context.on('close',()=>{clearTimeout(record.expires);release();onClosed?.();});
-      const page = context.pages()[0] ?? await context.newPage(); await page.goto(startUrl); recordings.set(id, record); ready(record);
+      const page = context.pages()[0] ?? await context.newPage();
+      // The login window must survive a failed first navigation: the operator still needs it
+      // to sign in by hand. A refused start shows an explanatory page inside the same window.
+      await page.goto(startUrl).catch(async error => {
+        const detail = safeErrorDetail(error instanceof Error ? error.message : String(error)).split('\n')[0];
+        await page.setContent(`<!doctype html><html lang="ru"><meta charset="utf-8"><title>Вход в отчёт</title><h1>Не удалось открыть адрес отчёта</h1><p>Окно оставлено открытым. Проверьте адрес и сеть, затем повторите переход обычным способом.</p><p><code>${detail.replace(/[<>&]/g, '')}</code></p></html>`).catch(() => {});
+      });
+      recordings.set(id, record); ready(record);
       await done;
       clearTimeout(record.expires); recordings.delete(id);
-    } catch (e) { failed(e); } finally { await context?.close().catch(() => {}); }
+    } catch (e) { failed(e); } finally { if (context) await closeBrowserContext(context); }
   }).catch(failed);
   let record:Recording;try{record=await started;}finally{clearTimeout(queueTimer);} return { recordingId: record.id, message: 'Войдите вручную. Запись действий действует только на origin источника; значения полей не записываются. Завершите запись в приложении.' };
 }
@@ -245,6 +571,6 @@ export async function finishRecording(runtime: string, owner: string, id: string
     const directory=await safeArtifactPath(runtime,`connector-recordings/${id}`);await mkdir(directory,{recursive:true});
     await writeFile(path.join(directory,'manifest.json'),JSON.stringify({ownerSessionId:owner,files:record.screenshots.map(file=>path.basename(file))}));
     return { scenario, parameters: [...new Set(scenario.steps.flatMap(s => s.action === 'fill' || s.action === 'select' ? [s.parameter] : []))], screenshotCount: record.screenshots.length,screenshots:record.screenshots.map(file=>({url:`/api/connectors/recordings/${id}/screenshots/${path.basename(file,'.png')}`,label:`Шаг ${path.basename(file,'.png')}`})), workbenchSteps: undefined, completedDownload: undefined };
-  } finally { record.release(); await record.context.close().catch(() => {}); }
+  } finally { record.release(); await closeBrowserContext(record.context); }
 }
-export async function stopAllRecordings() { for (const record of recordings.values()) { record.release(); await record.context.close().catch(() => {}); } }
+export async function stopAllRecordings() { for (const record of recordings.values()) { record.release(); await closeBrowserContext(record.context); } }

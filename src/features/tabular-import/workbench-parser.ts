@@ -96,14 +96,16 @@ function decodeCsv(bytes: Uint8Array, encoding: ParsingProfile['csvEncoding']): 
   if (forbiddenControls.test(text)) fail('INVALID_ENCODING', 'The file contains unsupported control characters');
   return text.replace(/^\ufeff/, '');
 }
-function csvRows(text: string, delimiter: ParsingProfile['csvDelimiter']): CellsRow[] {
-  const rows: CellsRow[] = []; let values: RawCell[] = [], value = '', quoted = false, closed = false, line = 1, recordLine = 1, records = 0;
+type TableLimits = { maxRows: number; maxCells: number };
+function csvRows(text: string, delimiter: ParsingProfile['csvDelimiter'], limits: TableLimits): CellsRow[] {
+  const rows: CellsRow[] = []; let values: RawCell[] = [], value = '', quoted = false, closed = false, line = 1, recordLine = 1, records = 0, cells = 0;
   const finishCell = () => {
+    if (++cells > limits.maxCells) fail('TABLE_LIMIT_EXCEEDED', 'The raw preview exceeds its cell budget');
     values.push({ kind: value === '' ? 'blank' : 'text', original: value }); value = ''; closed = false;
     if (values.length > MAX_COLUMNS) fail('TABLE_LIMIT_EXCEEDED', 'The table exceeds 100 columns');
   };
   const finishRow = () => {
-    finishCell(); if (++records > MAX_ROWS + 1) fail('TABLE_LIMIT_EXCEEDED', 'The table exceeds 20000 data records');
+    finishCell(); if (++records > limits.maxRows + 1) fail('TABLE_LIMIT_EXCEEDED', `The table exceeds ${limits.maxRows} data records`);
     if (values.some(cell => cell.original !== '')) rows.push({ row: recordLine, cells: values }); values = [];
   };
   for (let at = 0; at < text.length; at++) {
@@ -234,17 +236,19 @@ async function workbookRows(bytes: Buffer, selected: string | null): Promise<{ s
 }
 
 /** Pure, inert parse only: no facts, dates, business keys, directory IDs or units are inferred. */
-export async function parseWorkbenchTable(input: { bytes: Uint8Array; name: string; parsingProfile: ParsingProfile }): Promise<ParsedSourceTable> {
+export async function parseWorkbenchTable(input: { bytes: Uint8Array; name: string; parsingProfile: ParsingProfile; purpose?: 'raw-preview' }): Promise<ParsedSourceTable> {
+  const limits: TableLimits = input.purpose === 'raw-preview' ? { maxRows: 100000, maxCells: 1000000 } : { maxRows: MAX_ROWS, maxCells: (MAX_ROWS + 1) * MAX_COLUMNS };
   if (!sourceParsingProfileSchema.safeParse(input.parsingProfile).success) fail('INVALID_PROFILE', 'Invalid saved parsing profile');
   if (!(input.bytes instanceof Uint8Array) || !input.bytes.length || input.bytes.length > MAX_BYTES) fail('TABLE_LIMIT_EXCEEDED', 'Source bytes must be between 1 byte and 10 MiB');
-  if (/\.csv$/i.test(input.name)) {
+  if (/\.(?:csv|tsv)$/i.test(input.name)) {
     if (input.parsingProfile.sheetName !== null) fail('SOURCE_SHEET_MISSING', 'CSV has no worksheets');
     const value = decodeCsv(input.bytes, input.parsingProfile.csvEncoding);
     if (/^\s*(?:MZ|<!doctype\s+html|<html|<script|<svg)/i.test(value)) fail('INVALID_TABLE', 'The downloaded file is not a CSV table');
-    return result('csv', null, csvRows(value, input.parsingProfile.csvDelimiter), null);
+    return result('csv', null, csvRows(value, input.parsingProfile.csvDelimiter, limits), null);
   }
   if (/\.xlsx$/i.test(input.name)) {
+    // XLSX retains the separately audited 20,000-row OOXML safety gate.
     const data = await workbookRows(Buffer.from(input.bytes), input.parsingProfile.sheetName); return result('xlsx', data.sheet, data.rows, data.dateSystem);
   }
-  return fail('UNSUPPORTED_FORMAT', 'Only CSV and XLSX source tables are supported');
+  return fail('UNSUPPORTED_FORMAT', 'Only CSV, TSV and XLSX source tables are supported');
 }

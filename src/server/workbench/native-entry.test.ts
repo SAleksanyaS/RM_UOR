@@ -49,7 +49,7 @@ it('actual main runs only v1 routes, keeps legacy bytes, and changes the authori
     const process = await startProductionEntry({ root: f.root, codeRoot });
     cleanups.push(process.stop);
     const base = `http://127.0.0.1:${f.api}`;
-    expect(await (await fetch(base + '/api/health')).json()).toMatchObject({ version: '0.5.0' });
+    expect(await (await fetch(base + '/api/health')).json()).toMatchObject({ version: '0.6.0' });
     const session = await fetch(base + '/api/v1/session');
     const value = await session.json();
     expect(value.data.defaultContext).toBeNull();
@@ -78,7 +78,7 @@ it('actual candidate admits no HTTP work until authenticated IPC matches the dur
 }, 45000);
 it('standard dev launcher starts the actual new main and current UI', async () => {
     const f = await fixture();
-    for (const directory of ['src', 'scripts'])
+    for (const directory of ['src', 'scripts', 'data', 'materials'])
         await cp(path.join(codeRoot, directory), path.join(f.root, directory), { recursive: true });
     for (const file of ['package.json', 'tsconfig.json', 'vite.config.ts', 'index.html', 'oko.html'])
         await cp(path.join(codeRoot, file), path.join(f.root, file));
@@ -102,7 +102,7 @@ it('standard dev launcher starts the actual new main and current UI', async () =
     expect(ready, launched.output()).toBe(true);
     expect((await (await fetch(url)).text())).toContain('/src/app/main.tsx');
     expect((await fetch(url + '/api/state')).status).toBe(404);
-    expect(await (await fetch(url + '/api/health')).json()).toMatchObject({ version: '0.5.0' });
+    expect(await (await fetch(url + '/api/health')).json()).toMatchObject({ version: '0.6.0' });
 }, 60000);
 it.each(['candidate-failure', 'activation-ack-lost'] as const)('native updater transfers the exclusive lease and preserves the correct workspace after %s', async (fault) => {
     const f = await fixture(), remote = path.join(f.root, 'remote.git'), author = path.join(f.root, 'author'), clone = path.join(f.root, 'clone');

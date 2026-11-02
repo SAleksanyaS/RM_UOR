@@ -45,7 +45,7 @@ export function resolveEvaluationInput(request: PrepareEvaluationRequest, reposi
     const scopeKey = (scope: ScopeRef) => `${scope.kind}/${scope.id}`;
     const verifyPath = (from: ScopeRef, to: ScopeRef, definitions: DirectoryLink[]): boolean => {
       const edges = new Map<string, string[]>();
-      const kinds = { dit_cluster: ['dit', 'cluster'], cluster_product: ['cluster', 'product'], cluster_team: ['cluster', 'team'], product_team: ['product', 'team'] } as const;
+      const kinds = { block_tribe: ['block','tribe'], tribe_cluster: ['tribe','cluster'], dit_cluster: ['dit', 'cluster'], cluster_product: ['cluster', 'product'], cluster_team: ['cluster', 'team'], product_team: ['product', 'team'] } as const;
       for (const link of definitions) {
         if (link.kind === 'leader') continue;
         const [parent, child] = kinds[link.kind];

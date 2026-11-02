@@ -53,7 +53,7 @@ const configurationProblem = (code: string, message: string): never => { throw n
 /** Shared pure source/method compatibility gate, used by capture and scenario previews. */
 export function validateSourceConfiguration(binding: { source: SourceDefinition; goal: CoreGoalDefinition; assignment: GoalAssignment; mapping: SourceFieldMapping; method: MethodVersion; metrics: MetricDefinition[] }): void {
   if (binding.source.kind !== 'qlik' || binding.goal.mode !== 'numeric' || binding.method.mode !== 'numeric') return configurationProblem('SOURCE_UNSUPPORTED', 'Only the configured numeric automatic source can be captured');
-  if (!binding.assignment.expectedPopulation?.length || !binding.mapping.fixedScope && !binding.mapping.productKeyField) return configurationProblem('SOURCE_INVALID_CONFIGURATION', 'Published population and scope mapping are required');
+  if (!binding.assignment.expectedPopulation?.length || !binding.mapping.fixedScope && !binding.mapping.productKeyField && !binding.mapping.teamKeyField) return configurationProblem('SOURCE_INVALID_CONFIGURATION', 'Published population and scope mapping are required');
   if (new Set(binding.metrics.map(m => m.unit.code)).size !== 1) return configurationProblem('UNSUPPORTED_REDUCER', 'A canonical row cannot carry incompatible metric units');
   const canonicalFields = new Map<string, string>();
   for (const rule of binding.method.rules) {

@@ -177,7 +177,7 @@ export async function createBrowserIntegrationHarness() {
       let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
       uiClosers.push(async () => { await browser?.close(); await vite.close(); });
       await vite.listen(); const address = vite.httpServer!.address() as { port: number }; const uiOrigin = 'http://127.0.0.1:' + address.port; allowedOrigins.push(uiOrigin);
-      browser = await chromium.launch({ executablePath: native.executablePath, headless: true, chromiumSandbox: true }); const page = await browser.newPage(); await page.goto(uiOrigin + '/data');
+      browser = await chromium.launch({ executablePath: native.executablePath, headless: true, chromiumSandbox: process.env.UOR_SYNTHETIC_CI !== '1' }); const page = await browser.newPage(); await page.goto(uiOrigin + '/data');
       return { page, origin: uiOrigin };
     }
     const sourceRef = () => ref('source_definition', repository.readPublishedHead<SourceDefinition>({ entityType: 'source_definition', id: source.id })!);
@@ -258,7 +258,7 @@ export async function createBrowserIntegrationHarness() {
       reader.installCaptureBinding(); await reader.configure();
     },
     async readerCapture(release = false) { if (!reader) throw Error('Reader not created'); const operation = async () => reader!.settled(await reader!.send('source.capture', { goalId: input.goal.id })); const job = await (release ? gated(operation) : operation()); if (job.status === 'succeeded') lastCapture = job.result.captureRef; return job; },
-    async readerLogin() { if (!reader) throw Error('Reader not created'); const job = await reader.settled(await reader.send('source.browser.login.open', { sourceRef: reader.sourceRef() })); if (job.status !== 'succeeded') throw Error(JSON.stringify(job)); const hadCookie = (await native.page().context().cookies()).some(cookie => cookie.name === 'oko_fixture'); await native.login(); const finished = await reader.send('source.browser.login.finish', { loginId: job.result.loginId }); if (!finished.result.authenticated) throw Error('Expected actual authenticated report marker'); return { hadCookie }; },
+    async readerLogin() { if (!reader) throw Error('Reader not created'); const job = await reader.settled(await reader.send('source.browser.login.open', { sourceRef: reader.sourceRef() })); if (job.status !== 'succeeded') throw Error(JSON.stringify(job)); const hadCookie = (await native.page().context().cookies()).some(cookie => cookie.name === 'oko_fixture'); const ready = native.page().locator('[data-testid="report-ready"]'); if (!await ready.isVisible()) await native.login(); await ready.waitFor(); const finished = await reader.send('source.browser.login.finish', { loginId: job.result.loginId }); if (!finished.result.authenticated) throw Error('Expected actual authenticated report marker'); return { hadCookie }; },
     async download(kind: 'original' | 'enriched') { if (!reader || !lastCapture) throw Error('No accepted capture'); return fetch(reader.origin + `/api/v1/browser/results/${lastCapture.id}/${kind}`, { headers: { cookie: reader.cookie } }); },
     reader: () => { if (!reader) throw Error('No reader'); return reader; },
     async captureDuringDelivery(change: 'cancel' | 'profile') {

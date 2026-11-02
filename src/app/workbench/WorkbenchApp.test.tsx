@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, expect, it } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { WorkbenchClient } from './api-client';
 import { OkoClient } from '../../features/connectors/workbench/client';
@@ -7,12 +7,13 @@ import { createPersonalRuntime } from '../../../tests/fixtures/workbench/persona
 import { WorkbenchApp } from './WorkbenchApp';
 
 const closes: Array<() => Promise<void>> = [];
-afterEach(async () => { cleanup(); sessionStorage.clear(); window.history.replaceState(null, '', '/'); for (const close of closes.splice(0).reverse()) await close(); });
+afterEach(async () => { cleanup(); vi.restoreAllMocks(); sessionStorage.clear(); window.history.replaceState(null, '', '/'); for (const close of closes.splice(0).reverse()) await close(); });
 it('empty new runtime exposes a real personal OKO path without inventing an organization or goal', async () => {
   const f = await createPersonalRuntime(); closes.push(f.close);
-  window.history.replaceState(null, '', '/data');
+  window.history.replaceState(null, '', '/data#personal-oko');
   render(<WorkbenchApp client={new WorkbenchClient({ fetch: f.fetcher })} personalClient={new OkoClient(f.fetcher, { prefix: 'oko.workflow' })} />);
   fireEvent.click(await screen.findByRole('button', { name: 'Создать первый сценарий' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Создать сценарий' }));
   await screen.findByRole('heading', { name: 'Новый отчёт ОКО' });
   expect(f.repository.readPublishedCatalog()).toEqual([]);
   expect(f.requests.filter(request => request.body?.name === 'oko.workflow.open')).toHaveLength(1);
@@ -22,10 +23,15 @@ it('empty new runtime exposes a real personal OKO path without inventing an orga
 });
 it('local mode switch keeps one person and refreshes embedded personal permissions without losing typed title', async () => {
   const f = await createPersonalRuntime(); closes.push(f.close);
-  window.history.replaceState(null, '', '/data');
+  window.history.replaceState(null, '', '/data#personal-oko');
   render(<WorkbenchApp client={new WorkbenchClient({ fetch: f.fetcher })} personalClient={new OkoClient(f.fetcher, { prefix: 'oko.workflow' })} />);
   fireEvent.click(await screen.findByRole('button', { name: 'Новый сценарий' }));
   fireEvent.change(screen.getByLabelText('Название отчёта'), { target: { value: 'Сохранённый ввод' } });
+  const confirm=vi.spyOn(window,'confirm').mockReturnValue(false);
+  fireEvent.change(screen.getByLabelText('Режим работы'), { target: { value: 'viewer' } });
+  expect((screen.getByLabelText('Режим работы') as HTMLSelectElement).value).toBe('curator');
+  expect((screen.getByLabelText('Название отчёта') as HTMLInputElement).value).toBe('Сохранённый ввод');
+  confirm.mockReturnValue(true);
   fireEvent.change(screen.getByLabelText('Режим работы'), { target: { value: 'viewer' } });
   await waitFor(() => expect((screen.getByLabelText('Режим работы') as HTMLSelectElement).value).toBe('viewer'));
   await screen.findByRole('button', { name: 'Новый сценарий' });

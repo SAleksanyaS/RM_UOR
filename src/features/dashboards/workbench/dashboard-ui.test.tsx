@@ -4,6 +4,7 @@ import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-libra
 import { createWorkbenchUiHarness } from '../../../app/workbench/testing/ui-harness';
 import { DashboardBuilder } from './DashboardBuilder';
 import { CustomFieldEditor } from './CustomFieldEditor';
+import { AppearancePanel } from '../../../app/workbench/AppearancePanel';
 import { DashboardView } from './DashboardView';
 import { GlobalSearch } from '../../search/workbench/GlobalSearch';
 import { useGlobalContext } from '../../../app/workbench/context';
@@ -50,7 +51,7 @@ it('search_opens_archived_card_in_context',async()=>{
  expect(h.requests.filter(r=>r.body?.name==='draft.open')).toHaveLength(0);
 });
 it('viewer_saves_personal_preferences_and_http_blocks_shared_draft',async()=>{
- const h=await open(()=> <DashboardView />, 'viewer');await screen.findByLabelText('Плотность представления');fireEvent.change(screen.getByLabelText('Плотность представления'),{target:{value:'compact'}});fireEvent.click(screen.getByRole('button',{name:'Сохранить личный вид'}));await screen.findByText('Личный вид сохранён');
+ const h=await open(()=> <><AppearancePanel/><DashboardView /></>, 'viewer');await screen.findByLabelText('Плотность представления');fireEvent.change(screen.getByLabelText('Плотность представления'),{target:{value:'compact'}});fireEvent.click(screen.getByRole('button',{name:'Сохранить личный вид'}));await screen.findByText('Личный вид сохранён');
  const preferences=await h.client.query<any>('preferences.get',{context:null,filter:{},sort:[],page:{limit:50,cursor:null}});expect(preferences.data.values.visual.density).toBe('compact');
  for(const [name,definition] of [['dashboard.draft.save',{title:'Общий'}],['customField.draft.save',{name:'Поле',entityTypes:['core_goal_definition'],valueType:'text',enumValues:null}],['customFieldValue.draft.save',{objectRef:{entityType:'core_goal_definition',id:fixtureId(11)},fieldRef:{entityType:'custom_field_def',id:fixtureId(900),revision:1},value:'Значение'}]] as const) await expect(h.client.command({commandId:crypto.randomUUID(),name,baseRevision:null,payload:{draftId:fixtureId(900),definition}})).rejects.toMatchObject({status:403});
  expect(screen.queryByRole('button',{name:'Создать общий дашборд'})).toBeNull();
@@ -73,9 +74,9 @@ it('previews_saved_dashboard_package_via_actual_async_job_without_submitting',as
  const h=await open(()=> <DashboardBuilder/>);await screen.findByLabelText('Название дашборда');await waitFor(()=>expect((screen.getByRole('button',{name:'Добавить блок'}) as HTMLButtonElement).disabled).toBe(false));fireEvent.change(screen.getByLabelText('Название дашборда'),{target:{value:'Проверяемый обзор'}});fireEvent.click(screen.getByRole('button',{name:'Добавить блок'}));fireEvent.click(screen.getByRole('button',{name:'Сохранить дашборд'}));await screen.findByText('Черновик сохранён');fireEvent.click(screen.getByRole('button',{name:'Проверить пакет дашборда'}));await screen.findByText('Пакет дашборда проверен');expect(h.requests.filter(r=>r.body?.name==='package.preview')).toHaveLength(1);expect(h.requests.filter(r=>r.body?.name==='package.submit')).toHaveLength(0);
 });
 
-it('injects_optional_maintenance_without_context_or_sixth_navigation_and_restores_focus',async()=>{
+it('injects_optional_maintenance_without_context_and_preserves_six_primary_destinations_and_focus',async()=>{
  const Maintenance=({onClose}:{onClose():void})=><section role="dialog" aria-label="Обслуживание"><button onClick={onClose}>Закрыть обслуживание</button></section>;
- const h=await createWorkbenchUiHarness({role:'viewer',scenario:'empty'},{views:{search:GlobalSearch,maintenance:Maintenance}});closes.push(h.close);await h.open('/overview');const opener=await screen.findByRole('button',{name:'Обслуживание рабочего места'});opener.focus();fireEvent.click(opener);await screen.findByRole('dialog',{name:'Обслуживание'});expect(screen.getByRole('navigation').querySelectorAll('button')).toHaveLength(5);fireEvent.click(screen.getByRole('button',{name:'Закрыть обслуживание'}));expect(document.activeElement).toBe(opener);
+ const h=await createWorkbenchUiHarness({role:'viewer',scenario:'empty'},{views:{search:GlobalSearch,maintenance:Maintenance}});closes.push(h.close);await h.open('/overview');const opener=await screen.findByRole('button',{name:'Обслуживание рабочего места'});opener.focus();fireEvent.click(opener);await screen.findByRole('dialog',{name:'Обслуживание'});expect(screen.getByRole('navigation',{name:'Основная навигация'}).querySelectorAll('button')).toHaveLength(6);fireEvent.click(screen.getByRole('button',{name:'Закрыть обслуживание'}));expect(document.activeElement).toBe(opener);
 });
 
 
@@ -100,4 +101,7 @@ it.each([
 
 it('opens_published_field_description_for_explicit_draft_edit',async()=>{
  const h=await createWorkbenchUiHarness({role:'curator',scenario:'scope-split'},{views:{overview:()=> <CustomFieldsPanel objectRef={{entityType:'core_goal_definition',id:fixtureId(11)}}/>}});closes.push(h.close);seedDashboardScenario(h.repository,h.refs);await h.open('/overview');await screen.findByRole('option',{name:'План затрат · Дата · 2'});fireEvent.change(screen.getByLabelText('Опубликованное поле'),{target:{value:fixtureId(920)}});fireEvent.click(screen.getByRole('button',{name:'Изменить описание выбранного поля'}));await waitFor(()=>expect((screen.getByLabelText('Имя поля') as HTMLInputElement).value).toBe('План затрат'));expect((screen.getByLabelText('Тип поля') as HTMLSelectElement).value).toBe('date');expect(h.requests.find(r=>r.body?.name==='draft.open')?.body?.payload).toMatchObject({entityType:'custom_field_def',ref:{id:fixtureId(920)}});
+});
+it('creates a management preset with independent status quality and confirmation and reopens saved settings',async()=>{
+ const h=await open(()=> <DashboardBuilder/>);const preset=await screen.findByRole('button',{name:'Управленческий обзор'});await waitFor(()=>expect(preset.matches(':disabled')).toBe(false));fireEvent.click(preset);expect(screen.getAllByRole('group',{name:/Блок:/})).toHaveLength(4);const first=screen.getByRole('group',{name:'Блок: Сравнение назначений'});fireEvent.change(within(first).getByLabelText('Ширина'),{target:{value:'12'}});fireEvent.click(screen.getByRole('button',{name:'Сохранить дашборд'}));await screen.findByText('Черновик сохранён');const session=await h.client.session();const request={context:session.data.defaultContext!,filter:{},sort:[],page:{limit:100,cursor:null}};const queue=await h.client.query<any>('uor.queue',request);const pkg=await h.client.query<any>('uor.package',{...request,filter:{packageRef:queue.data.items[0].packageRef}});const stored=pkg.data.entries.find((e:any)=>e.entityRef.entityType==='dashboard_def');expect(stored.definition.blocks[0].settings.value.layout.w).toBe(12);expect(stored.definition.blocks.map((b:any)=>b.typeId)).toContain('uor.dashboard.goal-matrix.v1');expect(stored.complete).toBe(true);
 });

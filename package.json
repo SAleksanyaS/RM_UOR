@@ -1,11 +1,11 @@
 {
   "name": "uor-dit-operations",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "private": true,
   "type": "module",
   "engines": {
-    "node": "^22.16.0 || >=24.0.0",
-    "npm": ">=10.9.2"
+    "node": "22.16.0",
+    "npm": "10.9.2"
   },
   "packageManager": "npm@10.9.2",
   "scripts": {
@@ -27,7 +27,9 @@
     "export:clean": "node scripts/export-clean.mjs",
     "history:archive": "tsx scripts/archive-local-history.ts",
     "probe:bank": "tsx scripts/probes/bank-probe.ts",
-    "probe:readiness": "tsx scripts/probes/check-readiness.ts"
+    "probe:sberbrowser": "tsx scripts/probes/sberbrowser-diagnose.ts",
+    "probe:readiness": "tsx scripts/probes/check-readiness.ts",
+    "logs": "node scripts/logs.mjs"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.2",

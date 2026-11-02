@@ -89,6 +89,7 @@ export async function createOkoApplication({ projectRoot, browserLauncher }: { p
   const app = await createWorkbenchApp({ repository, clock, hostname, accessPolicy, commands, jobs, queries: new QueryRegistry(), files, sessions: createLocalSessionStore({ clock }), modules: [createOkoWorkflowModule({ service: workflow }), ...roleModule], installationId,
     allowedOrigins: [`http://127.0.0.1:${config.clientPort}`, `http://localhost:${config.clientPort}`, `http://127.0.0.1:${config.port}`, `http://localhost:${config.port}`],
     browserResults: { read: workflow.readResult },
+    browserExport: { read: workflow.readExport },
   }, { configure: app => staticEntry(app, root) });
   const close = async () => {
     if (closed) return; closed = true;

@@ -20,6 +20,7 @@ import type { BrowserOwner, BrowserRuntimePort } from './workbench-browser-runti
 import type { BrowserScenarioRuntimePort, CaptureRequest, NormalizerPort, SourceAdapter, SourceIssue } from './workbench-source-contracts';
 import type { ResolvedCaptureBinding, SourceStore } from './workbench-source-store';
 import { normalizeParsedWorkbenchTable } from './workbench-source-normalizer';
+import { browserPreparationRevision } from './workbench-browser-binding';
 
 const fail = (code: string, status = 422): never => { throw new WorkbenchHttpError(status, code, code); };
 const same = (a: unknown, b: unknown) => stableJson(a) === stableJson(b);
@@ -34,7 +35,7 @@ function mappedError(error: unknown): WorkbenchHttpError {
   if (error instanceof ConnectorError && 'diagnosticCode' in error && (error.diagnosticCode === 'SELECTOR_NOT_FOUND' || error.diagnosticCode === 'SELECTOR_NOT_UNIQUE')) return new WorkbenchHttpError(422, error.diagnosticCode, 'Record the changed report element again');
   if (error instanceof WorkbenchParserError || error instanceof z.ZodError) return new WorkbenchHttpError(422, 'SOURCE_SCHEMA_CHANGED', 'The export format differs from the published mapping');
   const code = error instanceof ConnectorError ? error.code : connectorError(error).code;
-  return new WorkbenchHttpError(422, ({ configuration_required: 'BROWSER_CONFIGURATION_REQUIRED', manual_required: 'AUTH_REQUIRED', manual_login_required: 'AUTH_REQUIRED', access_denied: 'SOURCE_ACCESS_DENIED', network: 'SOURCE_UNAVAILABLE', certificate: 'SOURCE_CERTIFICATE_REQUIRED', timeout: 'SOURCE_TIMEOUT', format: 'SOURCE_SCHEMA_CHANGED', incomplete: 'DOWNLOAD_REQUIRED', cancelled: 'SOURCE_CANCELLED' } as const)[code], 'Browser collection did not complete');
+  return new WorkbenchHttpError(422, ({ configuration_required: 'BROWSER_CONFIGURATION_REQUIRED', manual_required: 'AUTH_REQUIRED', manual_login_required: 'AUTH_REQUIRED', access_denied: 'SOURCE_ACCESS_DENIED', network: 'SOURCE_UNAVAILABLE', certificate: 'SOURCE_CERTIFICATE_REQUIRED', timeout: 'SOURCE_TIMEOUT', format: 'SOURCE_SCHEMA_CHANGED', incomplete: 'DOWNLOAD_REQUIRED', cancelled: 'SOURCE_CANCELLED', browser_launch: 'BROWSER_LAUNCH_FAILED' } as const)[code], 'Browser collection did not complete');
 }
 export interface BrowserSourceAdapter extends SourceAdapter, NormalizerPort {
   /** Trusted server binding, never part of the command payload. State is scoped to the job. */
@@ -68,12 +69,15 @@ export function createBrowserSourceAdapter({ runtime, profiles, scenarios, clock
     async collect(request, signal) {
       try {
         const prepared = get(request), profile = await profileFor(prepared), owner = ownerOf(prepared.context), started = clock.now(); signal.throwIfAborted();
-        const download = await runtime.replay({ owner, profile, scenario: structuredClone(prepared.scenario) }, signal); signal.throwIfAborted();
+        // Revalidate current source/mapping/scenario before consuming a live
+        // authentication capability as well as after export coverage checks.
+        await adapter.verify(request); signal.throwIfAborted();
+        const download = await runtime.replay({ owner, profile, scenario: structuredClone(prepared.scenario), preparationId: prepared.binding.source.id, preparationRevision: browserPreparationRevision({ sourceRef: request.sourceRef }, prepared.profileRevision ?? null), allowFreshContext: true, operationId: request.operationId }, signal); signal.throwIfAborted();
         if (!(download?.bytes instanceof Uint8Array) || !download.bytes.length) return fail('DOWNLOAD_REQUIRED');
         const bytes = Buffer.from(download.bytes);
         if (bytes.length > Math.min(profile.maxBytes, defaultFileLimits.goalImportBytes)) return fail('SOURCE_SCHEMA_CHANGED');
         try { assertFileName(download.name); } catch { return fail('SOURCE_SCHEMA_CHANGED'); }
-        if (!download.name.toLowerCase().endsWith('.' + prepared.scenario.expectedExport.format)) return fail('SOURCE_SCHEMA_CHANGED');
+        if (prepared.scenario.expectedExport.format==='raw'||!download.name.toLowerCase().endsWith('.' + prepared.scenario.expectedExport.format)) return fail('SOURCE_SCHEMA_CHANGED');
         if (!prepared.binding.mapping.parsingProfile) return fail('SOURCE_INVALID_CONFIGURATION');
         const table = await parseWorkbenchTable({ bytes, name: download.name, parsingProfile: prepared.binding.mapping.parsingProfile }); signal.throwIfAborted();
         if (prepared.scenario.expectedExport.requiredColumns.some(column => !table.columns.includes(column))) return fail('SOURCE_SCHEMA_CHANGED');
@@ -112,7 +116,8 @@ export function createBrowserLoginService({ runtime, profiles, scenarios, reposi
       assertContext(context, repository); const scenario = current(sourceRef), owner = ownerOf(context);
       const profile = await profiles.getOwn(context, scenario.sourceId); if (!profile.profile || !profile.configured) return fail('BROWSER_CONFIGURATION_REQUIRED', 409);
       checkedUrl(scenario.startUrl, profile.profile);
-      const opened = await runtime.openLogin({ owner, profile: profile.profile, startUrl: scenario.startUrl, authenticatedSelector: scenario.authenticatedSelector }, AbortSignal.timeout(120000));
+      await runtime.discardPreparation?.({ owner, preparationId: scenario.sourceId });
+      const opened = await runtime.openLogin({ owner, profile: profile.profile, startUrl: scenario.startUrl, authenticatedSelector: scenario.authenticatedSelector }, new AbortController().signal);
       try { if (!same(current(sourceRef), scenario) || (await profiles.getOwn(context, scenario.sourceId)).revision !== profile.revision) return fail('SOURCE_CONFIGURATION_CHANGED', 409); }
       catch (error) { await runtime.finish({ handleId: opened.handleId, owner, save: false }).catch(() => {}); throw error; }
       handles.set(opened.handleId, { owner, sourceRef: structuredClone(sourceRef), scenario, profileRevision: profile.revision });
@@ -121,11 +126,15 @@ export function createBrowserLoginService({ runtime, profiles, scenarios, reposi
     async finish(context, { loginId }) {
       assertContext(context, repository); const handle = handles.get(loginId); if (!handle || !same(handle.owner, ownerOf(context))) return fail('BROWSER_HANDLE_NOT_FOUND', 404);
       const verify = async () => { if (!same(current(handle.sourceRef), handle.scenario) || (await profiles.getOwn(context, handle.scenario.sourceId)).revision !== handle.profileRevision) return fail('SOURCE_CONFIGURATION_CHANGED', 409); };
+      let retained = false;
       try {
       await verify(); const authenticated = await runtime.observeLogin?.({ owner: handle.owner, handleId: loginId }) ?? false;
       await verify();
       if (authenticated) {
-        await runtime.finish({ owner: handle.owner, handleId: loginId, save: false }); handles.delete(loginId); await verify();
+        if (!runtime.prepareLogin) return fail('BROWSER_CONFIGURATION_REQUIRED', 409);
+        const profile = await profiles.getOwn(context, handle.scenario.sourceId);
+        await runtime.prepareLogin({ owner: handle.owner, loginHandleId: loginId, preparationId: handle.scenario.sourceId, preparationRevision: browserPreparationRevision({ sourceRef: handle.sourceRef }, handle.profileRevision), profile: profile.profile!, startUrl: handle.scenario.startUrl, authenticatedSelector: handle.scenario.authenticatedSelector });
+        retained = true; handles.delete(loginId); await verify();
         // Only the original private capture checkpoints can receive the retry action.
         // This facade shares the existing SQLite job journal; it creates no new job.
         const jobs = createJobStore({ repository, clock: context.clock });
@@ -137,7 +146,7 @@ export function createBrowserLoginService({ runtime, profiles, scenarios, reposi
         }
       }
       return { loginId, authenticated };
-      } catch (error) { handles.delete(loginId); await runtime.finish({ owner: handle.owner, handleId: loginId, save: false }).catch(() => {}); throw error; }
+      } catch (error) { handles.delete(loginId); if (retained) await runtime.discardPreparation?.({ owner: handle.owner, preparationId: handle.scenario.sourceId }).catch(() => {}); else await runtime.finish({ owner: handle.owner, handleId: loginId, save: false }).catch(() => {}); throw error; }
     },
   };
 }

@@ -146,6 +146,8 @@ function jpegSafety(bytes: Buffer): void {
 /** Opaque evidence is stored only; no document rendering, macro execution or network access. */
 export async function validateFileContent(purpose: FilePurpose, name: string, mediaType: string, bytes: Buffer, limits: FileLimits): Promise<void> {
   try {
+    // Raw acquisition stores bounded inert bytes; parsing and acceptance are separate gates.
+    if (purpose === 'raw-file') return;
     const extension = name.slice(name.lastIndexOf('.')).toLowerCase();
     if (purpose === 'workspace-restore') { if (extension !== '.zip' || mediaType !== 'application/zip') throw invalid(); archive(bytes, limits.restoreExpandedBytes, true); return; }
     if(purpose==='goal-import'&&extension==='.zip'&&mediaType==='application/zip'){archive(bytes,limits.restoreExpandedBytes,true);return;}
@@ -155,7 +157,7 @@ export async function validateFileContent(purpose: FilePurpose, name: string, me
       while(pending.length){const next=pending.pop()!;if(next.depth>64||++count>1000000)throw invalid();if(typeof next.value==='number'&&!Number.isFinite(next.value))throw invalid();if(next.value&&typeof next.value==='object'){for(const[key,item]of Object.entries(next.value)){if(['__proto__','prototype','constructor'].includes(key))throw invalid();pending.push({value:item,depth:next.depth+1});}}}
       return;
     }
-    if (extension === '.csv' && mediaType === 'text/csv') { if (purpose === 'goal-import' || purpose === 'oko-directory') textStructure(bytes); else csvSafety(text(bytes)); return; }
+    if (extension === '.csv' && mediaType === 'text/csv' || extension === '.tsv' && mediaType === 'text/tab-separated-values' && (purpose === 'goal-import' || purpose === 'oko-directory')) { if (purpose === 'goal-import' || purpose === 'oko-directory') textStructure(bytes); else csvSafety(text(bytes)); return; }
     if (extension === '.xlsx' && mediaType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') { workbookSafety(archive(bytes, 64 * 1024 ** 2, false)); return; }
     if (purpose === 'evidence' && extension === '.txt' && mediaType === 'text/plain') { text(bytes); return; }
     if (purpose === 'evidence' && extension === '.pdf' && mediaType === 'application/pdf') { if (!/^%PDF-(?:1\.[0-9]|2\.0)(?:\r|\n)/.test(bytes.subarray(0, 16).toString('ascii')) || !/%%EOF\s*$/.test(bytes.subarray(-1024).toString('ascii')) || bytes.indexOf(Buffer.from('obj')) < 0 || bytes.indexOf(Buffer.from('endobj')) < 0) throw invalid(); return; }

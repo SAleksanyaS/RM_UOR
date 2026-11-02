@@ -16,6 +16,8 @@ const assignmentRef = entityRefSchema.refine(r => r.entityType === 'goal_assignm
 const metricRef = versionRefSchema.refine(r => r.entityType === 'metric_definition');
 const columns = <T extends readonly [string,...string[]]>(values:T) => z.array(z.enum(values)).min(1).refine(v => unique(v) && v.includes('title'));
 const catalog = {
+  'goal-comparison':z.strictObject({layout,limit,attentionOnly:z.boolean()}),
+  'goal-matrix':z.strictObject({layout,limit,attentionOnly:z.boolean()}),
   'metric-card': z.strictObject({ layout,assignmentRef,metricRef,showTrend:z.boolean() }),
   'goal-table': z.strictObject({ layout,columns:columns(goalColumns),limit,attentionOnly:z.boolean() }),
   'metric-trend': z.strictObject({ layout,assignmentRef,metricRef,granularity:z.enum(['day','friday']) }),

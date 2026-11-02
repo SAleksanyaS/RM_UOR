@@ -21,8 +21,8 @@ const values = [
 ] as const;
 function dashboard(kind: string, value: Record<string,unknown>): DashboardDef { const typeId = `uor.dashboard.${kind}.v1`; return { ...makeHeader(901), title:'Обзор', blocks:[{id:fixtureId(902),typeId,settings:{schemaId:typeId,schemaVersion:1,value}}],filters:[] }; }
 it.each(values)('accepts exact catalog %s', (kind, value) => { expect(() => validateDashboard(dashboard(kind,value),refs)).not.toThrow(); });
-it('registers six schemas with the uor owner', () => {
-  expect(dashboardSchemaDescriptors).toHaveLength(6);
+it('registers eight schemas including comparison and matrix with the uor owner', () => {
+  expect(dashboardSchemaDescriptors).toHaveLength(8);
   expect(dashboardSchemaDescriptors.every(s => s.ownerModuleId === 'uor' && s.schemaVersion === 1)).toBe(true);
 });
 it.each([

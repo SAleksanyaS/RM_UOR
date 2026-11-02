@@ -13,16 +13,16 @@ import { LineagePanel } from './LineagePanel';
 import { WorkbenchSourceSetupWizard } from './SourceSetupWizard';
 import './data-views.css';
 
-export function WorkbenchDataPage() {
+export function WorkbenchDataPage({processing=false,rawFileId}:{processing?:boolean;rawFileId?:string}={}) {
   const { context } = useGlobalContext();
   const { client, session, loading } = useWorkbench();
   const lifetime = useRef({ client, generation: 0 });
   if (lifetime.current.client !== client) lifetime.current = { client, generation: lifetime.current.generation + 1 };
   const [revision, setRevision] = useState(0);
 
-  return <div className="wb-data"><div className="wb-page-toolbar"><div><h2>Общие данные целей</h2><p className="wb-status-note">Получения и факты для расчёта цели. Личные отчёты ОКО доступны в отдельной вкладке.</p></div><div className="wb-toolbar-actions"><button type="button" onClick={() => setRevision(v => v + 1)}><RefreshCw size={16} aria-hidden="true" />Обновить список данных</button></div></div><DataWorkspace refreshRevision={revision} key={JSON.stringify([context, window.location.search, session?.personId, session?.role, session?.allowedCommands, lifetime.current.generation])} /></div>;
+  return <div className="wb-data"><div className="wb-page-toolbar"><div><h2>{processing?'Обработка сохранённого файла':'Общие данные целей'}</h2><p className="wb-status-note">Получения и факты для расчёта цели. Личные отчёты ОКО доступны в отдельной вкладке.</p></div><div className="wb-toolbar-actions"><button type="button" onClick={() => setRevision(v => v + 1)}><RefreshCw size={16} aria-hidden="true" />Обновить список данных</button></div></div><DataWorkspace rawFileId={rawFileId} refreshRevision={revision} key={JSON.stringify([context, window.location.search, session?.personId, session?.role, session?.allowedCommands, lifetime.current.generation])} /></div>;
 }
-function DataWorkspace({ refreshRevision }: { refreshRevision: number }) {
+function DataWorkspace({ refreshRevision,rawFileId }: { refreshRevision: number;rawFileId?:string }) {
   const { context, setContext } = useGlobalContext();
   const { session } = useWorkbench();
   const goals = useRetainedDataQuery<WorkbenchReadModels['goals.list']>('goals.list', context ? { ...dataPageRequest, context } : null, refreshRevision);
@@ -48,7 +48,7 @@ function DataWorkspace({ refreshRevision }: { refreshRevision: number }) {
     {definition && <><p>Штатный источник: {definition.kind === 'qlik' ? 'ОКО' : definition.kind === 'file' ? 'файл' : definition.kind === 'manual_status' ? 'ручной статус' : `Неизвестный тип: ${definition.kind}`}</p>
       {definition.kind === 'qlik' && <p>Выгрузка Excel/CSV, скачанная сценарием СберБраузера, относится к ОКО.</p>}
       {sourceRef && session?.allowedCommands.includes('source.draft.save') && <div className="wb-form-actions"><button type="button" onClick={() => setSetupOpen(true)}>Настроить источник</button></div>}
-      {definition.kind === 'file' && context?.goalId && session?.allowedCommands.includes('import.preview') && session.allowedCommands.includes('import.apply') && <FileImport goalId={context.goalId} onApplied={applied} />}
+      {definition.kind === 'file' && context?.goalId && session?.allowedCommands.includes('import.preview') && session.allowedCommands.includes('import.apply') && <FileImport rawFileId={rawFileId} goalId={context.goalId} onApplied={applied} />}
       {definition.kind === 'qlik' && context?.goalId && <CaptureSource goalId={context.goalId} onCaptured={ref => { setSelectedCapture(ref); setDataRevision(v => v + 1); }} />}
     </>}
     {context && <CaptureList key={dataRevision + '/' + refreshRevision} selected={selectedCapture} onSelect={setSelectedCapture} onLineage={ref => setLineage({ factRef: ref })} />}
@@ -56,17 +56,17 @@ function DataWorkspace({ refreshRevision }: { refreshRevision: number }) {
     {setupOpen && sourceRef && goal && <WorkbenchSourceSetupWizard rechecking={goals.loading || source.loading} sourceRef={sourceRef} goalRef={{ entityType: 'core_goal_definition', id: goal.id }} onClose={() => setSetupOpen(false)} />}
   </>;
 }
-function FileImport({ goalId, onApplied }: { goalId: string; onApplied(result: ImportApplyResult): void }) {
+export function FileImport({ goalId, onApplied,rawFileId }: { goalId: string;rawFileId?:string; onApplied(result: ImportApplyResult): void }) {
   const { client, loading } = useWorkbench();
   const [file, setFile] = useState<File | null>(null), [preview, setPreview] = useState<ImportPreviewResult | null>(null), [busy, setBusy] = useState(false), [error, setError] = useState<unknown>(null), [stage, setStage] = useState('');
-  const owner = useRef<AbortController | null>(null), operation = useRef<CommandRequest | null>(null);
+  const owner = useRef<AbortController | null>(null), operation = useRef<CommandRequest | null>(null),stageRequest=useRef<CommandRequest|null>(null);
   useEffect(() => { const controller = new AbortController(); owner.current = controller; return () => controller.abort(); }, []);
   const inspect = async () => {
-    const current = owner.current; if (!file || !current || busy || loading) return;
+    const current = owner.current; if ((!file&&!rawFileId) || !current || busy || loading) return;
     setBusy(true); setError(null); setPreview(null);
     try {
       if (!operation.current) {
-        const handle = await client.upload(file, 'goal-import');
+        const handle = rawFileId ? {data:await runDataCommand<{fileHandle:string}>(client,stageRequest.current??=( {commandId:crypto.randomUUID(),name:'raw.file.stageForImport',baseRevision:null,payload:{id:rawFileId}}),current.signal,setStage)} : await client.upload(file!, 'goal-import');
         if (current.signal.aborted) return;
         operation.current = { commandId: crypto.randomUUID(), name: 'import.preview', baseRevision: null, payload: { goalId, fileHandle: handle.data.fileHandle } };
       }
@@ -75,9 +75,10 @@ function FileImport({ goalId, onApplied }: { goalId: string; onApplied(result: I
     } catch (failure) { if (!current.signal.aborted) setError(failure); }
     finally { if (!current.signal.aborted) setBusy(false); }
   };
-  return <section aria-label="Загрузка файла" className="wb-panel"><h2>Загрузка файла</h2><label className="wb-field"><span>Файл данных</span><input type="file" accept=".csv,.xlsx" disabled={busy} onChange={e => { operation.current = null; setPreview(null); setError(null); setFile(e.target.files?.[0] ?? null); }} /></label>
-    <div className="wb-form-actions"><button className="wb-primary-button" type="button" disabled={!file || busy || loading} onClick={() => { void inspect(); }}>Проверить файл</button></div>
+  return <section aria-label="Загрузка файла" className="wb-panel"><h2>{rawFileId?'Проверка сохранённого исходника':'Загрузка файла'}</h2>{rawFileId?<p>Исходный файл выбран. Профиль разбора, точные столбцы и преобразования задаются в настройке источника цели. Проверка создаёт отдельный вариант; принятие строк выполняется явно.</p>:<label className="wb-field"><span>Файл данных</span><input type="file" accept=".csv,.tsv,.xlsx" disabled={busy} onChange={e => { operation.current = null; setPreview(null); setError(null); setFile(e.target.files?.[0] ?? null); }} /></label>}
+    <div className="wb-form-actions"><button className="wb-primary-button" type="button" disabled={(!file&&!rawFileId) || busy || loading} onClick={() => { void inspect(); }}>Проверить файл</button></div>
     {busy && <p role="status">Проверяем файл: {stage}</p>}{error !== null && <p role="alert">{dataError(error)}</p>}
+    {preview&&rawFileId&&<button disabled={busy} onClick={()=>{operation.current=null;setPreview(null);}}>Проверить другой вариант обработки</button>}
     {preview && <ImportPreview key={preview.previewToken} preview={preview} onApplied={onApplied} />}
   </section>;
 }

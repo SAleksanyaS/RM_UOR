@@ -37,6 +37,21 @@ async function repository() {
 }
 
 describe('clean distribution from the accepted code revision', () => {
+  it('ships the daily launchers and the explicitly approved material set without neighboring private originals', async () => {
+    const root = await repository();
+    const approved = ['start-rm-uor.mjs', 'START_RM_UOR.sh', 'START_RM_UOR.cmd', 'README_RU_LOCAL_START.txt',
+      'materials/maturity/2026-10-30/source.xlsx', 'materials/maturity/2026-10-30/source.pptx', 'materials/maturity/2026-10-30/manifest.json',
+      'data/reference/maturity-2026-10-30.json', 'data/reference/maturity-2026-10-30.csv', 'docs/guides/product-0.6.md',
+      'docs/validation/product-2026-11-02.md', 'docs/validation/raw-preview-performance.md'];
+    for (const file of approved) await put(root, file, 'synthetic approved release content');
+    for (const file of ['materials/maturity/2026-10-30/private.xlsx', 'data/reference/private.json', 'materials/other/source.xlsx']) await put(root, file, 'synthetic unapproved material');
+    await git(root, 'add', '.'); await git(root, 'commit', '-m', 'Synthetic current material package');
+    const result = await exportCleanDistribution({ projectRoot: root });
+    const zip = await JSZip.loadAsync(await readFile(result.path));
+    for (const file of approved) expect(zip.file(file), file).not.toBeNull();
+    expect(Object.keys(zip.files).some(file => /private|materials\/other/.test(file))).toBe(false);
+    expect(await zip.file('TRANSFER_README.md')!.async('text')).toContain('docs/guides/product-0.6.md');
+  });
   it('ships the exact public workbench README targets without admitting neighboring evidence documents', async () => {
     const root = await repository();
     const publicDocs = ['docs/OKO_WORKFLOW.md', 'docs/validation/workbench-acceptance.md', 'docs/releases/workbench-candidate.md'];

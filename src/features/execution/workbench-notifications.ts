@@ -22,9 +22,16 @@ export function resolveNotificationRecipient(input: { ownAccess: OwnAccessProfil
   return recipient === null ? null : uuidSchema.parse(recipient);
 }
 export type NotificationContext = Pick<QueryContext, 'installationId' | 'ownAccess' | 'clock'>;
+export type NotificationSnapshot = {
+  causes: NotificationCause[];
+  calendar: BusinessCalendar | null;
+  settings: ReminderSettings | null;
+  /** Trusted synchronous read-only check, invoked inside the event transaction after all awaits. */
+  canEmit?: (cause: NotificationCause) => boolean;
+};
 export interface NotificationProvider {
   /** Read current causes only. This is called by lifecycle pump, never by list/read queries. */
-  current(context: NotificationContext, signal?: AbortSignal): Promise<{ causes: NotificationCause[]; calendar: BusinessCalendar; settings: ReminderSettings }>;
+  current(context: NotificationContext, signal?: AbortSignal): Promise<NotificationSnapshot>;
 }
 export interface NotificationService {
   pump(context: NotificationContext, signal?: AbortSignal): Promise<void>;
@@ -53,20 +60,27 @@ export function createNotificationService(options: { repository: WorkbenchReposi
         if (options.resolveOwnAccess && (await options.resolveOwnAccess()).personId !== context.ownAccess.personId) return;
         if (signal?.aborted) return;
         const recipient = resolveNotificationRecipient({ ownAccess: context.ownAccess, preferences: options.preferences(context.installationId,context.ownAccess.personId) });
-        businessCalendarSchema.parse(snapshot.calendar); reminderSettingsSchema.parse(snapshot.settings);
-        if (snapshot.settings.calendarId !== snapshot.calendar.id) throw new WorkbenchHttpError(422, 'REMINDER_CALENDAR_MISMATCH', 'Reminder settings reference another calendar');
+        if(snapshot.calendar!==null)businessCalendarSchema.parse(snapshot.calendar);if(snapshot.settings!==null)reminderSettingsSchema.parse(snapshot.settings);
+        if ((!snapshot.calendar||!snapshot.settings)&&snapshot.causes.some(c=>c.recurring!==false))throw new WorkbenchHttpError(422,'REMINDER_SETTINGS_UNAVAILABLE','Recurring events require published reminder settings');
+        if ((snapshot.settings===null)!==(snapshot.calendar===null)||snapshot.settings&&snapshot.calendar&&snapshot.settings.calendarId !== snapshot.calendar.id) throw new WorkbenchHttpError(422, 'REMINDER_CALENDAR_MISMATCH', 'Reminder settings reference another calendar');
         const causes = z.array(notificationCauseSchema).parse(snapshot.causes);
         const now = context.clock.now();
-        const eligible = causes.filter(cause => (recipient !== null && cause.recipientPersonIds.includes(recipient)) || [...new Set([...(cause.goalIds ?? []), ...(cause.objectRef.entityType === 'core_goal_definition' ? [cause.objectRef.id] : [])])].some(id => store.isSubscribed(owner, id)));
+        const eligible = causes.filter(cause => cause.localOwner ? cause.provider==='updates'&&cause.localOwner.installationId===context.installationId&&cause.localOwner.personId===context.ownAccess.personId : (recipient !== null && cause.recipientPersonIds.includes(recipient)) || [...new Set([...(cause.goalIds ?? []), ...(cause.objectRef.entityType === 'core_goal_definition' ? [cause.objectRef.id] : [])])].some(id => store.isSubscribed(owner, id)));
         // Validate the entire snapshot before recording any part of it.
         const plans = eligible.map(cause => {
-          const causeKey = dedup(cause, recipient); const existing = store.find(owner, causeKey);
-          const reminder = planReminder({ now, calendar: snapshot.calendar, settings: snapshot.settings, lastSentAt: existing?.emittedAt ?? null, cause });
+          const causeKey = dedup(cause, cause.localOwner ? cause.localOwner.personId : recipient); const existing = store.find(owner, causeKey);
+          const reminder = snapshot.calendar&&snapshot.settings?planReminder({ now, calendar: snapshot.calendar, settings: snapshot.settings, lastSentAt: existing?.emittedAt ?? null, cause }):null;
           return { causeKey, cause: { ...cause, recipientPersonIds: [...new Set(cause.recipientPersonIds)] }, category: existing ? reminder ? 'reminder' as const : null : cause.kind === 'error' ? 'error' as const : 'new' as const };
         });
         options.repository.transaction(() => {
           const seen = new Set<string>();
-          for (const plan of plans) if (plan.category && !seen.has(plan.causeKey)) { seen.add(plan.causeKey); store.record(owner, plan.causeKey, plan.cause, plan.category, now); }
+          for (const plan of plans) {
+            if (!plan.category || seen.has(plan.causeKey)) continue;
+            // Strict true rejects accidental async predicates; no await may split this check and record.
+            if (snapshot.canEmit && snapshot.canEmit(plan.cause) !== true) continue;
+            seen.add(plan.causeKey);
+            store.record(owner, plan.causeKey, plan.cause, plan.category, now);
+          }
         });
       })();
       pumping.set(key, action);

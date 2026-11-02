@@ -1,0 +1,7 @@
+import type { ReactNode } from 'react';
+export function Surface({children,label}:{children:ReactNode;label?:string}) { return <section className="wb-surface" aria-label={label}>{children}</section>; }
+export function EmptyState({title,children,action}:{title:string;children:ReactNode;action?:ReactNode}) { return <div className="wb-content-empty"><h2>{title}</h2><p>{children}</p>{action}</div>; }
+export function StatusBadge({children,tone='neutral'}:{children:ReactNode;tone?:'neutral'|'success'|'warning'|'danger'|'info'}) { return <span className={'wb-status-badge wb-status-'+tone}>{children}</span>; }
+export function Field({label,children,hint,error}:{label:string;children:ReactNode;hint?:string;error?:string}) { return <label className="wb-field"><span>{label}</span>{children}{hint&&<small>{hint}</small>}{error&&<span role="alert">{error}</span>}</label>; }
+export function DataTable({label,children}:{label:string;children:ReactNode}) { return <div className="wb-table-scroll" role="region" aria-label={label} tabIndex={0}><table className="wb-data-table"><caption className="wb-visually-hidden">{label}</caption>{children}</table></div>; }
+export function QueryState({loading,error,onRetry}:{loading:boolean;error?:string|null;onRetry?:()=>void}) { return loading?<p role="status">Загружаем данные…</p>:error?<div role="alert" className="wb-inline-feedback"><p>{error}</p>{onRetry&&<button onClick={onRetry}>Повторить загрузку</button>}</div>:null; }

@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 import { fixtureId } from '../../../tests/fixtures/workbench/factories';
 import type { GlobalContext } from '../../server/workbench/protocol';
-import { readRouteState, routeUrl, updateGlobalContext, businessTimeFromRange } from './route-state';
+import { readRouteState, routeUrl, updateGlobalContext, businessTimeFromRange, canonicalPageTarget } from './route-state';
 
 const base: GlobalContext = { scopePath: { ditId: fixtureId(100), clusterId: fixtureId(103), productId: fixtureId(101), teamId: fixtureId(104) }, goalId: null, time: { kind: 'as_of', date: '2026-10-28' }, resultMode: 'current', snapshotId: null };
 it('normalizes_parent_scope_and_history', () => {
@@ -29,4 +29,23 @@ it('roundtrips_cleared_goal_and_snapshot_against_nonnull_saved_defaults', () => 
   expect(readRouteState(routeUrl('/goals', clearedGoal), saved).context).toEqual(clearedGoal);
   const clearedSnapshot = { ...saved, snapshotId: null };
   expect(readRouteState(routeUrl('/goals', clearedSnapshot), saved).context).toEqual(clearedSnapshot);
+});
+it('roundtrips real block roots and direct cluster teams without inventing a product',()=>{
+ const actual:GlobalContext={...base,scopePath:{rootKind:'block',ditId:fixtureId(700),clusterId:fixtureId(701),productId:null,teamId:fixtureId(702)}};
+ const url=routeUrl('/knowledge',actual);
+ expect(url).toContain('rootKind=block');
+ expect(readRouteState(url,actual).context?.scopePath).toEqual(actual.scopePath);
+ expect(updateGlobalContext(actual,{time:{kind:'as_of',date:'2026-10-29'}}).scopePath.teamId).toBe(fixtureId(702));
+ expect(routeUrl('/overview',base)).not.toContain('rootKind');
+});
+it('preserves exact saved report and knowledge selectors through canonicalization and context changes',()=>{
+ const report='/reports?report='+fixtureId(701)+'&reportRevision=2';
+ const team='/knowledge?object='+fixtureId(702);
+ expect(canonicalPageTarget(report+'&unknown=discard')).toBe(report);
+ expect(canonicalPageTarget(team+'&unknown=discard')).toBe(team);
+ expect(canonicalPageTarget(routeUrl(report,base))).toBe(report);
+ expect(canonicalPageTarget(routeUrl(team,base))).toBe(team);
+ for(const input of [report+'&report='+fixtureId(703),'/reports?report='+fixtureId(701)+'&reportRevision=0','/reports?report='+fixtureId(701)+'&reportRevision=9007199254740992','/reports?report=../../private&reportRevision=1'])expect(canonicalPageTarget(input)).toBe('/reports');
+ expect(canonicalPageTarget(team+'&object='+fixtureId(703))).toBe('/knowledge');
+ expect(canonicalPageTarget('/knowledge?object=https://example.com')).toBe('/knowledge');
 });

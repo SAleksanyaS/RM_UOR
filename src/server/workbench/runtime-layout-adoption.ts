@@ -36,7 +36,7 @@ const knownTables=new Set([
  'wb_drafts_packages','wb_drafts_entries','wb_drafts_revisions','wb_drafts_derived','wb_drafts_evaluation_digest','wb_drafts_proofs','wb_drafts_frozen','wb_execution_completions',
  'wb_notifications_events','wb_notifications_subscriptions','wb_notifications_occurrences','wb_preferences_personal','wb_ownership_bindings',
  'wb_sources_bindings','wb_sources_adapters','wb_sources_contexts','wb_sources_captures','wb_sources_success','wb_sources_attempts','wb_sources_git','wb_sources_artifacts','wb_sources_original_omissions',
- 'wb_imports_previews','wb_imports_groups','wb_imports_original_omissions','wb_evidence_artifacts','wb_evidence_published_artifacts','wb_browser_scenarios_tests','wb_oko_workflow_drafts','wb_oko_workflow_results','wb_oko_workflow_original_omissions',
+ 'wb_imports_previews','wb_imports_groups','wb_imports_original_omissions','wb_evidence_artifacts','wb_evidence_published_artifacts','wb_browser_scenarios_tests','wb_oko_workflow_drafts','wb_oko_workflow_results','wb_oko_workflow_original_omissions','wb_oko_workflow_exports','wb_oko_workflow_captures',
  'wb_publishing_reservations','wb_publishing_packages','wb_publishing_tokens','wb_publishing_prepared','wb_publishing_delivery_jobs','wb_publishing_effects','wb_publishing_applied','wb_publishing_portable_prepared',
  'wb_legacy_migration_records','wb_legacy_migration_files','wb_legacy_migration_omissions','wb_commands_intents','wb_jobs_heads','wb_jobs_events','wb_jobs_checkpoints',
 ]);

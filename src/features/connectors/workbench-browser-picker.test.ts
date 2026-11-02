@@ -1,3 +1,4 @@
+import { browserPolicyCdpFixture, browserPolicyPageFixture } from '../../../tests/fixtures/workbench/browser-policy-cdp';
 import { testBrowserSelection } from '../../../tests/fixtures/workbench/test-browser-selection';
 import { EventEmitter } from 'node:events';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -21,12 +22,12 @@ it('accepts only a main-frame unique report marker and closes its owned context'
   const root = await mkdtemp(path.join(os.tmpdir(), 'uor-picker-'));
   const events = new EventEmitter(); let closed = false, authenticated = false;
   let binding!: (source: unknown, payload: unknown) => Promise<void>;
-  const frame = {}, page = { mainFrame: () => frame, frames: () => [], url: () => 'https://report.example.invalid/report',
+  const frame = {}, page = browserPolicyPageFixture({ mainFrame: () => frame, frames: () => [], url: () => 'https://report.example.invalid/report',
     locator: (selector: string) => ({ count: async () => selector === '#duplicate' ? 2 : 1, isVisible: async () => true,
       evaluateAll: async () => !authenticated, evaluate: async (fn: Function) => fn.toString().includes('const node') ? false : { selector: '#report', label: 'report' } }),
-    goto: async () => { await binding({ page, frame }, { selector: '#report' }); authenticated = true; await binding({ page, frame: {} }, { selector: '#report' }); await binding({ page, frame }, { selector: '#duplicate' }); await binding({ page, frame }, { selector: '#report' }); } };
+    goto: async (url: string) => { if (url === 'about:blank') return; await binding({ page, frame }, { selector: '#report' }); authenticated = true; await binding({ page, frame: {} }, { selector: '#report' }); await binding({ page, frame }, { selector: '#duplicate' }); await binding({ page, frame }, { selector: '#report' }); } });
   const context = Object.assign(events, { pages: () => [page], setDefaultTimeout: () => {}, setDefaultNavigationTimeout: () => {},
-    newCDPSession: async () => ({ send: async () => {}, on: () => {} }), route: async () => {}, routeWebSocket: async () => {},
+    newCDPSession: async () => browserPolicyCdpFixture(), setOffline: async () => {}, route: async () => {}, routeWebSocket: async () => {},
     exposeBinding: async (_name: string, callback: typeof binding) => { binding = callback; }, addInitScript: async () => {},
     close: async () => { if (!closed) { closed = true; events.emit('close'); } } });
   try {
@@ -45,7 +46,8 @@ it('selects a real Edge marker after manual auth and serializes/cancels the own 
   const origin = `http://127.0.0.1:${(server.address() as {port: number}).port}`;
   let launches = 0, selected = false; const contexts: BrowserContext[] = [];
   const runtime = createBrowserRuntime({ runtimeRoot: root, launcher: { launchPersistent: async (_profile, folder, options) => {
-    launches++; const context = await chromium.launchPersistentContext(folder, { ...options, ...testBrowserSelection(), headless: true }); contexts.push(context);
+    expect(options.chromiumSandbox).toBe(true); expect(options.ignoreHTTPSErrors).toBe(false);
+    launches++; const context = await chromium.launchPersistentContext(folder, { ...options, ...testBrowserSelection(), headless: true, chromiumSandbox: !(process.env.UOR_SYNTHETIC_CI === '1' && process.env.UOR_TEST_CI_NO_SANDBOX === '1') }); contexts.push(context);
     const page = context.pages()[0];
     void page.waitForURL(`${origin}/report`).then(async () => {
       await page.locator('#report').click(); await page.waitForTimeout(100); expect(selected).toBe(false);
@@ -76,15 +78,16 @@ it('lets passwordless SSO Continue navigate on a different allowed origin and re
   let context: BrowserContext | undefined; let driver: Promise<void> | undefined; const controller = new AbortController();
   try {
     const selected = selectBrowserReportMarker({runtimeRoot:root,owner:{installationId:'00000000-0000-4000-8000-000000000001',profilePersonId:null},profile:privateProfileSchema.parse({allowedOrigins:[reportOrigin,ssoOrigin],timeoutMs:1500,browser:{...testBrowserSelection(),profileDirectory:'own'}}),startUrl:reportOrigin+'/report',signal:controller.signal,launcher:{launchPersistent:async(_profile,folder,options)=>{
-      context=await chromium.launchPersistentContext(folder,{...options,...testBrowserSelection(),headless:true});const page=context.pages()[0];
+      expect(options.chromiumSandbox).toBe(true);expect(options.ignoreHTTPSErrors).toBe(false);
+      context=await chromium.launchPersistentContext(folder,{...options,...testBrowserSelection(),headless:true,chromiumSandbox:!(process.env.UOR_SYNTHETIC_CI==='1'&&process.env.UOR_TEST_CI_NO_SANDBOX==='1')});const page=context.pages()[0];
       driver=(async()=>{await page.waitForURL(ssoOrigin+'/');await page.locator('#continue').click();await page.waitForURL(reportOrigin+'/ready');await page.locator('[data-testid="session-title"]').click();await page.waitForTimeout(100);expect(await page.locator('[data-uor-marker-picker]').innerText()).toContain('Выберите другой элемент');await page.locator('#report').click();})();void driver.catch(()=>controller.abort());return context;
     }}}); await expect(selected).resolves.toEqual({selector:'#report',label:'report'}); await driver;
   } finally {controller.abort();await context?.close().catch(()=>{});await Promise.all([new Promise<void>(resolve=>sso.close(()=>resolve())),new Promise<void>(resolve=>report.close(()=>resolve()))]);await rm(root,{recursive:true,force:true});}
 });
 it('aborts an active unresolved navigation promptly and closes only the owned context', async () => {
   const root=await mkdtemp(path.join(os.tmpdir(),'uor-picker-abort-'));const events=new EventEmitter();let closed=false, navigating!:()=>void;
-  const started=new Promise<void>(resolve=>{navigating=resolve;});const page={goto:()=>{navigating();return new Promise(()=>{});}};
-  const context=Object.assign(events,{pages:()=>[page],setDefaultTimeout:()=>{},setDefaultNavigationTimeout:()=>{},newCDPSession:async()=>({send:async()=>{},on:()=>{}}),route:async()=>{},routeWebSocket:async()=>{},exposeBinding:async()=>{},addInitScript:async()=>{},close:async()=>{closed=true;events.emit('close');}});
+  const started=new Promise<void>(resolve=>{navigating=resolve;});const page=browserPolicyPageFixture({goto:(url:string)=>{if(url==='about:blank')return Promise.resolve();navigating();return new Promise(()=>{});}});
+  const context=Object.assign(events,{pages:()=>[page],setDefaultTimeout:()=>{},setDefaultNavigationTimeout:()=>{},newCDPSession:async()=>browserPolicyCdpFixture(),setOffline:async()=>{},route:async()=>{},routeWebSocket:async()=>{},exposeBinding:async()=>{},addInitScript:async()=>{},close:async()=>{closed=true;events.emit('close');}});
   const controller=new AbortController();try{
     const task=selectBrowserReportMarker({runtimeRoot:root,owner:{installationId:'00000000-0000-4000-8000-000000000001',profilePersonId:null},profile:privateProfileSchema.parse({allowedOrigins:['https://report.example.invalid'],browser:{channel:'fixture',profileDirectory:'own'}}),startUrl:'https://report.example.invalid/report',signal:controller.signal,launcher:{launchPersistent:async()=>context as unknown as BrowserContext}});
     await started;controller.abort();const outcome=await Promise.race([task.then(()=> 'unexpected',error=>(error as Error).name),new Promise(resolve=>setTimeout(()=>resolve('navigation still blocked'),250))]);expect(outcome).toBe('AbortError');expect(closed).toBe(true);

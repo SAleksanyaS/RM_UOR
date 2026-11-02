@@ -23,6 +23,8 @@ export interface WorkbenchHttpPort {
   meta(request: LocalRequest): Promise<Meta>;
   query(name: string, input: AnyQueryRequest, request: LocalRequest): Promise<ApiSuccess<unknown>>;
   browserResult?(resultId: UUIDv4, kind: 'original' | 'enriched', request: LocalRequest): Promise<BrowserResultArtifact>;
+  rawFile?(id: UUIDv4, request: LocalRequest): Promise<BrowserResultArtifact>;
+  browserExport?(exportId: UUIDv4, request: LocalRequest): Promise<BrowserResultArtifact>;
   browserScreenshot?(recordingId: UUIDv4, handleId: UUIDv4, request: LocalRequest): Promise<{ bytes: Uint8Array; mediaType: 'image/png' }>;
   command(input: CommandRequest, request: LocalRequest): Promise<ApiSuccess<CommandResult | JobAccepted>>;
   reconcileCommand?(id: UUIDv4, request: LocalRequest): Promise<ApiSuccess<CommandReconciliation>>;
@@ -31,6 +33,7 @@ export interface WorkbenchHttpPort {
 declare module 'fastify' {
   interface FastifyInstance { workbenchTransport: { allowedOrigins: readonly string[]; sessions: LocalSessionStore } }
 }
+const safeDownloadExtension=(name:string)=>/\.(csv|tsv|xlsx|xls)$/i.exec(name)?.[1]?.toLowerCase()??'bin';
 const cookieName = 'uor-workbench-session';
 const problemStatuses: Readonly<Record<string, number>> = {
   REVISION_CONFLICT: 409, IDEMPOTENCY_CONFLICT: 409, CURSOR_STALE: 409, PREVIEW_STALE: 409,
@@ -40,6 +43,9 @@ const problemStatuses: Readonly<Record<string, number>> = {
   SOURCE_SCHEMA_CHANGED: 422, INTEGRITY_MISMATCH: 422, INVALID_CURSOR: 409,
   INVALID_HISTORY_QUERY: 422, INVALID_PAGE_LIMIT: 422, SNAPSHOT_REQUIRED: 422,
   HISTORICAL_BASIS_UNAVAILABLE: 409, REFERENCE_NOT_PUBLISHED: 409, BASIS_MISMATCH: 422,
+  BROWSER_LAUNCH_FAILED: 422, BROWSER_WINDOW_CLOSED: 409, BROWSER_URL_BLOCKED: 422, REPORT_URL_REQUIRED: 422,
+  BROWSER_SESSION_EXHAUSTED: 429, SOURCE_CERTIFICATE_INVALID: 422,
+  EXPORT_NOT_FOUND: 404,
 };
 const requestIds = new WeakMap<FastifyRequest, string>();
 function loopback(address: string): boolean {
@@ -166,10 +172,29 @@ export async function registerWorkbenchRoutes(app: FastifyInstance, application:
       const result = await application.browserResult(id.data, kind as 'original' | 'enriched', r);
       assertFileName(result.name);
       if (!(result.bytes instanceof Uint8Array) || result.bytes.length > defaultFileLimits.restoreBytes || !/^[a-f0-9]{64}$/.test(result.sha256) || createHash('sha256').update(result.bytes).digest('hex') !== result.sha256) throw new WorkbenchHttpError(422, 'INTEGRITY_MISMATCH', 'Result bytes failed integrity verification');
-      if (!['text/csv', 'text/csv; charset=utf-8', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/octet-stream'].includes(result.mimeType)) throw new WorkbenchHttpError(422, 'INVALID_FILE', 'Unsupported result type');
+      if (!['text/csv', 'text/csv; charset=utf-8', 'text/tab-separated-values', 'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/octet-stream'].includes(result.mimeType)) throw new WorkbenchHttpError(422, 'INVALID_FILE', 'Unsupported result type');
       return reply.header('content-type', result.mimeType).header('content-length', result.bytes.length)
-        .header('content-disposition', `attachment; filename="export.${kind === 'enriched' || /\.csv$/i.test(result.name) ? 'csv' : 'xlsx'}"; filename*=UTF-8''${encodeURIComponent(result.name).replace(/['()*]/g, char => '%' + char.charCodeAt(0).toString(16))}`)
+        .header('content-disposition', `attachment; filename="export.${safeDownloadExtension(result.name)}"; filename*=UTF-8''${encodeURIComponent(result.name).replace(/['()*]/g, char => '%' + char.charCodeAt(0).toString(16))}`)
         .header('x-content-sha256', result.sha256).header('x-content-type-options', 'nosniff').send(Buffer.from(result.bytes));
+    });
+    api.get<{ Params: { exportId: string } }>('/browser/exports/:exportId', async (request, reply) => {
+      const r = local(request); const id = uuidSchema.safeParse(request.params.exportId);
+      if (!id.success || !application.browserExport) throw new WorkbenchHttpError(404, 'EXPORT_NOT_FOUND', 'Export not found');
+      const result = await application.browserExport(id.data, r);
+      assertFileName(result.name);
+      if (!(result.bytes instanceof Uint8Array) || result.bytes.length > defaultFileLimits.restoreBytes || !/^[a-f0-9]{64}$/.test(result.sha256) || createHash('sha256').update(result.bytes).digest('hex') !== result.sha256) throw new WorkbenchHttpError(422, 'INTEGRITY_MISMATCH', 'Export bytes failed integrity verification');
+      if (!['text/csv', 'text/csv; charset=utf-8', 'text/tab-separated-values', 'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/octet-stream'].includes(result.mimeType)) throw new WorkbenchHttpError(422, 'INVALID_FILE', 'Unsupported export type');
+      return reply.header('content-type', result.mimeType).header('content-length', result.bytes.length)
+        .header('content-disposition', `attachment; filename="oko-export.${safeDownloadExtension(result.name)}"; filename*=UTF-8''${encodeURIComponent(result.name).replace(/['()*]/g, char => '%' + char.charCodeAt(0).toString(16))}`)
+        .header('x-content-sha256', result.sha256).header('x-content-type-options', 'nosniff').send(Buffer.from(result.bytes));
+    });
+    api.get<{ Params: { id: string } }>('/raw-files/:id/download', async (request, reply) => {
+      const id=uuidSchema.safeParse(request.params.id);
+      if(!id.success||!application.rawFile)throw new WorkbenchHttpError(404,'FILE_NOT_FOUND','File not found');
+      const result=await application.rawFile(id.data,local(request));assertFileName(result.name);
+      if(!(result.bytes instanceof Uint8Array)||result.bytes.length<1||result.bytes.length>10*1024*1024||!/^[a-f0-9]{64}$/.test(result.sha256)||createHash('sha256').update(result.bytes).digest('hex')!==result.sha256)throw new WorkbenchHttpError(422,'INTEGRITY_MISMATCH','File integrity check failed');
+      if(!['text/csv','text/csv; charset=utf-8','text/tab-separated-values','application/vnd.ms-excel','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','application/octet-stream'].includes(result.mimeType))throw new WorkbenchHttpError(422,'INVALID_FILE','Unsupported artifact type');
+      return reply.header('content-type',result.mimeType).header('content-length',result.bytes.length).header('content-disposition',`attachment; filename="raw-file.${safeDownloadExtension(result.name)}"; filename*=UTF-8''${encodeURIComponent(result.name).replace(/['()*]/g,char=>'%'+char.charCodeAt(0).toString(16))}`).header('x-content-sha256',result.sha256).header('x-content-type-options','nosniff').header('cache-control','no-store').send(Buffer.from(result.bytes));
     });
     api.setNotFoundHandler((_request, reply) => { throw new WorkbenchHttpError(404, 'ROUTE_NOT_FOUND', 'Route not found'); });
   }, { prefix: '/api/v1' });
