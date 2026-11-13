@@ -1,0 +1,5106 @@
+{
+  "schemaVersion": 1,
+  "profile": {
+    "name": "",
+    "remote": "",
+    "branch": "main",
+    "refreshMinutes": 30,
+    "theme": "indigo",
+    "gitExecutable": "",
+    "gitAuth": "system"
+  },
+  "catalog": [
+    {
+      "id": "OB26",
+      "title": "Сертификация AI-навыков: целевой уровень AI-навыков у 90% всей целевой аудитории (разработчики, аналитики и тестировщики)",
+      "description": "Командам нужно подтвердить AI-навыки разработчиков, аналитиков и тестировщиков через сертификацию.",
+      "scope": "allSystems",
+      "method": "",
+      "target": "Проведена сертификация и подтверждён целевой уровень AI-навыков у 90% всей целевой аудитории: разработчиков, аналитиков и тестировщиков.",
+      "links": [
+        {
+          "label": "Дашборд AI-навыков",
+          "url": "https://treports/qs_t_treports/scim_sigma/sense/app/2589a8c1-a80b-424a-a024-250f6ee0cb9b/sheet/025cd277-a6aa-4ad2-b247-3bfbbea4a310/state/analysis",
+          "kind": "dashboard"
+        },
+        {
+          "label": "Описание сертификации AI-навыков",
+          "url": "https://sbertrack.sberbank.ru/swtr/pages/wiki/unit/GOODIT-1678?space=GOODIT&tenant=default&suite=wiki_page",
+          "kind": "method"
+        }
+      ],
+      "curators": [
+        "Васильев Алексей"
+      ],
+      "assignments": [
+        {
+          "goalId": "OB26",
+          "leaderId": "kanaev",
+          "teams": [
+            "Вендор в команду",
+            "SAM",
+            "TReports"
+          ],
+          "teamIds": [
+            "team-4f6f9f43ebf4a796f2eb",
+            "team-01c2ff4af4230497d8b3",
+            "team-37dbb131867f139e8e80"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-4f6f9f43ebf4a796f2eb",
+            "team-01c2ff4af4230497d8b3",
+            "team-37dbb131867f139e8e80"
+          ]
+        },
+        {
+          "goalId": "OB26",
+          "leaderId": "sidorov",
+          "teams": [
+            "Интеллектуальный цифровой руководитель",
+            "УПЗ",
+            "Рабочее место сотрудника ОЦ",
+            "УК ОЦ"
+          ],
+          "teamIds": [
+            "team-e276e013feb92ec13e8c",
+            "team-c5cc5285b6e347294772",
+            "team-1ce1918697c8181f9ba6",
+            "team-afb6ffb8a3e44b2693de"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-e276e013feb92ec13e8c",
+            "team-c5cc5285b6e347294772",
+            "team-1ce1918697c8181f9ba6",
+            "team-afb6ffb8a3e44b2693de"
+          ]
+        },
+        {
+          "goalId": "OB26",
+          "leaderId": "basko",
+          "teams": [
+            "Завершение расчетов",
+            "ППРБ. Управление операционным днем",
+            "ППРБ. Диспуты",
+            "Свод продуктовых событий"
+          ],
+          "teamIds": [
+            "team-6ac6dc5405d8af811693",
+            "team-0cfccfd48c1853427510",
+            "team-969661a2e7ae157cc7a9",
+            "team-a72237ee33b308e67f62"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-6ac6dc5405d8af811693",
+            "team-0cfccfd48c1853427510",
+            "team-969661a2e7ae157cc7a9",
+            "team-a72237ee33b308e67f62"
+          ]
+        },
+        {
+          "goalId": "OB26",
+          "leaderId": "popov",
+          "teams": [
+            "Отчетность внутреннего учета и XBRL",
+            "СберБум",
+            "Услуги ДЗО",
+            "SberBilling"
+          ],
+          "teamIds": [
+            "team-2fd739ee2ec6b8c0bc3f",
+            "team-9f28eb83a1a1d41cf8e1",
+            "team-6d12179129bc84732822",
+            "team-004133198a86b3c18f79"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-2fd739ee2ec6b8c0bc3f",
+            "team-9f28eb83a1a1d41cf8e1",
+            "team-6d12179129bc84732822",
+            "team-004133198a86b3c18f79"
+          ]
+        },
+        {
+          "goalId": "OB26",
+          "leaderId": "andreev",
+          "teams": [
+            "Интеллектуальный цифровой сотрудник",
+            "Операционная GenAI-среда",
+            "Цифровые знания"
+          ],
+          "teamIds": [
+            "team-2f37602c86885bd74809",
+            "team-1e4810f7a37c483a6f84",
+            "team-9d300f8aeb7d88b3c720"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-2f37602c86885bd74809",
+            "team-1e4810f7a37c483a6f84",
+            "team-9d300f8aeb7d88b3c720"
+          ]
+        },
+        {
+          "goalId": "OB26",
+          "leaderId": "volnova",
+          "teams": [
+            "АП ОЦ",
+            "QuickSolutions",
+            "SberRPA"
+          ],
+          "teamIds": [
+            "team-a69518dc40898f4b75df",
+            "team-9f9d9f1d72d6f1d468a7",
+            "team-6c305b92f1d76133a618"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-a69518dc40898f4b75df",
+            "team-9f9d9f1d72d6f1d468a7",
+            "team-6c305b92f1d76133a618"
+          ]
+        },
+        {
+          "goalId": "OB26",
+          "leaderId": "romanyuta",
+          "teams": [
+            "Инженерные инструменты",
+            "SmartSupport"
+          ],
+          "teamIds": [
+            "team-97b128426bc6213afed9",
+            "team-2094ade1deeb630e8aa3"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-97b128426bc6213afed9",
+            "team-2094ade1deeb630e8aa3"
+          ]
+        },
+        {
+          "goalId": "OB26",
+          "leaderId": "zhukova",
+          "teams": [
+            "Inventory Management"
+          ],
+          "teamIds": [
+            "team-c45c45490987ef8f7ed7"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-c45c45490987ef8f7ed7"
+          ]
+        }
+      ],
+      "category": "process",
+      "metric": "90% целевой аудитории",
+      "status": "active",
+      "scopeType": "allSystems",
+      "summary": "Командам нужно подтвердить AI-навыки разработчиков, аналитиков и тестировщиков через сертификацию.",
+      "actions": [
+        "Сверить состав целевой аудитории и результаты сертификации.",
+        "Определить сотрудников, которым ещё нужно подтвердить целевой уровень AI-навыков.",
+        "Проверять долю подтверждённых результатов по целевой аудитории."
+      ],
+      "outOfScopeReason": ""
+    },
+    {
+      "id": "SW26",
+      "title": "Миграция на DreamJenkins",
+      "description": "Все команды в скоупе цели должны завершить переход на DreamJenkins.",
+      "scope": "specific",
+      "method": "",
+      "target": "100% команд мигрировали на DreamJenkins.",
+      "links": [
+        {
+          "label": "Дашборд миграции на DreamJenkins",
+          "url": "https://oko-qs.sigma.sbrf.ru/dev/sense/app/4a61c6e1-41a0-4187-99c7-b0d890daf9b9/sheet/df008731-9e55-408d-920e-b9c993580603/state/analysis",
+          "kind": "dashboard"
+        },
+        {
+          "label": "Описание миграции на DreamJenkins",
+          "url": "https://sbertrack.sberbank.ru/swtr/pages/wiki/unit/GOODIT-814?space=GOODIT&tenant=default&suite=wiki_page",
+          "kind": "method"
+        }
+      ],
+      "curators": [
+        "Васильев Алексей"
+      ],
+      "assignments": [
+        {
+          "goalId": "SW26",
+          "leaderId": "kanaev",
+          "teams": [
+            "SAM",
+            "TReports",
+            "Вендор в команду"
+          ],
+          "teamIds": [
+            "team-01c2ff4af4230497d8b3",
+            "team-37dbb131867f139e8e80",
+            "team-4f6f9f43ebf4a796f2eb"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-01c2ff4af4230497d8b3",
+            "team-37dbb131867f139e8e80",
+            "team-4f6f9f43ebf4a796f2eb"
+          ]
+        },
+        {
+          "goalId": "SW26",
+          "leaderId": "sidorov",
+          "teams": [
+            "УПЗ",
+            "Рабочее место сотрудника ОЦ",
+            "УК ОЦ"
+          ],
+          "teamIds": [
+            "team-c5cc5285b6e347294772",
+            "team-1ce1918697c8181f9ba6",
+            "team-afb6ffb8a3e44b2693de"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-c5cc5285b6e347294772",
+            "team-1ce1918697c8181f9ba6",
+            "team-afb6ffb8a3e44b2693de"
+          ]
+        },
+        {
+          "goalId": "SW26",
+          "leaderId": "basko",
+          "teams": [
+            "Завершение расчетов",
+            "ППРБ. Управление операционным днем",
+            "ППРБ. Диспуты",
+            "Свод продуктовых событий"
+          ],
+          "teamIds": [
+            "team-6ac6dc5405d8af811693",
+            "team-0cfccfd48c1853427510",
+            "team-969661a2e7ae157cc7a9",
+            "team-a72237ee33b308e67f62"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-6ac6dc5405d8af811693",
+            "team-0cfccfd48c1853427510",
+            "team-969661a2e7ae157cc7a9",
+            "team-a72237ee33b308e67f62"
+          ]
+        },
+        {
+          "goalId": "SW26",
+          "leaderId": "popov",
+          "teams": [
+            "SberBilling"
+          ],
+          "teamIds": [
+            "team-004133198a86b3c18f79"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-004133198a86b3c18f79"
+          ]
+        },
+        {
+          "goalId": "SW26",
+          "leaderId": "andreev",
+          "teams": [
+            "AI HUB OPS"
+          ],
+          "teamIds": [
+            "team-f2143ad14851b54bbaa5"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-f2143ad14851b54bbaa5"
+          ]
+        },
+        {
+          "goalId": "SW26",
+          "leaderId": "volnova",
+          "teams": [
+            "АП ОЦ",
+            "SberRPA"
+          ],
+          "teamIds": [
+            "team-a69518dc40898f4b75df",
+            "team-6c305b92f1d76133a618"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-a69518dc40898f4b75df",
+            "team-6c305b92f1d76133a618"
+          ]
+        },
+        {
+          "goalId": "SW26",
+          "leaderId": "romanyuta",
+          "teams": [
+            "Автоматизация производственной деятельности МЦТП",
+            "ПКАП1084 АС Sber AssisT"
+          ],
+          "teamIds": [
+            "team-1ac32d708170bee540bf",
+            "team-54f9ae14ca812dfa245b"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-1ac32d708170bee540bf",
+            "team-54f9ae14ca812dfa245b"
+          ]
+        },
+        {
+          "goalId": "SW26",
+          "leaderId": "zhukova",
+          "teams": [
+            "АСУР",
+            "ЕФС.Сотрудники.РМ ИТ-поддержки"
+          ],
+          "teamIds": [
+            "team-db2c92cc13e5a6552c56",
+            "team-bf512d4bbde18843a7d1"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-db2c92cc13e5a6552c56",
+            "team-bf512d4bbde18843a7d1"
+          ]
+        }
+      ],
+      "category": "process",
+      "metric": "100% команд",
+      "status": "active",
+      "scopeType": "specific",
+      "summary": "Все команды в скоупе цели должны завершить переход на DreamJenkins.",
+      "actions": [
+        "Проверить, какие команды и конвейеры ещё используют прежние инструменты.",
+        "Согласовать оставшиеся работы по миграции на DreamJenkins.",
+        "Подтвердить завершение перехода по каждой команде в скоупе."
+      ],
+      "outOfScopeReason": ""
+    },
+    {
+      "id": "SW26.1",
+      "title": "Базовые практики модели зрелости",
+      "description": "Команды должны применять базовый набор практик модели зрелости и подтверждать их выполнение.",
+      "scope": "allSystems",
+      "method": "",
+      "target": "80% команд исполняют практики начального уровня — гигиенического минимума — по модели зрелости.",
+      "links": [
+        {
+          "label": "Дашборд модели зрелости",
+          "url": "https://oko-qs.sigma.sbrf.ru/prom/sense/app/0b651e95-6aae-4f21-825e-9eb3602f3d5c/sheet/93e7c7bf-838e-4c22-8f2a-06037b440381/state/analysis",
+          "kind": "dashboard"
+        },
+        {
+          "label": "Описание модели зрелости",
+          "url": "https://mapp.sberbank.ru/app/mapp/17208217004/",
+          "kind": "method"
+        }
+      ],
+      "curators": [
+        "Бугаев Александр"
+      ],
+      "assignments": [
+        {
+          "goalId": "SW26.1",
+          "leaderId": "kanaev",
+          "teams": [
+            "Вендор в команду",
+            "SAM",
+            "TReports"
+          ],
+          "teamIds": [
+            "team-4f6f9f43ebf4a796f2eb",
+            "team-01c2ff4af4230497d8b3",
+            "team-37dbb131867f139e8e80"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-4f6f9f43ebf4a796f2eb",
+            "team-01c2ff4af4230497d8b3",
+            "team-37dbb131867f139e8e80"
+          ]
+        },
+        {
+          "goalId": "SW26.1",
+          "leaderId": "sidorov",
+          "teams": [
+            "Интеллектуальный цифровой руководитель",
+            "УПЗ",
+            "Рабочее место сотрудника ОЦ",
+            "УК ОЦ"
+          ],
+          "teamIds": [
+            "team-e276e013feb92ec13e8c",
+            "team-c5cc5285b6e347294772",
+            "team-1ce1918697c8181f9ba6",
+            "team-afb6ffb8a3e44b2693de"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-e276e013feb92ec13e8c",
+            "team-c5cc5285b6e347294772",
+            "team-1ce1918697c8181f9ba6",
+            "team-afb6ffb8a3e44b2693de"
+          ]
+        },
+        {
+          "goalId": "SW26.1",
+          "leaderId": "basko",
+          "teams": [
+            "Завершение расчетов",
+            "ППРБ. Управление операционным днем",
+            "ППРБ. Диспуты",
+            "Свод продуктовых событий"
+          ],
+          "teamIds": [
+            "team-6ac6dc5405d8af811693",
+            "team-0cfccfd48c1853427510",
+            "team-969661a2e7ae157cc7a9",
+            "team-a72237ee33b308e67f62"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-6ac6dc5405d8af811693",
+            "team-0cfccfd48c1853427510",
+            "team-969661a2e7ae157cc7a9",
+            "team-a72237ee33b308e67f62"
+          ]
+        },
+        {
+          "goalId": "SW26.1",
+          "leaderId": "popov",
+          "teams": [
+            "Отчетность внутреннего учета и XBRL",
+            "СберБум",
+            "Услуги ДЗО",
+            "SberBilling"
+          ],
+          "teamIds": [
+            "team-2fd739ee2ec6b8c0bc3f",
+            "team-9f28eb83a1a1d41cf8e1",
+            "team-6d12179129bc84732822",
+            "team-004133198a86b3c18f79"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-2fd739ee2ec6b8c0bc3f",
+            "team-9f28eb83a1a1d41cf8e1",
+            "team-6d12179129bc84732822",
+            "team-004133198a86b3c18f79"
+          ]
+        },
+        {
+          "goalId": "SW26.1",
+          "leaderId": "andreev",
+          "teams": [
+            "Интеллектуальный цифровой сотрудник",
+            "Операционная GenAI-среда",
+            "Цифровые знания"
+          ],
+          "teamIds": [
+            "team-2f37602c86885bd74809",
+            "team-1e4810f7a37c483a6f84",
+            "team-9d300f8aeb7d88b3c720"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-2f37602c86885bd74809",
+            "team-1e4810f7a37c483a6f84",
+            "team-9d300f8aeb7d88b3c720"
+          ]
+        },
+        {
+          "goalId": "SW26.1",
+          "leaderId": "volnova",
+          "teams": [
+            "АП ОЦ",
+            "QuickSolutions",
+            "SberRPA"
+          ],
+          "teamIds": [
+            "team-a69518dc40898f4b75df",
+            "team-9f9d9f1d72d6f1d468a7",
+            "team-6c305b92f1d76133a618"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-a69518dc40898f4b75df",
+            "team-9f9d9f1d72d6f1d468a7",
+            "team-6c305b92f1d76133a618"
+          ]
+        },
+        {
+          "goalId": "SW26.1",
+          "leaderId": "romanyuta",
+          "teams": [
+            "Инженерные инструменты",
+            "SmartSupport"
+          ],
+          "teamIds": [
+            "team-97b128426bc6213afed9",
+            "team-2094ade1deeb630e8aa3"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-97b128426bc6213afed9",
+            "team-2094ade1deeb630e8aa3"
+          ]
+        },
+        {
+          "goalId": "SW26.1",
+          "leaderId": "zhukova",
+          "teams": [
+            "Inventory Management"
+          ],
+          "teamIds": [
+            "team-c45c45490987ef8f7ed7"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-c45c45490987ef8f7ed7"
+          ]
+        }
+      ],
+      "category": "process",
+      "metric": "80% команд",
+      "status": "active",
+      "scopeType": "allSystems",
+      "summary": "Команды должны применять базовый набор практик модели зрелости и подтверждать их выполнение.",
+      "actions": [
+        "Сверить выполнение практик начального уровня по модели зрелости.",
+        "Определить пробелы в гигиеническом минимуме каждой команды.",
+        "Подтвердить выполнение практик и проверить долю команд, достигших цели."
+      ],
+      "outOfScopeReason": ""
+    },
+    {
+      "id": "SW26.2",
+      "title": "Плотность дефектов «Высокий+»",
+      "description": "Каждая команда сверяет отношение количества высокоприоритетных дефектов к количеству историй в текущих релизах, внедренных в ПРОМ за последние 90 дней, с индивидуальным целевым значением за этот же период.",
+      "scope": "allSystems",
+      "method": "",
+      "target": "90% команд ДИТ достигли индивидуальных значений плотности дефектов ИФТ + ПСИ + ПРОМ приоритетов «Высокий+» согласно методике.",
+      "links": [
+        {
+          "label": "Методика",
+          "url": "https://confluence.sberbank.ru/pages/viewpage.action?pageId=21507517328",
+          "kind": "method"
+        },
+        {
+          "label": "Год качества",
+          "url": "https://mapp.sberbank.ru/quality-year/page/59763",
+          "kind": "method"
+        }
+      ],
+      "curators": [
+        "Смолов Роман"
+      ],
+      "assignments": [
+        {
+          "goalId": "SW26.2",
+          "leaderId": "kanaev",
+          "teams": [
+            "Вендор в команду",
+            "SAM",
+            "TReports"
+          ],
+          "teamIds": [
+            "team-4f6f9f43ebf4a796f2eb",
+            "team-01c2ff4af4230497d8b3",
+            "team-37dbb131867f139e8e80"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-4f6f9f43ebf4a796f2eb",
+            "team-01c2ff4af4230497d8b3",
+            "team-37dbb131867f139e8e80"
+          ]
+        },
+        {
+          "goalId": "SW26.2",
+          "leaderId": "sidorov",
+          "teams": [
+            "Интеллектуальный цифровой руководитель",
+            "УПЗ",
+            "Рабочее место сотрудника ОЦ",
+            "УК ОЦ"
+          ],
+          "teamIds": [
+            "team-e276e013feb92ec13e8c",
+            "team-c5cc5285b6e347294772",
+            "team-1ce1918697c8181f9ba6",
+            "team-afb6ffb8a3e44b2693de"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-e276e013feb92ec13e8c",
+            "team-c5cc5285b6e347294772",
+            "team-1ce1918697c8181f9ba6",
+            "team-afb6ffb8a3e44b2693de"
+          ]
+        },
+        {
+          "goalId": "SW26.2",
+          "leaderId": "basko",
+          "teams": [
+            "Завершение расчетов",
+            "ППРБ. Управление операционным днем",
+            "ППРБ. Диспуты",
+            "Свод продуктовых событий"
+          ],
+          "teamIds": [
+            "team-6ac6dc5405d8af811693",
+            "team-0cfccfd48c1853427510",
+            "team-969661a2e7ae157cc7a9",
+            "team-a72237ee33b308e67f62"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-6ac6dc5405d8af811693",
+            "team-0cfccfd48c1853427510",
+            "team-969661a2e7ae157cc7a9",
+            "team-a72237ee33b308e67f62"
+          ]
+        },
+        {
+          "goalId": "SW26.2",
+          "leaderId": "popov",
+          "teams": [
+            "Отчетность внутреннего учета и XBRL",
+            "СберБум",
+            "Услуги ДЗО",
+            "SberBilling"
+          ],
+          "teamIds": [
+            "team-2fd739ee2ec6b8c0bc3f",
+            "team-9f28eb83a1a1d41cf8e1",
+            "team-6d12179129bc84732822",
+            "team-004133198a86b3c18f79"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-2fd739ee2ec6b8c0bc3f",
+            "team-9f28eb83a1a1d41cf8e1",
+            "team-6d12179129bc84732822",
+            "team-004133198a86b3c18f79"
+          ]
+        },
+        {
+          "goalId": "SW26.2",
+          "leaderId": "andreev",
+          "teams": [
+            "Интеллектуальный цифровой сотрудник",
+            "Операционная GenAI-среда",
+            "Цифровые знания"
+          ],
+          "teamIds": [
+            "team-2f37602c86885bd74809",
+            "team-1e4810f7a37c483a6f84",
+            "team-9d300f8aeb7d88b3c720"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-2f37602c86885bd74809",
+            "team-1e4810f7a37c483a6f84",
+            "team-9d300f8aeb7d88b3c720"
+          ]
+        },
+        {
+          "goalId": "SW26.2",
+          "leaderId": "volnova",
+          "teams": [
+            "АП ОЦ",
+            "QuickSolutions",
+            "SberRPA"
+          ],
+          "teamIds": [
+            "team-a69518dc40898f4b75df",
+            "team-9f9d9f1d72d6f1d468a7",
+            "team-6c305b92f1d76133a618"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-a69518dc40898f4b75df",
+            "team-9f9d9f1d72d6f1d468a7",
+            "team-6c305b92f1d76133a618"
+          ]
+        },
+        {
+          "goalId": "SW26.2",
+          "leaderId": "romanyuta",
+          "teams": [
+            "Инженерные инструменты",
+            "SmartSupport"
+          ],
+          "teamIds": [
+            "team-97b128426bc6213afed9",
+            "team-2094ade1deeb630e8aa3"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-97b128426bc6213afed9",
+            "team-2094ade1deeb630e8aa3"
+          ]
+        },
+        {
+          "goalId": "SW26.2",
+          "leaderId": "zhukova",
+          "teams": [
+            "Inventory Management"
+          ],
+          "teamIds": [
+            "team-c45c45490987ef8f7ed7"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-c45c45490987ef8f7ed7"
+          ]
+        }
+      ],
+      "category": "process",
+      "metric": "90% команд ДИТ",
+      "status": "active",
+      "scopeType": "allSystems",
+      "summary": "Каждая команда сверяет отношение количества высокоприоритетных дефектов к количеству историй в текущих релизах, внедренных в ПРОМ за последние 90 дней, с индивидуальным целевым значением за этот же период.",
+      "actions": [
+        "Уточнить индивидуальное целевое значение команды по методике.",
+        "Проверить учёт дефектов ИФТ, ПСИ и ПРОМ с приоритетами «Высокий+».",
+        "Разобрать причины отклонений и проверить достижение индивидуальной цели."
+      ],
+      "outOfScopeReason": ""
+    },
+    {
+      "id": "SW26.3",
+      "title": "Сокращение длительности тестирования на интеграционных полигонах",
+      "description": "Команды сокращают длительность тестирования на интеграционных полигонах до своих плановых значений.",
+      "scope": "allSystems",
+      "method": "",
+      "target": "90% команд ДИТ достигли индивидуальных значений по снижению длительности проведения тестирования на интеграционных полигонах согласно методике.",
+      "links": [
+        {
+          "label": "Методика",
+          "url": "https://confluence.sberbank.ru/pages/viewpage.action?pageId=21496373332",
+          "kind": "method"
+        },
+        {
+          "label": "Дашборд длительности тестирования",
+          "url": "https://oko-qs.sigma.sbrf.ru/prom/sense/app/284da01f-82c2-4a79-9c21-2638e0efe2aa/sheet/93e7c7bf-838e-4c22-8f2a-06037b440381/state/analysis",
+          "kind": "dashboard"
+        },
+        {
+          "label": "Год качества",
+          "url": "https://mapp.sberbank.ru/quality-year/page/59763",
+          "kind": "method"
+        }
+      ],
+      "curators": [
+        "Васильев Алексей"
+      ],
+      "assignments": [
+        {
+          "goalId": "SW26.3",
+          "leaderId": "kanaev",
+          "teams": [
+            "Вендор в команду",
+            "SAM",
+            "TReports"
+          ],
+          "teamIds": [
+            "team-4f6f9f43ebf4a796f2eb",
+            "team-01c2ff4af4230497d8b3",
+            "team-37dbb131867f139e8e80"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-4f6f9f43ebf4a796f2eb",
+            "team-01c2ff4af4230497d8b3",
+            "team-37dbb131867f139e8e80"
+          ]
+        },
+        {
+          "goalId": "SW26.3",
+          "leaderId": "sidorov",
+          "teams": [
+            "Интеллектуальный цифровой руководитель",
+            "УПЗ",
+            "Рабочее место сотрудника ОЦ",
+            "УК ОЦ"
+          ],
+          "teamIds": [
+            "team-e276e013feb92ec13e8c",
+            "team-c5cc5285b6e347294772",
+            "team-1ce1918697c8181f9ba6",
+            "team-afb6ffb8a3e44b2693de"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-e276e013feb92ec13e8c",
+            "team-c5cc5285b6e347294772",
+            "team-1ce1918697c8181f9ba6",
+            "team-afb6ffb8a3e44b2693de"
+          ]
+        },
+        {
+          "goalId": "SW26.3",
+          "leaderId": "basko",
+          "teams": [
+            "Завершение расчетов",
+            "ППРБ. Управление операционным днем",
+            "ППРБ. Диспуты",
+            "Свод продуктовых событий"
+          ],
+          "teamIds": [
+            "team-6ac6dc5405d8af811693",
+            "team-0cfccfd48c1853427510",
+            "team-969661a2e7ae157cc7a9",
+            "team-a72237ee33b308e67f62"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-6ac6dc5405d8af811693",
+            "team-0cfccfd48c1853427510",
+            "team-969661a2e7ae157cc7a9",
+            "team-a72237ee33b308e67f62"
+          ]
+        },
+        {
+          "goalId": "SW26.3",
+          "leaderId": "popov",
+          "teams": [
+            "Отчетность внутреннего учета и XBRL",
+            "СберБум",
+            "Услуги ДЗО",
+            "SberBilling"
+          ],
+          "teamIds": [
+            "team-2fd739ee2ec6b8c0bc3f",
+            "team-9f28eb83a1a1d41cf8e1",
+            "team-6d12179129bc84732822",
+            "team-004133198a86b3c18f79"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-2fd739ee2ec6b8c0bc3f",
+            "team-9f28eb83a1a1d41cf8e1",
+            "team-6d12179129bc84732822",
+            "team-004133198a86b3c18f79"
+          ]
+        },
+        {
+          "goalId": "SW26.3",
+          "leaderId": "andreev",
+          "teams": [
+            "Интеллектуальный цифровой сотрудник",
+            "Операционная GenAI-среда",
+            "Цифровые знания"
+          ],
+          "teamIds": [
+            "team-2f37602c86885bd74809",
+            "team-1e4810f7a37c483a6f84",
+            "team-9d300f8aeb7d88b3c720"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-2f37602c86885bd74809",
+            "team-1e4810f7a37c483a6f84",
+            "team-9d300f8aeb7d88b3c720"
+          ]
+        },
+        {
+          "goalId": "SW26.3",
+          "leaderId": "volnova",
+          "teams": [
+            "АП ОЦ",
+            "QuickSolutions",
+            "SberRPA"
+          ],
+          "teamIds": [
+            "team-a69518dc40898f4b75df",
+            "team-9f9d9f1d72d6f1d468a7",
+            "team-6c305b92f1d76133a618"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-a69518dc40898f4b75df",
+            "team-9f9d9f1d72d6f1d468a7",
+            "team-6c305b92f1d76133a618"
+          ]
+        },
+        {
+          "goalId": "SW26.3",
+          "leaderId": "romanyuta",
+          "teams": [
+            "Инженерные инструменты",
+            "SmartSupport"
+          ],
+          "teamIds": [
+            "team-97b128426bc6213afed9",
+            "team-2094ade1deeb630e8aa3"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-97b128426bc6213afed9",
+            "team-2094ade1deeb630e8aa3"
+          ]
+        },
+        {
+          "goalId": "SW26.3",
+          "leaderId": "zhukova",
+          "teams": [
+            "Inventory Management"
+          ],
+          "teamIds": [
+            "team-c45c45490987ef8f7ed7"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-c45c45490987ef8f7ed7"
+          ]
+        }
+      ],
+      "category": "process",
+      "metric": "90% команд ДИТ",
+      "status": "active",
+      "scopeType": "allSystems",
+      "summary": "Команды сокращают длительность тестирования на интеграционных полигонах до своих плановых значений.",
+      "actions": [
+        "Сверить индивидуальное целевое значение длительности тестирования.",
+        "Найти основные причины задержек на интеграционных полигонах.",
+        "Проверить результат сокращения длительности по методике."
+      ],
+      "outOfScopeReason": ""
+    },
+    {
+      "id": "SW26.4",
+      "title": "Переход с DataHub API на целевые тракты",
+      "description": "Потребителям данных производственного процесса нужно выполнить согласованный план перехода с DataHub API.",
+      "scope": "specific",
+      "method": "",
+      "target": "Выполнение работ согласно утверждённым в Q1’26 планам перехода на целевые тракты поставки аналитики и данных производственного процесса.",
+      "links": [
+        {
+          "label": "Описание перехода с DataHub API",
+          "url": "https://sbertrack.sberbank.ru/swtr/pages/wiki/unit/GOODIT-1453?space=GOODIT&tenant=default&suite=wiki_page",
+          "kind": "method"
+        },
+        {
+          "label": "Дашборд перехода с DataHub API",
+          "url": "https://oko-qs.sigma.sbrf.ru/prom/sense/app/50996780-8684-46cb-bc36-26dad2e23438/sheet/93e7c7bf-838e-4c22-8f2a-06037b440381/state/analysis",
+          "kind": "dashboard"
+        }
+      ],
+      "curators": [
+        "Васильев Алексей"
+      ],
+      "assignments": [
+        {
+          "goalId": "SW26.4",
+          "leaderId": "kanaev",
+          "teams": [
+            "TReports"
+          ],
+          "teamIds": [
+            "team-37dbb131867f139e8e80"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-37dbb131867f139e8e80"
+          ]
+        }
+      ],
+      "category": "process",
+      "metric": "По планам Q1’26",
+      "status": "active",
+      "scopeType": "specific",
+      "summary": "Потребителям данных производственного процесса нужно выполнить согласованный план перехода с DataHub API.",
+      "actions": [
+        "Сверить оставшиеся работы с утверждённым в Q1’26 планом.",
+        "Проверить переход потребителей на Фабрику данных или Событийный сегмент SW в рамках применимого скоупа.",
+        "Подтвердить выполнение плановых работ и отсутствие зависимости от выводимого DataHub API."
+      ],
+      "outOfScopeReason": ""
+    },
+    {
+      "id": "SW26.8",
+      "title": "Рост количества story на сотрудника",
+      "description": "Продукты должны увеличить количество story всех уровней сложности в расчёте на сотрудника.",
+      "scope": "allProducts",
+      "method": "",
+      "target": "Рост количества story всех уровней сложности на сотрудника на 50%.",
+      "links": [
+        {
+          "label": "Дашборд story на сотрудника",
+          "url": "https://oko-qs.sigma.sbrf.ru/prom/sense/app/f8ecd548-ca1d-44a3-a3c4-91e36bdcd290/sheet/cc1f349e-367d-4ecb-9350-352324cc9f70/state/analysis",
+          "kind": "dashboard"
+        },
+        {
+          "label": "Описание показателя story на сотрудника",
+          "url": "https://onework.sigma.sbrf.ru/swtr/wiki/unit/TMT-16844?space=TMT&tenant=default&suite=wiki_page",
+          "kind": "method"
+        }
+      ],
+      "curators": [
+        "Васильев Алексей"
+      ],
+      "assignments": [
+        {
+          "goalId": "SW26.8",
+          "leaderId": "kanaev",
+          "teams": [
+            "Вендор в команду",
+            "SAM",
+            "TReports"
+          ],
+          "teamIds": [
+            "team-4f6f9f43ebf4a796f2eb",
+            "team-01c2ff4af4230497d8b3",
+            "team-37dbb131867f139e8e80"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-4f6f9f43ebf4a796f2eb",
+            "team-01c2ff4af4230497d8b3",
+            "team-37dbb131867f139e8e80"
+          ]
+        },
+        {
+          "goalId": "SW26.8",
+          "leaderId": "sidorov",
+          "teams": [
+            "Интеллектуальный цифровой руководитель",
+            "УПЗ",
+            "Рабочее место сотрудника ОЦ",
+            "УК ОЦ"
+          ],
+          "teamIds": [
+            "team-e276e013feb92ec13e8c",
+            "team-c5cc5285b6e347294772",
+            "team-1ce1918697c8181f9ba6",
+            "team-afb6ffb8a3e44b2693de"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-e276e013feb92ec13e8c",
+            "team-c5cc5285b6e347294772",
+            "team-1ce1918697c8181f9ba6",
+            "team-afb6ffb8a3e44b2693de"
+          ]
+        },
+        {
+          "goalId": "SW26.8",
+          "leaderId": "basko",
+          "teams": [
+            "Завершение расчетов",
+            "ППРБ. Управление операционным днем",
+            "ППРБ. Диспуты",
+            "Свод продуктовых событий"
+          ],
+          "teamIds": [
+            "team-6ac6dc5405d8af811693",
+            "team-0cfccfd48c1853427510",
+            "team-969661a2e7ae157cc7a9",
+            "team-a72237ee33b308e67f62"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-6ac6dc5405d8af811693",
+            "team-0cfccfd48c1853427510",
+            "team-969661a2e7ae157cc7a9",
+            "team-a72237ee33b308e67f62"
+          ]
+        },
+        {
+          "goalId": "SW26.8",
+          "leaderId": "popov",
+          "teams": [
+            "Отчетность внутреннего учета и XBRL",
+            "СберБум",
+            "Услуги ДЗО",
+            "SberBilling"
+          ],
+          "teamIds": [
+            "team-2fd739ee2ec6b8c0bc3f",
+            "team-9f28eb83a1a1d41cf8e1",
+            "team-6d12179129bc84732822",
+            "team-004133198a86b3c18f79"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-2fd739ee2ec6b8c0bc3f",
+            "team-9f28eb83a1a1d41cf8e1",
+            "team-6d12179129bc84732822",
+            "team-004133198a86b3c18f79"
+          ]
+        },
+        {
+          "goalId": "SW26.8",
+          "leaderId": "andreev",
+          "teams": [
+            "Интеллектуальный цифровой сотрудник",
+            "Операционная GenAI-среда",
+            "Цифровые знания"
+          ],
+          "teamIds": [
+            "team-2f37602c86885bd74809",
+            "team-1e4810f7a37c483a6f84",
+            "team-9d300f8aeb7d88b3c720"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-2f37602c86885bd74809",
+            "team-1e4810f7a37c483a6f84",
+            "team-9d300f8aeb7d88b3c720"
+          ]
+        },
+        {
+          "goalId": "SW26.8",
+          "leaderId": "volnova",
+          "teams": [
+            "АП ОЦ",
+            "QuickSolutions",
+            "SberRPA"
+          ],
+          "teamIds": [
+            "team-a69518dc40898f4b75df",
+            "team-9f9d9f1d72d6f1d468a7",
+            "team-6c305b92f1d76133a618"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-a69518dc40898f4b75df",
+            "team-9f9d9f1d72d6f1d468a7",
+            "team-6c305b92f1d76133a618"
+          ]
+        },
+        {
+          "goalId": "SW26.8",
+          "leaderId": "romanyuta",
+          "teams": [
+            "Инженерные инструменты",
+            "SmartSupport"
+          ],
+          "teamIds": [
+            "team-97b128426bc6213afed9",
+            "team-2094ade1deeb630e8aa3"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-97b128426bc6213afed9",
+            "team-2094ade1deeb630e8aa3"
+          ]
+        },
+        {
+          "goalId": "SW26.8",
+          "leaderId": "zhukova",
+          "teams": [
+            "Inventory Management"
+          ],
+          "teamIds": [
+            "team-c45c45490987ef8f7ed7"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-c45c45490987ef8f7ed7"
+          ]
+        }
+      ],
+      "category": "process",
+      "metric": "+50% story на сотрудника",
+      "status": "active",
+      "scopeType": "allProducts",
+      "summary": "Продукты должны увеличить количество story всех уровней сложности в расчёте на сотрудника.",
+      "actions": [
+        "Проверить исходные данные и сопоставимость учёта story и сотрудников.",
+        "Разобрать ограничения, которые мешают завершать story.",
+        "Сверить рост количества story на сотрудника с целевыми 50%."
+      ],
+      "outOfScopeReason": ""
+    },
+    {
+      "id": "SW26.11",
+      "title": "Доля ИИ-кода, дошедшего до ПРОМ",
+      "description": "Обеспечить долю ИИ-кода, дошедшего до промышленной эксплуатации, на уровне 50%.",
+      "scope": "allProducts",
+      "method": "",
+      "target": "Доля ИИ-кода, дошедшего до ПРОМ, составляет 50%.",
+      "links": [],
+      "curators": [
+        "Васильев Алексей"
+      ],
+      "assignments": [
+        {
+          "goalId": "SW26.11",
+          "leaderId": "kanaev",
+          "teams": [
+            "Вендор в команду",
+            "SAM",
+            "TReports"
+          ],
+          "teamIds": [
+            "team-4f6f9f43ebf4a796f2eb",
+            "team-01c2ff4af4230497d8b3",
+            "team-37dbb131867f139e8e80"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-4f6f9f43ebf4a796f2eb",
+            "team-01c2ff4af4230497d8b3",
+            "team-37dbb131867f139e8e80"
+          ]
+        },
+        {
+          "goalId": "SW26.11",
+          "leaderId": "sidorov",
+          "teams": [
+            "Интеллектуальный цифровой руководитель",
+            "УПЗ",
+            "Рабочее место сотрудника ОЦ",
+            "УК ОЦ"
+          ],
+          "teamIds": [
+            "team-e276e013feb92ec13e8c",
+            "team-c5cc5285b6e347294772",
+            "team-1ce1918697c8181f9ba6",
+            "team-afb6ffb8a3e44b2693de"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-e276e013feb92ec13e8c",
+            "team-c5cc5285b6e347294772",
+            "team-1ce1918697c8181f9ba6",
+            "team-afb6ffb8a3e44b2693de"
+          ]
+        },
+        {
+          "goalId": "SW26.11",
+          "leaderId": "basko",
+          "teams": [
+            "Завершение расчетов",
+            "ППРБ. Управление операционным днем",
+            "ППРБ. Диспуты",
+            "Свод продуктовых событий"
+          ],
+          "teamIds": [
+            "team-6ac6dc5405d8af811693",
+            "team-0cfccfd48c1853427510",
+            "team-969661a2e7ae157cc7a9",
+            "team-a72237ee33b308e67f62"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-6ac6dc5405d8af811693",
+            "team-0cfccfd48c1853427510",
+            "team-969661a2e7ae157cc7a9",
+            "team-a72237ee33b308e67f62"
+          ]
+        },
+        {
+          "goalId": "SW26.11",
+          "leaderId": "popov",
+          "teams": [
+            "Отчетность внутреннего учета и XBRL",
+            "СберБум",
+            "Услуги ДЗО",
+            "SberBilling"
+          ],
+          "teamIds": [
+            "team-2fd739ee2ec6b8c0bc3f",
+            "team-9f28eb83a1a1d41cf8e1",
+            "team-6d12179129bc84732822",
+            "team-004133198a86b3c18f79"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-2fd739ee2ec6b8c0bc3f",
+            "team-9f28eb83a1a1d41cf8e1",
+            "team-6d12179129bc84732822",
+            "team-004133198a86b3c18f79"
+          ]
+        },
+        {
+          "goalId": "SW26.11",
+          "leaderId": "andreev",
+          "teams": [
+            "Интеллектуальный цифровой сотрудник",
+            "Операционная GenAI-среда",
+            "Цифровые знания"
+          ],
+          "teamIds": [
+            "team-2f37602c86885bd74809",
+            "team-1e4810f7a37c483a6f84",
+            "team-9d300f8aeb7d88b3c720"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-2f37602c86885bd74809",
+            "team-1e4810f7a37c483a6f84",
+            "team-9d300f8aeb7d88b3c720"
+          ]
+        },
+        {
+          "goalId": "SW26.11",
+          "leaderId": "volnova",
+          "teams": [
+            "АП ОЦ",
+            "QuickSolutions",
+            "SberRPA"
+          ],
+          "teamIds": [
+            "team-a69518dc40898f4b75df",
+            "team-9f9d9f1d72d6f1d468a7",
+            "team-6c305b92f1d76133a618"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-a69518dc40898f4b75df",
+            "team-9f9d9f1d72d6f1d468a7",
+            "team-6c305b92f1d76133a618"
+          ]
+        },
+        {
+          "goalId": "SW26.11",
+          "leaderId": "romanyuta",
+          "teams": [
+            "Инженерные инструменты",
+            "SmartSupport"
+          ],
+          "teamIds": [
+            "team-97b128426bc6213afed9",
+            "team-2094ade1deeb630e8aa3"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-97b128426bc6213afed9",
+            "team-2094ade1deeb630e8aa3"
+          ]
+        },
+        {
+          "goalId": "SW26.11",
+          "leaderId": "zhukova",
+          "teams": [
+            "Inventory Management"
+          ],
+          "teamIds": [
+            "team-c45c45490987ef8f7ed7"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-c45c45490987ef8f7ed7"
+          ]
+        }
+      ],
+      "category": "process",
+      "metric": "50% ИИ-кода",
+      "status": "active",
+      "scopeType": "allProducts",
+      "summary": "Обеспечить долю ИИ-кода, дошедшего до промышленной эксплуатации, на уровне 50%.",
+      "actions": [
+        "Согласовать методику расчёта показателя.",
+        "Согласовать способ учёта ИИ-кода, дошедшего до ПРОМ.",
+        "Обеспечить долю ИИ кода в виде 50%"
+      ],
+      "outOfScopeReason": ""
+    },
+    {
+      "id": "SW26.12",
+      "title": "Переход команд на SDD",
+      "description": "Для перехода на SDD требуется уточнить целевое количество команд и критерии перехода.",
+      "scope": "allProducts",
+      "method": "",
+      "target": "Количество команд, перешедших на SDD-подход: целевое значение уточняется (tbd).",
+      "links": [],
+      "curators": [
+        "Ратников Максим"
+      ],
+      "assignments": [
+        {
+          "goalId": "SW26.12",
+          "leaderId": "kanaev",
+          "teams": [
+            "Вендор в команду",
+            "SAM",
+            "TReports"
+          ],
+          "teamIds": [
+            "team-4f6f9f43ebf4a796f2eb",
+            "team-01c2ff4af4230497d8b3",
+            "team-37dbb131867f139e8e80"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-4f6f9f43ebf4a796f2eb",
+            "team-01c2ff4af4230497d8b3",
+            "team-37dbb131867f139e8e80"
+          ]
+        },
+        {
+          "goalId": "SW26.12",
+          "leaderId": "sidorov",
+          "teams": [
+            "Интеллектуальный цифровой руководитель",
+            "УПЗ",
+            "Рабочее место сотрудника ОЦ",
+            "УК ОЦ"
+          ],
+          "teamIds": [
+            "team-e276e013feb92ec13e8c",
+            "team-c5cc5285b6e347294772",
+            "team-1ce1918697c8181f9ba6",
+            "team-afb6ffb8a3e44b2693de"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-e276e013feb92ec13e8c",
+            "team-c5cc5285b6e347294772",
+            "team-1ce1918697c8181f9ba6",
+            "team-afb6ffb8a3e44b2693de"
+          ]
+        },
+        {
+          "goalId": "SW26.12",
+          "leaderId": "basko",
+          "teams": [
+            "Завершение расчетов",
+            "ППРБ. Управление операционным днем",
+            "ППРБ. Диспуты",
+            "Свод продуктовых событий"
+          ],
+          "teamIds": [
+            "team-6ac6dc5405d8af811693",
+            "team-0cfccfd48c1853427510",
+            "team-969661a2e7ae157cc7a9",
+            "team-a72237ee33b308e67f62"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-6ac6dc5405d8af811693",
+            "team-0cfccfd48c1853427510",
+            "team-969661a2e7ae157cc7a9",
+            "team-a72237ee33b308e67f62"
+          ]
+        },
+        {
+          "goalId": "SW26.12",
+          "leaderId": "popov",
+          "teams": [
+            "Отчетность внутреннего учета и XBRL",
+            "СберБум",
+            "Услуги ДЗО",
+            "SberBilling"
+          ],
+          "teamIds": [
+            "team-2fd739ee2ec6b8c0bc3f",
+            "team-9f28eb83a1a1d41cf8e1",
+            "team-6d12179129bc84732822",
+            "team-004133198a86b3c18f79"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-2fd739ee2ec6b8c0bc3f",
+            "team-9f28eb83a1a1d41cf8e1",
+            "team-6d12179129bc84732822",
+            "team-004133198a86b3c18f79"
+          ]
+        },
+        {
+          "goalId": "SW26.12",
+          "leaderId": "andreev",
+          "teams": [
+            "Интеллектуальный цифровой сотрудник",
+            "Операционная GenAI-среда",
+            "Цифровые знания"
+          ],
+          "teamIds": [
+            "team-2f37602c86885bd74809",
+            "team-1e4810f7a37c483a6f84",
+            "team-9d300f8aeb7d88b3c720"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-2f37602c86885bd74809",
+            "team-1e4810f7a37c483a6f84",
+            "team-9d300f8aeb7d88b3c720"
+          ]
+        },
+        {
+          "goalId": "SW26.12",
+          "leaderId": "volnova",
+          "teams": [
+            "АП ОЦ",
+            "QuickSolutions",
+            "SberRPA"
+          ],
+          "teamIds": [
+            "team-a69518dc40898f4b75df",
+            "team-9f9d9f1d72d6f1d468a7",
+            "team-6c305b92f1d76133a618"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-a69518dc40898f4b75df",
+            "team-9f9d9f1d72d6f1d468a7",
+            "team-6c305b92f1d76133a618"
+          ]
+        },
+        {
+          "goalId": "SW26.12",
+          "leaderId": "romanyuta",
+          "teams": [
+            "Инженерные инструменты",
+            "SmartSupport"
+          ],
+          "teamIds": [
+            "team-97b128426bc6213afed9",
+            "team-2094ade1deeb630e8aa3"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-97b128426bc6213afed9",
+            "team-2094ade1deeb630e8aa3"
+          ]
+        },
+        {
+          "goalId": "SW26.12",
+          "leaderId": "zhukova",
+          "teams": [
+            "Inventory Management"
+          ],
+          "teamIds": [
+            "team-c45c45490987ef8f7ed7"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-c45c45490987ef8f7ed7"
+          ]
+        }
+      ],
+      "category": "process",
+      "metric": "Уточняется",
+      "status": "clarify",
+      "scopeType": "allProducts",
+      "summary": "Для перехода на SDD требуется уточнить целевое количество команд и критерии перехода.",
+      "actions": [
+        "Уточнить целевое количество команд и критерии применения SDD.",
+        "Сверить готовность команд к переходу после подтверждения требований."
+      ],
+      "outOfScopeReason": ""
+    },
+    {
+      "id": "LOCAL_100D",
+      "title": "За 100 дней любая команда может вывести новую функциональность на ПРОМ",
+      "description": "Методика и целевые показатели в очередной итерации обсуждения с ДСР",
+      "scope": "allProducts",
+      "method": "",
+      "target": "Методика и целевые показатели в очередной итерации обсуждения с ДСР",
+      "links": [],
+      "curators": [
+        "Васильев Алексей"
+      ],
+      "assignments": [
+        {
+          "goalId": "LOCAL_100D",
+          "leaderId": "kanaev",
+          "teams": [
+            "Вендор в команду",
+            "SAM",
+            "TReports",
+            "Заказ ИТ ресурсов"
+          ],
+          "allProducts": true,
+          "teamIds": [
+            "team-4f6f9f43ebf4a796f2eb",
+            "team-01c2ff4af4230497d8b3",
+            "team-37dbb131867f139e8e80",
+            "team-e898ecab841ff8fb02ac"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-4f6f9f43ebf4a796f2eb",
+            "team-01c2ff4af4230497d8b3",
+            "team-37dbb131867f139e8e80",
+            "team-e898ecab841ff8fb02ac"
+          ]
+        },
+        {
+          "goalId": "LOCAL_100D",
+          "leaderId": "sidorov",
+          "teams": [
+            "Интеллектуальный цифровой руководитель",
+            "УПЗ",
+            "Рабочее место сотрудника ОЦ",
+            "УК ОЦ"
+          ],
+          "allProducts": true,
+          "teamIds": [
+            "team-e276e013feb92ec13e8c",
+            "team-c5cc5285b6e347294772",
+            "team-1ce1918697c8181f9ba6",
+            "team-afb6ffb8a3e44b2693de"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-e276e013feb92ec13e8c",
+            "team-c5cc5285b6e347294772",
+            "team-1ce1918697c8181f9ba6",
+            "team-afb6ffb8a3e44b2693de"
+          ]
+        },
+        {
+          "goalId": "LOCAL_100D",
+          "leaderId": "basko",
+          "teams": [
+            "Завершение расчетов",
+            "ППРБ. Управление операционным днем",
+            "ППРБ. Диспуты",
+            "Свод продуктовых событий"
+          ],
+          "allProducts": true,
+          "teamIds": [
+            "team-6ac6dc5405d8af811693",
+            "team-0cfccfd48c1853427510",
+            "team-969661a2e7ae157cc7a9",
+            "team-a72237ee33b308e67f62"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-6ac6dc5405d8af811693",
+            "team-0cfccfd48c1853427510",
+            "team-969661a2e7ae157cc7a9",
+            "team-a72237ee33b308e67f62"
+          ]
+        },
+        {
+          "goalId": "LOCAL_100D",
+          "leaderId": "popov",
+          "teams": [
+            "Отчетность внутреннего учета и XBRL",
+            "СберБум",
+            "Услуги ДЗО",
+            "SberBilling",
+            "КИД"
+          ],
+          "allProducts": true,
+          "teamIds": [
+            "team-2fd739ee2ec6b8c0bc3f",
+            "team-9f28eb83a1a1d41cf8e1",
+            "team-6d12179129bc84732822",
+            "team-004133198a86b3c18f79",
+            "team-a4d0affe4b6a28a14199"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-2fd739ee2ec6b8c0bc3f",
+            "team-9f28eb83a1a1d41cf8e1",
+            "team-6d12179129bc84732822",
+            "team-004133198a86b3c18f79",
+            "team-a4d0affe4b6a28a14199"
+          ]
+        },
+        {
+          "goalId": "LOCAL_100D",
+          "leaderId": "andreev",
+          "teams": [
+            "Интеллектуальный цифровой сотрудник",
+            "Операционная GenAI-среда",
+            "Цифровые знания",
+            "AI HUB OPS"
+          ],
+          "allProducts": true,
+          "teamIds": [
+            "team-2f37602c86885bd74809",
+            "team-1e4810f7a37c483a6f84",
+            "team-9d300f8aeb7d88b3c720",
+            "team-f2143ad14851b54bbaa5"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-2f37602c86885bd74809",
+            "team-1e4810f7a37c483a6f84",
+            "team-9d300f8aeb7d88b3c720",
+            "team-f2143ad14851b54bbaa5"
+          ]
+        },
+        {
+          "goalId": "LOCAL_100D",
+          "leaderId": "volnova",
+          "teams": [
+            "АП ОЦ",
+            "QuickSolutions",
+            "SberRPA",
+            "ПВ ОЦ"
+          ],
+          "allProducts": true,
+          "teamIds": [
+            "team-a69518dc40898f4b75df",
+            "team-9f9d9f1d72d6f1d468a7",
+            "team-6c305b92f1d76133a618",
+            "team-d842c7f72e642ab98b47"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-a69518dc40898f4b75df",
+            "team-9f9d9f1d72d6f1d468a7",
+            "team-6c305b92f1d76133a618",
+            "team-d842c7f72e642ab98b47"
+          ]
+        },
+        {
+          "goalId": "LOCAL_100D",
+          "leaderId": "romanyuta",
+          "teams": [
+            "Инженерные инструменты",
+            "SmartSupport",
+            "ПКАП1084 АС Sber AssisT",
+            "АС МЦТП"
+          ],
+          "allProducts": true,
+          "teamIds": [
+            "team-97b128426bc6213afed9",
+            "team-2094ade1deeb630e8aa3",
+            "team-54f9ae14ca812dfa245b",
+            "team-06f5f8e35de031ee194e"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-97b128426bc6213afed9",
+            "team-2094ade1deeb630e8aa3",
+            "team-54f9ae14ca812dfa245b",
+            "team-06f5f8e35de031ee194e"
+          ]
+        },
+        {
+          "goalId": "LOCAL_100D",
+          "leaderId": "zhukova",
+          "teams": [
+            "Inventory Management",
+            "АУРА",
+            "ЦУНДО"
+          ],
+          "allProducts": true,
+          "teamIds": [
+            "team-c45c45490987ef8f7ed7",
+            "team-0d1ac840eec11ec50ba9",
+            "team-1d2dfbfe18a09ac9ffb9"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-c45c45490987ef8f7ed7",
+            "team-0d1ac840eec11ec50ba9",
+            "team-1d2dfbfe18a09ac9ffb9"
+          ]
+        }
+      ],
+      "category": "process",
+      "metric": "100 дней",
+      "status": "methodPending",
+      "scopeType": "allProducts",
+      "summary": "Методика и целевые показатели в очередной итерации обсуждения с ДСР",
+      "actions": [],
+      "outOfScopeReason": ""
+    },
+    {
+      "id": "LOCAL_LT35",
+      "title": "Снижение LeadTime вывода агента на 35%",
+      "description": "Обеспечить для ДИТ снижение LT по ИИ-агентам на 35% относительно общебанковского базового показателя на 01 апреля 2026 — 43 дня.",
+      "scope": "allProducts",
+      "method": "",
+      "target": "Обеспечить для ДИТ снижение LT по ИИ-агентам на 35% относительно общебанковского базового показателя на 01 апреля 2026 — 43 дня.",
+      "links": [
+        {
+          "label": "Дашборд LeadTime вывода агента",
+          "url": "https://oko-qs.sigma.sbrf.ru/prom/sense/app/78284d49-8775-4429-b541-7043470b9884/sheet/8af2442d-2cd4-485f-97e6-2d2c4cc7ffd6/state/analysis",
+          "kind": "dashboard"
+        }
+      ],
+      "curators": [
+        "Васильев Алексей"
+      ],
+      "assignments": [
+        {
+          "goalId": "LOCAL_LT35",
+          "leaderId": "kanaev",
+          "teams": [
+            "Вендор в команду",
+            "SAM",
+            "TReports",
+            "Заказ ИТ ресурсов"
+          ],
+          "allProducts": true,
+          "teamIds": [
+            "team-4f6f9f43ebf4a796f2eb",
+            "team-01c2ff4af4230497d8b3",
+            "team-37dbb131867f139e8e80",
+            "team-e898ecab841ff8fb02ac"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-4f6f9f43ebf4a796f2eb",
+            "team-01c2ff4af4230497d8b3",
+            "team-37dbb131867f139e8e80",
+            "team-e898ecab841ff8fb02ac"
+          ]
+        },
+        {
+          "goalId": "LOCAL_LT35",
+          "leaderId": "sidorov",
+          "teams": [
+            "Интеллектуальный цифровой руководитель",
+            "УПЗ",
+            "Рабочее место сотрудника ОЦ",
+            "УК ОЦ"
+          ],
+          "allProducts": true,
+          "teamIds": [
+            "team-e276e013feb92ec13e8c",
+            "team-c5cc5285b6e347294772",
+            "team-1ce1918697c8181f9ba6",
+            "team-afb6ffb8a3e44b2693de"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-e276e013feb92ec13e8c",
+            "team-c5cc5285b6e347294772",
+            "team-1ce1918697c8181f9ba6",
+            "team-afb6ffb8a3e44b2693de"
+          ]
+        },
+        {
+          "goalId": "LOCAL_LT35",
+          "leaderId": "basko",
+          "teams": [
+            "Завершение расчетов",
+            "ППРБ. Управление операционным днем",
+            "ППРБ. Диспуты",
+            "Свод продуктовых событий"
+          ],
+          "allProducts": true,
+          "teamIds": [
+            "team-6ac6dc5405d8af811693",
+            "team-0cfccfd48c1853427510",
+            "team-969661a2e7ae157cc7a9",
+            "team-a72237ee33b308e67f62"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-6ac6dc5405d8af811693",
+            "team-0cfccfd48c1853427510",
+            "team-969661a2e7ae157cc7a9",
+            "team-a72237ee33b308e67f62"
+          ]
+        },
+        {
+          "goalId": "LOCAL_LT35",
+          "leaderId": "popov",
+          "teams": [
+            "Отчетность внутреннего учета и XBRL",
+            "СберБум",
+            "Услуги ДЗО",
+            "SberBilling",
+            "КИД"
+          ],
+          "allProducts": true,
+          "teamIds": [
+            "team-2fd739ee2ec6b8c0bc3f",
+            "team-9f28eb83a1a1d41cf8e1",
+            "team-6d12179129bc84732822",
+            "team-004133198a86b3c18f79",
+            "team-a4d0affe4b6a28a14199"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-2fd739ee2ec6b8c0bc3f",
+            "team-9f28eb83a1a1d41cf8e1",
+            "team-6d12179129bc84732822",
+            "team-004133198a86b3c18f79",
+            "team-a4d0affe4b6a28a14199"
+          ]
+        },
+        {
+          "goalId": "LOCAL_LT35",
+          "leaderId": "andreev",
+          "teams": [
+            "Интеллектуальный цифровой сотрудник",
+            "Операционная GenAI-среда",
+            "Цифровые знания",
+            "AI HUB OPS"
+          ],
+          "allProducts": true,
+          "teamIds": [
+            "team-2f37602c86885bd74809",
+            "team-1e4810f7a37c483a6f84",
+            "team-9d300f8aeb7d88b3c720",
+            "team-f2143ad14851b54bbaa5"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-2f37602c86885bd74809",
+            "team-1e4810f7a37c483a6f84",
+            "team-9d300f8aeb7d88b3c720",
+            "team-f2143ad14851b54bbaa5"
+          ]
+        },
+        {
+          "goalId": "LOCAL_LT35",
+          "leaderId": "volnova",
+          "teams": [
+            "АП ОЦ",
+            "QuickSolutions",
+            "SberRPA",
+            "ПВ ОЦ"
+          ],
+          "allProducts": true,
+          "teamIds": [
+            "team-a69518dc40898f4b75df",
+            "team-9f9d9f1d72d6f1d468a7",
+            "team-6c305b92f1d76133a618",
+            "team-d842c7f72e642ab98b47"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-a69518dc40898f4b75df",
+            "team-9f9d9f1d72d6f1d468a7",
+            "team-6c305b92f1d76133a618",
+            "team-d842c7f72e642ab98b47"
+          ]
+        },
+        {
+          "goalId": "LOCAL_LT35",
+          "leaderId": "romanyuta",
+          "teams": [
+            "Инженерные инструменты",
+            "SmartSupport",
+            "ПКАП1084 АС Sber AssisT",
+            "АС МЦТП"
+          ],
+          "allProducts": true,
+          "teamIds": [
+            "team-97b128426bc6213afed9",
+            "team-2094ade1deeb630e8aa3",
+            "team-54f9ae14ca812dfa245b",
+            "team-06f5f8e35de031ee194e"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-97b128426bc6213afed9",
+            "team-2094ade1deeb630e8aa3",
+            "team-54f9ae14ca812dfa245b",
+            "team-06f5f8e35de031ee194e"
+          ]
+        },
+        {
+          "goalId": "LOCAL_LT35",
+          "leaderId": "zhukova",
+          "teams": [
+            "Inventory Management",
+            "АУРА",
+            "ЦУНДО"
+          ],
+          "allProducts": true,
+          "teamIds": [
+            "team-c45c45490987ef8f7ed7",
+            "team-0d1ac840eec11ec50ba9",
+            "team-1d2dfbfe18a09ac9ffb9"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-c45c45490987ef8f7ed7",
+            "team-0d1ac840eec11ec50ba9",
+            "team-1d2dfbfe18a09ac9ffb9"
+          ]
+        }
+      ],
+      "category": "process",
+      "metric": "−35% LT · база 43 дня",
+      "status": "active",
+      "scopeType": "allProducts",
+      "summary": "Обеспечить для ДИТ снижение LT по ИИ-агентам на 35% относительно общебанковского базового показателя на 01 апреля 2026 — 43 дня.",
+      "actions": [
+        "Определить текущий показатель LT по ИИ-агентам",
+        "Выявить и устранить причины LT выше целевого",
+        "Обеспечить снижение LT в будущих релизах"
+      ],
+      "outOfScopeReason": ""
+    },
+    {
+      "id": "SD02.19",
+      "title": "Контракты и оферты на поставку данных",
+      "description": "Все поставки данных в скоупе цели должны быть оформлены контрактами и опубликованными офертами.",
+      "scope": "specific",
+      "method": "",
+      "target": "Заключено 100% контрактов, опубликовано 100% оферт.",
+      "links": [
+        {
+          "label": "Мониторинг контрактов и оферт",
+          "url": "https://oko-qs.sigma.sbrf.ru/prom/sense/app/f941ed0c-b9ba-4731-b58c-97ee5ff43dd3/overview",
+          "kind": "dashboard"
+        },
+        {
+          "label": "Информация о целях надёжности",
+          "url": "https://confluence.sberbank.ru/pages/viewpage.action?pageId=19678923062",
+          "kind": "method"
+        }
+      ],
+      "curators": [
+        "Котова Мария"
+      ],
+      "assignments": [
+        {
+          "goalId": "SD02.19",
+          "leaderId": "kanaev",
+          "teams": [
+            "TReports"
+          ],
+          "teamIds": [
+            "team-37dbb131867f139e8e80"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-37dbb131867f139e8e80"
+          ]
+        },
+        {
+          "goalId": "SD02.19",
+          "leaderId": "volnova",
+          "teams": [
+            "АП ОЦ",
+            "ПВ ОЦ"
+          ],
+          "teamIds": [
+            "team-a69518dc40898f4b75df",
+            "team-d842c7f72e642ab98b47"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-a69518dc40898f4b75df",
+            "team-d842c7f72e642ab98b47"
+          ]
+        },
+        {
+          "goalId": "SD02.19",
+          "leaderId": "romanyuta",
+          "teams": [
+            "ПКАП1084 АС Sber AssisT"
+          ],
+          "teamIds": [
+            "team-54f9ae14ca812dfa245b"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-54f9ae14ca812dfa245b"
+          ]
+        }
+      ],
+      "category": "data",
+      "metric": "100% контрактов и оферт",
+      "status": "active",
+      "scopeType": "specific",
+      "summary": "Все поставки данных в скоупе цели должны быть оформлены контрактами и опубликованными офертами.",
+      "actions": [
+        "Сверить перечень поставок данных с действующими контрактами и офертами.",
+        "Оформить недостающие контракты и проверить публикацию оферт.",
+        "Проверить полноту охвата по дашборду."
+      ],
+      "outOfScopeReason": ""
+    },
+    {
+      "id": "SD03.19",
+      "title": "Бизнес-процесс во фронтальных контрактах",
+      "description": "Во всех фронтальных контрактах в скоупе должен быть указан соответствующий бизнес-процесс.",
+      "scope": "specific",
+      "method": "",
+      "target": "В 100% фронтальных контрактов указан бизнес-процесс.",
+      "links": [
+        {
+          "label": "Дашборд контрактов",
+          "url": "https://oko-qs.sigma.sbrf.ru/prom/sense/app/f941ed0c-b9ba-4731-b58c-97ee5ff43dd3/overview",
+          "kind": "dashboard"
+        },
+        {
+          "label": "Описание цели",
+          "url": "https://confluence.sberbank.ru/pages/viewpage.action?pageId=23541891087#tab-%D0%92+100%25+%D1%84%D1%80%D0%BE%D0%BD%D1%82%D0%B0%D0%BB%D1%8C%D0%BD%D1%8B%D1%85+%D0%BA%D0%BE%D0%BD%D1%82%D1%80%D0%B0%D0%BA%D1%82%D0%BE%D0%B2+%D1%83%D0%BA%D0%B0%D0%B7%D0%B0%D0%BD+%D0%B1%D0%B8%D0%B7%D0%BD%D0%B5%D1%81-%D0%BF%D1%80%D0%BE%D1%86%D0%B5%D1%81%D1%81",
+          "kind": "method"
+        }
+      ],
+      "curators": [
+        "Котова Мария"
+      ],
+      "assignments": [
+        {
+          "goalId": "SD03.19",
+          "leaderId": "kanaev",
+          "teams": [
+            "TReports"
+          ],
+          "teamIds": [
+            "team-37dbb131867f139e8e80"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-37dbb131867f139e8e80"
+          ]
+        },
+        {
+          "goalId": "SD03.19",
+          "leaderId": "volnova",
+          "teams": [
+            "АП ОЦ"
+          ],
+          "teamIds": [
+            "team-a69518dc40898f4b75df"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-a69518dc40898f4b75df"
+          ]
+        }
+      ],
+      "category": "data",
+      "metric": "100% фронтальных контрактов",
+      "status": "active",
+      "scopeType": "specific",
+      "summary": "Во всех фронтальных контрактах в скоупе должен быть указан соответствующий бизнес-процесс.",
+      "actions": [
+        "Выделить фронтальные контракты в скоупе цели.",
+        "Проверить и заполнить связи контрактов с бизнес-процессами.",
+        "Сверить полноту заполнения по дашборду."
+      ],
+      "outOfScopeReason": ""
+    },
+    {
+      "id": "SD04.19",
+      "title": "Исполнение оферт на поставку данных",
+      "description": "Команды контролируют выполнение обязательств по офертам на поставку данных.",
+      "scope": "specific",
+      "method": "",
+      "target": "Выполняется цель 98% по исполнению оферт.",
+      "links": [
+        {
+          "label": "Дашборд исполнения оферт",
+          "url": "https://oko-qs.sigma.sbrf.ru/prom/sense/app/2880cdc0-e75d-4bbc-b609-7339c913a7b4/sheet/2a0fbcdf-6f0f-42d9-b887-7cdb3de0eff5/state/analysis",
+          "kind": "dashboard"
+        },
+        {
+          "label": "Скоуп и материалы по цели",
+          "url": "https://confluence.sberbank.ru/x/D8A0ewU",
+          "kind": "method"
+        },
+        {
+          "label": "Методика расчёта",
+          "url": "https://mapp.sberbank.ru/sberdataproducts/page/83699",
+          "kind": "method"
+        }
+      ],
+      "curators": [
+        "Котова Мария"
+      ],
+      "assignments": [
+        {
+          "goalId": "SD04.19",
+          "leaderId": "kanaev",
+          "teams": [
+            "TReports"
+          ],
+          "teamIds": [
+            "team-37dbb131867f139e8e80"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-37dbb131867f139e8e80"
+          ]
+        },
+        {
+          "goalId": "SD04.19",
+          "leaderId": "volnova",
+          "teams": [
+            "АП ОЦ",
+            "ПВ ОЦ"
+          ],
+          "teamIds": [
+            "team-a69518dc40898f4b75df",
+            "team-d842c7f72e642ab98b47"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-a69518dc40898f4b75df",
+            "team-d842c7f72e642ab98b47"
+          ]
+        },
+        {
+          "goalId": "SD04.19",
+          "leaderId": "romanyuta",
+          "teams": [
+            "ПКАП1084 АС Sber AssisT"
+          ],
+          "teamIds": [
+            "team-54f9ae14ca812dfa245b"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-54f9ae14ca812dfa245b"
+          ]
+        }
+      ],
+      "category": "data",
+      "metric": "98% исполнения оферт",
+      "status": "active",
+      "scopeType": "specific",
+      "summary": "Команды контролируют выполнение обязательств по офертам на поставку данных.",
+      "actions": [
+        "Проверить обязательства по действующим офертам.",
+        "Разобрать причины неисполнения и отклонений по поставкам.",
+        "Сверить показатель исполнения с целевыми 98%."
+      ],
+      "outOfScopeReason": ""
+    },
+    {
+      "id": "SD23.16",
+      "title": "Базовые проверки качества критичных данных",
+      "description": "В офертах с контрактами нужно описать базовые проверки качества выявленных критичных данных.",
+      "scope": "allProducts",
+      "method": "",
+      "target": "50% оферт с контрактами имеют заполненный раздел по базовым проверкам качества данных для выявленных критичных данных (CDE).",
+      "links": [
+        {
+          "label": "Описание цели и выгрузка",
+          "url": "https://mapp.sberbank.ru/sberdataproducts/page/83546",
+          "kind": "method"
+        }
+      ],
+      "curators": [
+        "Котова Мария"
+      ],
+      "assignments": [
+        {
+          "goalId": "SD23.16",
+          "leaderId": "sidorov",
+          "teams": [
+            "УПЗ",
+            "УК ОЦ"
+          ],
+          "teamIds": [
+            "team-c5cc5285b6e347294772",
+            "team-afb6ffb8a3e44b2693de"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-c5cc5285b6e347294772",
+            "team-afb6ffb8a3e44b2693de"
+          ]
+        },
+        {
+          "goalId": "SD23.16",
+          "leaderId": "basko",
+          "teams": [
+            "Свод продуктовых событий"
+          ],
+          "teamIds": [
+            "team-a72237ee33b308e67f62"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-a72237ee33b308e67f62"
+          ]
+        },
+        {
+          "goalId": "SD23.16",
+          "leaderId": "popov",
+          "teams": [
+            "СберБум"
+          ],
+          "teamIds": [
+            "team-9f28eb83a1a1d41cf8e1"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-9f28eb83a1a1d41cf8e1"
+          ]
+        },
+        {
+          "goalId": "SD23.16",
+          "leaderId": "volnova",
+          "teams": [
+            "SberRPA"
+          ],
+          "teamIds": [
+            "team-6c305b92f1d76133a618"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-6c305b92f1d76133a618"
+          ]
+        }
+      ],
+      "category": "data",
+      "metric": "50% оферт с контрактами",
+      "status": "active",
+      "scopeType": "allProducts",
+      "summary": "В офертах с контрактами нужно описать базовые проверки качества выявленных критичных данных.",
+      "actions": [
+        "Сверить перечень выявленных критичных данных CDE.",
+        "Проверить раздел базовых проверок качества в офертах с контрактами.",
+        "Довести долю заполненных разделов до целевых 50%."
+      ],
+      "outOfScopeReason": ""
+    },
+    {
+      "id": "SD25.15",
+      "title": "Владельцы данных в АС вне КАП",
+      "description": "Для данных АС в скоупе за пределами КАП должны быть назначены владельцы.",
+      "scope": "specific",
+      "method": "",
+      "target": "Назначено 100% владельцев данных в АС, кроме КАП.",
+      "links": [
+        {
+          "label": "Дашборд владельцев данных",
+          "url": "https://mapp.sberbank.ru/sberdataproducts/page/71933#id-9oZKQP",
+          "kind": "dashboard"
+        },
+        {
+          "label": "Описание цели",
+          "url": "https://mapp.sberbank.ru/sberdataproducts/page/71933",
+          "kind": "method"
+        }
+      ],
+      "curators": [
+        "Котова Мария"
+      ],
+      "assignments": [
+        {
+          "goalId": "SD25.15",
+          "leaderId": "volnova",
+          "teams": [
+            "SberRPA"
+          ],
+          "teamIds": [
+            "team-6c305b92f1d76133a618"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-6c305b92f1d76133a618"
+          ]
+        }
+      ],
+      "category": "data",
+      "metric": "100% владельцев данных",
+      "status": "active",
+      "scopeType": "specific",
+      "summary": "Для данных АС в скоупе за пределами КАП должны быть назначены владельцы.",
+      "actions": [
+        "Проверить перечень данных и наличие назначенных владельцев.",
+        "Уточнить и закрыть пробелы в назначениях владельцев данных.",
+        "Проверить полноту назначений по материалам цели."
+      ],
+      "outOfScopeReason": ""
+    },
+    {
+      "id": "SD26.15",
+      "title": "Владельцы данных объектов КАП",
+      "description": "У всех объектов КАП в скоупе должны быть назначены владельцы данных.",
+      "scope": "specific",
+      "method": "",
+      "target": "Назначено 100% владельцев данных для всех объектов КАП.",
+      "links": [
+        {
+          "label": "Дашборд владельцев данных",
+          "url": "https://mapp.sberbank.ru/sberdataproducts/page/71933#id-9oZKQP",
+          "kind": "dashboard"
+        },
+        {
+          "label": "Описание цели",
+          "url": "https://mapp.sberbank.ru/sberdataproducts/page/71933",
+          "kind": "method"
+        }
+      ],
+      "curators": [
+        "Котова Мария"
+      ],
+      "assignments": [
+        {
+          "goalId": "SD26.15",
+          "leaderId": "volnova",
+          "teams": [
+            "АП ОЦ",
+            "ПВ ОЦ"
+          ],
+          "teamIds": [
+            "team-a69518dc40898f4b75df",
+            "team-d842c7f72e642ab98b47"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-a69518dc40898f4b75df",
+            "team-d842c7f72e642ab98b47"
+          ]
+        }
+      ],
+      "category": "data",
+      "metric": "100% объектов КАП",
+      "status": "active",
+      "scopeType": "specific",
+      "summary": "У всех объектов КАП в скоупе должны быть назначены владельцы данных.",
+      "actions": [
+        "Проверить перечень объектов КАП в скоупе.",
+        "Назначить владельцев данных для объектов без владельца.",
+        "Сверить полноту назначений по материалам цели."
+      ],
+      "outOfScopeReason": ""
+    },
+    {
+      "id": "SD31.15",
+      "title": "Change Management в офертах",
+      "description": "Во всех офертах в скоупе нужно заполнить раздел управления изменениями.",
+      "scope": "specific",
+      "method": "",
+      "target": "Раздел Change Management заполнен в 100% оферт.",
+      "links": [],
+      "curators": [
+        "Котова Мария"
+      ],
+      "assignments": [
+        {
+          "goalId": "SD31.15",
+          "leaderId": "kanaev",
+          "teams": [
+            "TReports"
+          ],
+          "teamIds": [
+            "team-37dbb131867f139e8e80"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-37dbb131867f139e8e80"
+          ]
+        },
+        {
+          "goalId": "SD31.15",
+          "leaderId": "volnova",
+          "teams": [
+            "АП ОЦ",
+            "ПВ ОЦ"
+          ],
+          "teamIds": [
+            "team-a69518dc40898f4b75df",
+            "team-d842c7f72e642ab98b47"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-a69518dc40898f4b75df",
+            "team-d842c7f72e642ab98b47"
+          ]
+        },
+        {
+          "goalId": "SD31.15",
+          "leaderId": "romanyuta",
+          "teams": [
+            "ПКАП1084 АС Sber AssisT"
+          ],
+          "teamIds": [
+            "team-54f9ae14ca812dfa245b"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-54f9ae14ca812dfa245b"
+          ]
+        }
+      ],
+      "category": "data",
+      "metric": "100% оферт",
+      "status": "active",
+      "scopeType": "specific",
+      "summary": "Во всех офертах в скоупе нужно заполнить раздел управления изменениями.",
+      "actions": [
+        "Проверить наличие и полноту раздела Change Management в офертах.",
+        "Заполнить недостающие сведения об управлении изменениями.",
+        "Уточнить актуальный скоуп АС и сверить полный охват оферт."
+      ],
+      "outOfScopeReason": ""
+    },
+    {
+      "id": "SD34.12",
+      "title": "Подготовка источника к подключению к КАП",
+      "description": "Подготовку источников к подключению к КАП нужно завершать в установленный срок.",
+      "scope": "allSystems",
+      "method": "",
+      "target": "Обеспечена длительность подготовки источников к подключению к КАП за 20 рабочих дней.",
+      "links": [
+        {
+          "label": "Мониторинг даты старта",
+          "url": "https://jira.delta.sbrf.ru/secure/StructureBoard.jspa?s=27533",
+          "kind": "monitoring"
+        },
+        {
+          "label": "Длительность подготовки источника",
+          "url": "https://jira.delta.sbrf.ru/secure/StructureBoard.jspa?s=27532",
+          "kind": "dashboard"
+        },
+        {
+          "label": "Дашборд для ГО",
+          "url": "https://confluence.delta.sbrf.ru/pages/viewpage.action?pageId=18483249276",
+          "kind": "dashboard"
+        },
+        {
+          "label": "Описание цели",
+          "url": "https://confluence.sberbank.ru/pages/viewpage.action?pageId=22513199776",
+          "kind": "method"
+        }
+      ],
+      "curators": [
+        "Котова Мария"
+      ],
+      "assignments": [
+        {
+          "goalId": "SD34.12",
+          "leaderId": "sidorov",
+          "teams": [
+            "УПЗ",
+            "УК ОЦ"
+          ],
+          "teamIds": [
+            "team-c5cc5285b6e347294772",
+            "team-afb6ffb8a3e44b2693de"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-c5cc5285b6e347294772",
+            "team-afb6ffb8a3e44b2693de"
+          ]
+        },
+        {
+          "goalId": "SD34.12",
+          "leaderId": "basko",
+          "teams": [
+            "Завершение расчетов",
+            "ППРБ. Управление операционным днем",
+            "Свод продуктовых событий"
+          ],
+          "teamIds": [
+            "team-6ac6dc5405d8af811693",
+            "team-0cfccfd48c1853427510",
+            "team-a72237ee33b308e67f62"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-6ac6dc5405d8af811693",
+            "team-0cfccfd48c1853427510",
+            "team-a72237ee33b308e67f62"
+          ]
+        },
+        {
+          "goalId": "SD34.12",
+          "leaderId": "popov",
+          "teams": [
+            "СберБум",
+            "SberBilling",
+            "Услуги ДЗО"
+          ],
+          "teamIds": [
+            "team-9f28eb83a1a1d41cf8e1",
+            "team-004133198a86b3c18f79",
+            "team-6d12179129bc84732822"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-9f28eb83a1a1d41cf8e1",
+            "team-004133198a86b3c18f79",
+            "team-6d12179129bc84732822"
+          ]
+        },
+        {
+          "goalId": "SD34.12",
+          "leaderId": "andreev",
+          "teams": [
+            "AI HUB OPS"
+          ],
+          "teamIds": [
+            "team-f2143ad14851b54bbaa5"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-f2143ad14851b54bbaa5"
+          ]
+        },
+        {
+          "goalId": "SD34.12",
+          "leaderId": "volnova",
+          "teams": [
+            "SberRPA"
+          ],
+          "teamIds": [
+            "team-6c305b92f1d76133a618"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-6c305b92f1d76133a618"
+          ]
+        },
+        {
+          "goalId": "SD34.12",
+          "leaderId": "romanyuta",
+          "teams": [
+            "АС МЦТП"
+          ],
+          "teamIds": [
+            "team-06f5f8e35de031ee194e"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-06f5f8e35de031ee194e"
+          ]
+        },
+        {
+          "goalId": "SD34.12",
+          "leaderId": "zhukova",
+          "teams": [
+            "АУРА",
+            "ЦУНДО"
+          ],
+          "teamIds": [
+            "team-0d1ac840eec11ec50ba9",
+            "team-1d2dfbfe18a09ac9ffb9"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-0d1ac840eec11ec50ba9",
+            "team-1d2dfbfe18a09ac9ffb9"
+          ]
+        }
+      ],
+      "category": "data",
+      "metric": "20 рабочих дней",
+      "status": "active",
+      "scopeType": "allSystems",
+      "summary": "Подготовку источников к подключению к КАП нужно завершать в установленный срок.",
+      "actions": [
+        "Проверить дату старта подготовки источника и полноту её регистрации.",
+        "Разобрать задержки подготовки к подключению.",
+        "Сверить длительность подготовки с нормативом 20 рабочих дней."
+      ],
+      "outOfScopeReason": ""
+    },
+    {
+      "id": "SD37.10",
+      "title": "T2Data загрузки в КАП на Едином Репликаторе",
+      "description": "Создание и расширение реплик на Едином Репликаторе должны укладываться в соответствующие сроки T2Data.",
+      "scope": "allSystems",
+      "method": "",
+      "target": "Обеспечена T2Data загрузки данных в КАП на Едином Репликаторе: создание реплики — 26 рабочих дней, расширение реплики — 18 рабочих дней.",
+      "links": [
+        {
+          "label": "Выполнение цели",
+          "url": "https://confluence.sberbank.ru/pages/viewpage.action?pageId=24280307294",
+          "kind": "dashboard"
+        },
+        {
+          "label": "Детализация по процентам",
+          "url": "https://confluence.sberbank.ru/pages/viewpage.action?pageId=22662796916",
+          "kind": "dashboard"
+        },
+        {
+          "label": "Дашборд для ГО",
+          "url": "https://confluence.delta.sbrf.ru/pages/viewpage.action?pageId=18483249276",
+          "kind": "dashboard"
+        },
+        {
+          "label": "Описание цели",
+          "url": "https://confluence.sberbank.ru/pages/viewpage.action?pageId=22513200014",
+          "kind": "method"
+        }
+      ],
+      "curators": [
+        "Котова Мария"
+      ],
+      "assignments": [
+        {
+          "goalId": "SD37.10",
+          "leaderId": "sidorov",
+          "teams": [
+            "УПЗ",
+            "УК ОЦ"
+          ],
+          "teamIds": [
+            "team-c5cc5285b6e347294772",
+            "team-afb6ffb8a3e44b2693de"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-c5cc5285b6e347294772",
+            "team-afb6ffb8a3e44b2693de"
+          ]
+        },
+        {
+          "goalId": "SD37.10",
+          "leaderId": "basko",
+          "teams": [
+            "ППРБ. Управление операционным днем"
+          ],
+          "teamIds": [
+            "team-0cfccfd48c1853427510"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-0cfccfd48c1853427510"
+          ]
+        },
+        {
+          "goalId": "SD37.10",
+          "leaderId": "popov",
+          "teams": [
+            "СберБум",
+            "SberBilling",
+            "Услуги ДЗО"
+          ],
+          "teamIds": [
+            "team-9f28eb83a1a1d41cf8e1",
+            "team-004133198a86b3c18f79",
+            "team-6d12179129bc84732822"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-9f28eb83a1a1d41cf8e1",
+            "team-004133198a86b3c18f79",
+            "team-6d12179129bc84732822"
+          ]
+        },
+        {
+          "goalId": "SD37.10",
+          "leaderId": "andreev",
+          "teams": [
+            "AI HUB OPS"
+          ],
+          "teamIds": [
+            "team-f2143ad14851b54bbaa5"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-f2143ad14851b54bbaa5"
+          ]
+        },
+        {
+          "goalId": "SD37.10",
+          "leaderId": "volnova",
+          "teams": [
+            "SberRPA"
+          ],
+          "teamIds": [
+            "team-6c305b92f1d76133a618"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-6c305b92f1d76133a618"
+          ]
+        },
+        {
+          "goalId": "SD37.10",
+          "leaderId": "romanyuta",
+          "teams": [
+            "АС МЦТП"
+          ],
+          "teamIds": [
+            "team-06f5f8e35de031ee194e"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-06f5f8e35de031ee194e"
+          ]
+        },
+        {
+          "goalId": "SD37.10",
+          "leaderId": "zhukova",
+          "teams": [
+            "АУРА",
+            "ЦУНДО"
+          ],
+          "teamIds": [
+            "team-0d1ac840eec11ec50ba9",
+            "team-1d2dfbfe18a09ac9ffb9"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-0d1ac840eec11ec50ba9",
+            "team-1d2dfbfe18a09ac9ffb9"
+          ]
+        }
+      ],
+      "category": "data",
+      "metric": "26 / 18 рабочих дней",
+      "status": "active",
+      "scopeType": "allSystems",
+      "summary": "Создание и расширение реплик на Едином Репликаторе должны укладываться в соответствующие сроки T2Data.",
+      "actions": [
+        "Проверить сроки создания и расширения реплик в КАП.",
+        "Разобрать этапы, которые формируют задержки загрузки.",
+        "Сверить длительность с нормативами 26 и 18 рабочих дней."
+      ],
+      "outOfScopeReason": ""
+    },
+    {
+      "id": "SD39.17",
+      "title": "Питающие контракты в офертах",
+      "description": "Каждая оферта в скоупе должна содержать ссылки на питающие контракты.",
+      "scope": "specific",
+      "method": "",
+      "target": "В 100% оферт указаны питающие контракты.",
+      "links": [
+        {
+          "label": "Дашборд питающих контрактов",
+          "url": "https://oko-qs.sigma.sbrf.ru/prom/sense/app/2e87d082-4342-4180-ae32-1b2bb3824fd4/sheet/01bb23df-92ec-4921-9b8b-e01939fd4de3/state/analysis",
+          "kind": "dashboard"
+        },
+        {
+          "label": "Информация о целях надёжности",
+          "url": "https://sbertrack.sberbank.ru/swtr/extension/plugin/v2/rest/api/swtr_wiki_migrator_plugin/v1/link/redirect?sourceUrl=https%3A%2F%2Fconfluence.sberbank.ru%2Fpages%2Fviewpage.action%3FpageId%3D23541891087",
+          "kind": "method"
+        }
+      ],
+      "curators": [
+        "Котова Мария"
+      ],
+      "assignments": [
+        {
+          "goalId": "SD39.17",
+          "leaderId": "kanaev",
+          "teams": [
+            "TReports"
+          ],
+          "teamIds": [
+            "team-37dbb131867f139e8e80"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-37dbb131867f139e8e80"
+          ]
+        },
+        {
+          "goalId": "SD39.17",
+          "leaderId": "volnova",
+          "teams": [
+            "АП ОЦ"
+          ],
+          "teamIds": [
+            "team-a69518dc40898f4b75df"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-a69518dc40898f4b75df"
+          ]
+        },
+        {
+          "goalId": "SD39.17",
+          "leaderId": "romanyuta",
+          "teams": [
+            "АС МЦТП"
+          ],
+          "teamIds": [
+            "team-06f5f8e35de031ee194e"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-06f5f8e35de031ee194e"
+          ]
+        }
+      ],
+      "category": "data",
+      "metric": "100% оферт",
+      "status": "active",
+      "scopeType": "specific",
+      "summary": "Каждая оферта в скоупе должна содержать ссылки на питающие контракты.",
+      "actions": [
+        "Сверить оферты с перечнем питающих контрактов.",
+        "Заполнить недостающие связи в офертах.",
+        "Проверить полный охват по дашборду."
+      ],
+      "outOfScopeReason": ""
+    },
+    {
+      "id": "SD08.12",
+      "title": "Исполнение RUN-планов загрузки источников",
+      "description": "Участники загрузки в КАП должны выполнить RUN-планы по источникам и архивам и достичь целевой доли загрузок Блоками.",
+      "scope": "conditional",
+      "method": "",
+      "target": "Исполнение планов RUN по загрузке источников и архивов — 100%. Доля загрузок Блоками — 50%.",
+      "links": [
+        {
+          "label": "Дашборд и описание загрузки источников",
+          "url": "https://confluence.sberbank.ru/pages/viewpage.action?pageId=22557235138",
+          "kind": "method"
+        }
+      ],
+      "curators": [
+        "Котова Мария"
+      ],
+      "assignments": [
+        {
+          "goalId": "SD08.12",
+          "leaderId": "sidorov",
+          "teams": [
+            "УПЗ",
+            "УК ОЦ"
+          ],
+          "teamIds": [
+            "team-c5cc5285b6e347294772",
+            "team-afb6ffb8a3e44b2693de"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-c5cc5285b6e347294772",
+            "team-afb6ffb8a3e44b2693de"
+          ]
+        },
+        {
+          "goalId": "SD08.12",
+          "leaderId": "basko",
+          "teams": [
+            "Завершение расчетов",
+            "ППРБ. Управление операционным днем",
+            "Свод продуктовых событий"
+          ],
+          "teamIds": [
+            "team-6ac6dc5405d8af811693",
+            "team-0cfccfd48c1853427510",
+            "team-a72237ee33b308e67f62"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-6ac6dc5405d8af811693",
+            "team-0cfccfd48c1853427510",
+            "team-a72237ee33b308e67f62"
+          ]
+        },
+        {
+          "goalId": "SD08.12",
+          "leaderId": "popov",
+          "teams": [
+            "СберБум",
+            "SberBilling",
+            "Услуги ДЗО"
+          ],
+          "teamIds": [
+            "team-9f28eb83a1a1d41cf8e1",
+            "team-004133198a86b3c18f79",
+            "team-6d12179129bc84732822"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-9f28eb83a1a1d41cf8e1",
+            "team-004133198a86b3c18f79",
+            "team-6d12179129bc84732822"
+          ]
+        },
+        {
+          "goalId": "SD08.12",
+          "leaderId": "andreev",
+          "teams": [
+            "AI HUB OPS"
+          ],
+          "teamIds": [
+            "team-f2143ad14851b54bbaa5"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-f2143ad14851b54bbaa5"
+          ]
+        },
+        {
+          "goalId": "SD08.12",
+          "leaderId": "volnova",
+          "teams": [
+            "SberRPA"
+          ],
+          "teamIds": [
+            "team-6c305b92f1d76133a618"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-6c305b92f1d76133a618"
+          ]
+        },
+        {
+          "goalId": "SD08.12",
+          "leaderId": "romanyuta",
+          "teams": [
+            "АС МЦТП"
+          ],
+          "teamIds": [
+            "team-06f5f8e35de031ee194e"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-06f5f8e35de031ee194e"
+          ]
+        },
+        {
+          "goalId": "SD08.12",
+          "leaderId": "zhukova",
+          "teams": [
+            "АУРА",
+            "ЦУНДО"
+          ],
+          "teamIds": [
+            "team-0d1ac840eec11ec50ba9",
+            "team-1d2dfbfe18a09ac9ffb9"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-0d1ac840eec11ec50ba9",
+            "team-1d2dfbfe18a09ac9ffb9"
+          ]
+        }
+      ],
+      "category": "data",
+      "metric": "100% RUN · 50% загрузок Блоками",
+      "status": "active",
+      "scopeType": "conditional",
+      "summary": "Участники загрузки в КАП должны выполнить RUN-планы по источникам и архивам и достичь целевой доли загрузок Блоками.",
+      "actions": [
+        "Сверить планы RUN по загрузке источников и архивов на второе полугодие.",
+        "Проверить выполнение запланированных загрузок.",
+        "Контролировать долю загрузок Блоками относительно цели 50%."
+      ],
+      "outOfScopeReason": ""
+    },
+    {
+      "id": "SD52.11",
+      "title": "E2E подготовка и загрузка источников в КАП",
+      "description": "Полный срок подготовки и загрузки источников в КАП отслеживается в режиме мониторинга.",
+      "scope": "allSystems",
+      "method": "",
+      "target": "Обеспечена E2E-длительность подготовки и загрузки источников в КАП за 72/64 рабочих дня. Цель в режиме мониторинга.",
+      "links": [
+        {
+          "label": "Дашборд E2E и для ГО",
+          "url": "https://confluence.delta.sbrf.ru/pages/viewpage.action?pageId=18483249276",
+          "kind": "monitoring"
+        },
+        {
+          "label": "Описание E2E Time-to-Data",
+          "url": "https://confluence.sberbank.ru/display/ZAGRUZKAPPRBCAP/E2E+Time-to-Data",
+          "kind": "method"
+        }
+      ],
+      "curators": [
+        "Котова Мария"
+      ],
+      "assignments": [
+        {
+          "goalId": "SD52.11",
+          "leaderId": "sidorov",
+          "teams": [
+            "УПЗ",
+            "УК ОЦ"
+          ],
+          "teamIds": [
+            "team-c5cc5285b6e347294772",
+            "team-afb6ffb8a3e44b2693de"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-c5cc5285b6e347294772",
+            "team-afb6ffb8a3e44b2693de"
+          ]
+        },
+        {
+          "goalId": "SD52.11",
+          "leaderId": "basko",
+          "teams": [
+            "Завершение расчетов",
+            "ППРБ. Управление операционным днем",
+            "Свод продуктовых событий"
+          ],
+          "teamIds": [
+            "team-6ac6dc5405d8af811693",
+            "team-0cfccfd48c1853427510",
+            "team-a72237ee33b308e67f62"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-6ac6dc5405d8af811693",
+            "team-0cfccfd48c1853427510",
+            "team-a72237ee33b308e67f62"
+          ]
+        },
+        {
+          "goalId": "SD52.11",
+          "leaderId": "popov",
+          "teams": [
+            "СберБум",
+            "SberBilling",
+            "Услуги ДЗО"
+          ],
+          "teamIds": [
+            "team-9f28eb83a1a1d41cf8e1",
+            "team-004133198a86b3c18f79",
+            "team-6d12179129bc84732822"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-9f28eb83a1a1d41cf8e1",
+            "team-004133198a86b3c18f79",
+            "team-6d12179129bc84732822"
+          ]
+        },
+        {
+          "goalId": "SD52.11",
+          "leaderId": "andreev",
+          "teams": [
+            "AI HUB OPS"
+          ],
+          "teamIds": [
+            "team-f2143ad14851b54bbaa5"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-f2143ad14851b54bbaa5"
+          ]
+        },
+        {
+          "goalId": "SD52.11",
+          "leaderId": "volnova",
+          "teams": [
+            "SberRPA"
+          ],
+          "teamIds": [
+            "team-6c305b92f1d76133a618"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-6c305b92f1d76133a618"
+          ]
+        },
+        {
+          "goalId": "SD52.11",
+          "leaderId": "romanyuta",
+          "teams": [
+            "АС МЦТП"
+          ],
+          "teamIds": [
+            "team-06f5f8e35de031ee194e"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-06f5f8e35de031ee194e"
+          ]
+        },
+        {
+          "goalId": "SD52.11",
+          "leaderId": "zhukova",
+          "teams": [
+            "АУРА",
+            "ЦУНДО"
+          ],
+          "teamIds": [
+            "team-0d1ac840eec11ec50ba9",
+            "team-1d2dfbfe18a09ac9ffb9"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-0d1ac840eec11ec50ba9",
+            "team-1d2dfbfe18a09ac9ffb9"
+          ]
+        }
+      ],
+      "category": "data",
+      "metric": "72 / 64 рабочих дня",
+      "status": "monitor",
+      "scopeType": "allSystems",
+      "summary": "Полный срок подготовки и загрузки источников в КАП отслеживается в режиме мониторинга.",
+      "actions": [
+        "Проверять полный срок подготовки и загрузки источников в КАП.",
+        "Сопоставлять наблюдаемые значения с ориентирами 72/64 рабочих дня.",
+        "Разбирать причины отклонений по данным мониторинга."
+      ],
+      "outOfScopeReason": ""
+    },
+    {
+      "id": "AR26.1",
+      "title": "API в цифровом двойнике",
+      "description": "Для цифрового двойника нужно описать API, подключить контроль работоспособности и применять целевой процесс выдачи прикладных доступов.",
+      "scope": "specific",
+      "method": "",
+      "target": "90% API для интеграции ИТ-услуг описаны; 90% HTTP-API АС BC и выше поставлены на мониторинг Health-Check; 41% API: прикладные доступы выдаются по процессу П3963.",
+      "links": [
+        {
+          "label": "Методика",
+          "url": "https://sbertrack.sberbank.ru/swtr/pages/wiki/unit/DGA-6?space=DGA&tenant=default&suite=wiki_page",
+          "kind": "method"
+        },
+        {
+          "label": "Прикладной доступ",
+          "url": "https://oko-qs.sigma.sbrf.ru/prom/sense/app/fff5df0f-8e26-4131-90e1-e03327c72994/sheet/f1d0141a-55e2-4ac9-b7eb-e4b352f7e53b/state/analysis",
+          "kind": "dashboard"
+        },
+        {
+          "label": "API Management",
+          "url": "https://oko-qs.sigma.sbrf.ru/prom/sense/app/fff5df0f-8e26-4131-90e1-e03327c72994/sheet/6461b2d4-bd7c-4b31-91e8-316c02c6df56/state/analysis",
+          "kind": "dashboard"
+        },
+        {
+          "label": "Health-Check",
+          "url": "https://oko-qs.sigma.sbrf.ru/prom/sense/app/fff5df0f-8e26-4131-90e1-e03327c72994/sheet/4edbd7c4-947b-49b6-9a76-429b3d058f80/state/analysis",
+          "kind": "dashboard"
+        }
+      ],
+      "curators": [
+        "Михайлова Анастасия",
+        "Ратников Максим"
+      ],
+      "assignments": [
+        {
+          "goalId": "AR26.1",
+          "leaderId": "kanaev",
+          "teams": [
+            "SAM",
+            "Заказ ИТ ресурсов"
+          ],
+          "target": "90% API для интеграции ИТ-услуг описаны; 41% API: прикладные доступы выдаются по процессу П3963.",
+          "summary": "Для цифрового двойника нужно описать API и применять целевой процесс выдачи прикладных доступов.",
+          "metric": "90% описание · 41% П3963",
+          "actions": [
+            "Проверить полноту описания API для интеграции ИТ-услуг.",
+            "Сверить долю API, по которым прикладные доступы выдаются по процессу П3963."
+          ],
+          "teamIds": [
+            "team-01c2ff4af4230497d8b3",
+            "team-e898ecab841ff8fb02ac"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-01c2ff4af4230497d8b3",
+            "team-e898ecab841ff8fb02ac"
+          ]
+        },
+        {
+          "goalId": "AR26.1",
+          "leaderId": "sidorov",
+          "teams": [
+            "УПЗ",
+            "Рабочее место сотрудника ОЦ",
+            "УК ОЦ"
+          ],
+          "teamIds": [
+            "team-c5cc5285b6e347294772",
+            "team-1ce1918697c8181f9ba6",
+            "team-afb6ffb8a3e44b2693de"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-c5cc5285b6e347294772",
+            "team-1ce1918697c8181f9ba6",
+            "team-afb6ffb8a3e44b2693de"
+          ]
+        },
+        {
+          "goalId": "AR26.1",
+          "leaderId": "basko",
+          "teams": [
+            "Завершение расчетов",
+            "ППРБ. Управление операционным днем",
+            "ППРБ. Диспуты",
+            "Свод продуктовых событий"
+          ],
+          "teamIds": [
+            "team-6ac6dc5405d8af811693",
+            "team-0cfccfd48c1853427510",
+            "team-969661a2e7ae157cc7a9",
+            "team-a72237ee33b308e67f62"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-6ac6dc5405d8af811693",
+            "team-0cfccfd48c1853427510",
+            "team-969661a2e7ae157cc7a9",
+            "team-a72237ee33b308e67f62"
+          ]
+        },
+        {
+          "goalId": "AR26.1",
+          "leaderId": "popov",
+          "teams": [
+            "SberBilling",
+            "Услуги ДЗО",
+            "КИД"
+          ],
+          "teamIds": [
+            "team-004133198a86b3c18f79",
+            "team-6d12179129bc84732822",
+            "team-a4d0affe4b6a28a14199"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-004133198a86b3c18f79",
+            "team-6d12179129bc84732822",
+            "team-a4d0affe4b6a28a14199"
+          ]
+        },
+        {
+          "goalId": "AR26.1",
+          "leaderId": "andreev",
+          "teams": [
+            "AI HUB OPS"
+          ],
+          "teamIds": [
+            "team-f2143ad14851b54bbaa5"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-f2143ad14851b54bbaa5"
+          ]
+        },
+        {
+          "goalId": "AR26.1",
+          "leaderId": "volnova",
+          "teams": [
+            "АП ОЦ",
+            "SberRPA"
+          ],
+          "teamIds": [
+            "team-a69518dc40898f4b75df",
+            "team-6c305b92f1d76133a618"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-a69518dc40898f4b75df",
+            "team-6c305b92f1d76133a618"
+          ]
+        },
+        {
+          "goalId": "AR26.1",
+          "leaderId": "romanyuta",
+          "teams": [
+            "Автоматизация производственной деятельности МЦТП",
+            "ПКАП1084 АС Sber AssisT"
+          ],
+          "teamIds": [
+            "team-1ac32d708170bee540bf",
+            "team-54f9ae14ca812dfa245b"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-1ac32d708170bee540bf",
+            "team-54f9ae14ca812dfa245b"
+          ]
+        },
+        {
+          "goalId": "AR26.1",
+          "leaderId": "zhukova",
+          "teams": [
+            "АС «Sber AssisT»",
+            "ЕФС.Сотрудники.РМ ИТ-поддержки",
+            "ПКАП1084 АС Sber AssisT",
+            "Управление ресурсами"
+          ],
+          "teamIds": [
+            "team-90a2bab027f3b64dfc22",
+            "team-bf512d4bbde18843a7d1",
+            "team-7bf0ab985f10b293a198",
+            "team-213f60e0059553c0cf60"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-90a2bab027f3b64dfc22",
+            "team-bf512d4bbde18843a7d1",
+            "team-7bf0ab985f10b293a198",
+            "team-213f60e0059553c0cf60"
+          ]
+        }
+      ],
+      "category": "architecture",
+      "metric": "90% описание · 90% Health-Check · 41% П3963",
+      "status": "active",
+      "scopeType": "specific",
+      "summary": "Для цифрового двойника нужно описать API, подключить контроль работоспособности и применять целевой процесс выдачи прикладных доступов.",
+      "actions": [
+        "Проверить полноту описания API для интеграции ИТ-услуг.",
+        "Проверить мониторинг Health-Check HTTP-API АС BC и выше и привязку проверок к API.",
+        "Сверить долю API, по которым прикладные доступы выдаются по процессу П3963."
+      ],
+      "outOfScopeReason": ""
+    },
+    {
+      "id": "AR26.2",
+      "title": "DGBD для новых АС",
+      "description": "Цель сейчас вне скоупа для всех текущих АС. Для начала выполнения нужны новые АС, к которым применимы требования DGBD.",
+      "scope": "conditional",
+      "method": "",
+      "target": "100% реализация требований DGBD по архитектуре и описанию данных для новых АС.",
+      "links": [
+        {
+          "label": "Описание цели",
+          "url": "https://confluence.sberbank.ru/pages/viewpage.action?pageId=20859782466",
+          "kind": "method"
+        }
+      ],
+      "curators": [
+        "Михайлова Анастасия",
+        "Ратников Максим"
+      ],
+      "assignments": [
+        {
+          "goalId": "AR26.2",
+          "leaderId": "sidorov",
+          "teams": [
+            "Интеллектуальный цифровой руководитель",
+            "УПЗ",
+            "Рабочее место сотрудника ОЦ",
+            "УК ОЦ"
+          ],
+          "active": false,
+          "teamIds": [
+            "team-e276e013feb92ec13e8c",
+            "team-c5cc5285b6e347294772",
+            "team-1ce1918697c8181f9ba6",
+            "team-afb6ffb8a3e44b2693de"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-e276e013feb92ec13e8c",
+            "team-c5cc5285b6e347294772",
+            "team-1ce1918697c8181f9ba6",
+            "team-afb6ffb8a3e44b2693de"
+          ]
+        },
+        {
+          "goalId": "AR26.2",
+          "leaderId": "basko",
+          "teams": [
+            "Завершение расчетов",
+            "ППРБ. Управление операционным днем",
+            "ППРБ. Диспуты",
+            "Свод продуктовых событий"
+          ],
+          "active": false,
+          "teamIds": [
+            "team-6ac6dc5405d8af811693",
+            "team-0cfccfd48c1853427510",
+            "team-969661a2e7ae157cc7a9",
+            "team-a72237ee33b308e67f62"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-6ac6dc5405d8af811693",
+            "team-0cfccfd48c1853427510",
+            "team-969661a2e7ae157cc7a9",
+            "team-a72237ee33b308e67f62"
+          ]
+        },
+        {
+          "goalId": "AR26.2",
+          "leaderId": "popov",
+          "teams": [
+            "Отчетность внутреннего учета и XBRL",
+            "СберБум",
+            "Услуги ДЗО",
+            "SberBilling"
+          ],
+          "active": false,
+          "teamIds": [
+            "team-2fd739ee2ec6b8c0bc3f",
+            "team-9f28eb83a1a1d41cf8e1",
+            "team-6d12179129bc84732822",
+            "team-004133198a86b3c18f79"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-2fd739ee2ec6b8c0bc3f",
+            "team-9f28eb83a1a1d41cf8e1",
+            "team-6d12179129bc84732822",
+            "team-004133198a86b3c18f79"
+          ]
+        },
+        {
+          "goalId": "AR26.2",
+          "leaderId": "andreev",
+          "teams": [
+            "Интеллектуальный цифровой сотрудник",
+            "Операционная GenAI-среда",
+            "Цифровые знания"
+          ],
+          "active": false,
+          "teamIds": [
+            "team-2f37602c86885bd74809",
+            "team-1e4810f7a37c483a6f84",
+            "team-9d300f8aeb7d88b3c720"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-2f37602c86885bd74809",
+            "team-1e4810f7a37c483a6f84",
+            "team-9d300f8aeb7d88b3c720"
+          ]
+        },
+        {
+          "goalId": "AR26.2",
+          "leaderId": "volnova",
+          "teams": [
+            "АП ОЦ",
+            "QuickSolutions",
+            "SberRPA"
+          ],
+          "active": false,
+          "teamIds": [
+            "team-a69518dc40898f4b75df",
+            "team-9f9d9f1d72d6f1d468a7",
+            "team-6c305b92f1d76133a618"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-a69518dc40898f4b75df",
+            "team-9f9d9f1d72d6f1d468a7",
+            "team-6c305b92f1d76133a618"
+          ]
+        },
+        {
+          "goalId": "AR26.2",
+          "leaderId": "romanyuta",
+          "teams": [
+            "Инженерные инструменты",
+            "SmartSupport"
+          ],
+          "active": false,
+          "teamIds": [
+            "team-97b128426bc6213afed9",
+            "team-2094ade1deeb630e8aa3"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-97b128426bc6213afed9",
+            "team-2094ade1deeb630e8aa3"
+          ]
+        },
+        {
+          "goalId": "AR26.2",
+          "leaderId": "zhukova",
+          "teams": [
+            "Inventory Management"
+          ],
+          "active": false,
+          "teamIds": [
+            "team-c45c45490987ef8f7ed7"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-c45c45490987ef8f7ed7"
+          ]
+        }
+      ],
+      "category": "architecture",
+      "metric": "100% требований для новых АС",
+      "status": "outOfScope",
+      "scopeType": "conditional",
+      "summary": "Цель сейчас вне скоупа для всех текущих АС. Для начала выполнения нужны новые АС, к которым применимы требования DGBD.",
+      "actions": [
+        "Определить новые АС, для которых применимы требования DGBD.",
+        "Сверить архитектуру и описание данных с требованиями DGBD.",
+        "Закрыть выявленные пробелы и подтвердить выполнение требований."
+      ],
+      "outOfScopeReason": "Цель сейчас вне скоупа для всех текущих АС. Для начала выполнения нужны новые АС, к которым применимы требования DGBD."
+    },
+    {
+      "id": "AR26.3",
+      "title": "Управление доступом ИИ-агентов",
+      "description": "ИИ-агенты в применимом скоупе должны использовать целевые инструменты управления доступом и автоматическую выдачу новых доступов.",
+      "scope": "conditional",
+      "method": "",
+      "target": "80% всех ИИ-агентов используют выведенные в ПРОМ целевые инструменты управления доступом. 80% новых доступов ИИ-агентов «Агент — Агент» и «Агент — GenAI Ready API» предоставляются автоматически для API в скоупе тиража цифрового двойника; учитываются агенты в статусах ЖЦ «Опытная эксплуатация» и «Промышленная эксплуатация».",
+      "links": [
+        {
+          "label": "Материалы по управлению доступом",
+          "url": "https://sbertrack.sberbank.ru/swtr/extension/plugin/v2/rest/api/swtr_wiki_migrator_plugin/v1/link/redirect?sourceUrl=https%3A%2F%2Fconfluence.sberbank.ru%2Fpages%2Fviewpage.action%3FpageId%3D22743498510%23expand-",
+          "kind": "dashboard"
+        }
+      ],
+      "curators": [
+        "Михайлова Анастасия",
+        "Ратников Максим"
+      ],
+      "assignments": [
+        {
+          "goalId": "AR26.3",
+          "leaderId": "kanaev",
+          "teams": [],
+          "agents": [
+            "AI-агент РРП",
+            "AI-агент BetaReaper007",
+            "AI-агент GenШтаб",
+            "AI-агент IRD_Search"
+          ],
+          "participantType": "agents",
+          "teamIds": [],
+          "agentIds": [
+            "agent-f3e594b8fcd4128928c8",
+            "agent-03fdc22b7ee74d0f96b2",
+            "agent-37ce7c1054ec854a725e",
+            "agent-e1713251ae940b7a59bc"
+          ],
+          "scopeIds": [
+            "agent-f3e594b8fcd4128928c8",
+            "agent-03fdc22b7ee74d0f96b2",
+            "agent-37ce7c1054ec854a725e",
+            "agent-e1713251ae940b7a59bc"
+          ]
+        },
+        {
+          "goalId": "AR26.3",
+          "leaderId": "sidorov",
+          "teams": [],
+          "agents": [
+            "agent-buddy-workload",
+            "agent-icr-effency",
+            "gatekeeper-agent",
+            "icr-graph-agent"
+          ],
+          "participantType": "agents",
+          "teamIds": [],
+          "agentIds": [
+            "agent-60d5bb4a5aab750c961a",
+            "agent-5ec10e78cbfcaef50eb9",
+            "agent-395703044219a09874af",
+            "agent-edad5fe78325a91786c4"
+          ],
+          "scopeIds": [
+            "agent-60d5bb4a5aab750c961a",
+            "agent-5ec10e78cbfcaef50eb9",
+            "agent-395703044219a09874af",
+            "agent-edad5fe78325a91786c4"
+          ]
+        },
+        {
+          "goalId": "AR26.3",
+          "leaderId": "basko",
+          "teams": [],
+          "agents": [
+            "agent-sps-cupidon"
+          ],
+          "participantType": "agents",
+          "teamIds": [],
+          "agentIds": [
+            "agent-4531ed96e5892e310929"
+          ],
+          "scopeIds": [
+            "agent-4531ed96e5892e310929"
+          ]
+        },
+        {
+          "goalId": "AR26.3",
+          "leaderId": "popov",
+          "teams": [],
+          "agents": [
+            "agent-sberbilling-arv"
+          ],
+          "participantType": "agents",
+          "teamIds": [],
+          "agentIds": [
+            "agent-d7d6dfb0bba07a4db6d7"
+          ],
+          "scopeIds": [
+            "agent-d7d6dfb0bba07a4db6d7"
+          ]
+        },
+        {
+          "goalId": "AR26.3",
+          "leaderId": "andreev",
+          "teams": [],
+          "agents": [
+            "agent-digknow-ragent",
+            "agent-digknow-uics",
+            "ics-ak10",
+            "ics-ak12",
+            "ics-digread",
+            "ics-flaiv",
+            "ics-kd",
+            "ics-p3283_p3284",
+            "ics-pk02k",
+            "ics-prime",
+            "ics-sbsj",
+            "ics-ul23"
+          ],
+          "participantType": "agents",
+          "teamIds": [],
+          "agentIds": [
+            "agent-cb94b2e878733d65bfd3",
+            "agent-b41c6ec109a8c2e92ce0",
+            "agent-7ffc652e588201b372a4",
+            "agent-eba6e78b237d609d0c81",
+            "agent-60683f4d85c7852003f9",
+            "agent-1ef4dd6fefed1d2eb0ca",
+            "agent-e17dfd4549105f32e47c",
+            "agent-959d61a5bc04cabb40a7",
+            "agent-0e65be2e0de001cf188e",
+            "agent-c3b94bddb7a4e7430497",
+            "agent-92c313a43364d255be51",
+            "agent-18ba572d674191f8217d"
+          ],
+          "scopeIds": [
+            "agent-cb94b2e878733d65bfd3",
+            "agent-b41c6ec109a8c2e92ce0",
+            "agent-7ffc652e588201b372a4",
+            "agent-eba6e78b237d609d0c81",
+            "agent-60683f4d85c7852003f9",
+            "agent-1ef4dd6fefed1d2eb0ca",
+            "agent-e17dfd4549105f32e47c",
+            "agent-959d61a5bc04cabb40a7",
+            "agent-0e65be2e0de001cf188e",
+            "agent-c3b94bddb7a4e7430497",
+            "agent-92c313a43364d255be51",
+            "agent-18ba572d674191f8217d"
+          ]
+        },
+        {
+          "goalId": "AR26.3",
+          "leaderId": "volnova",
+          "teams": [],
+          "agents": [
+            "gent-qapps-typifier",
+            "rpahelper-analyst-agent",
+            "rpahelper-mailmaster-agent",
+            "rpahelper-summarizator-agent",
+            "rpahelper-taskmaster-agent"
+          ],
+          "participantType": "agents",
+          "teamIds": [],
+          "agentIds": [
+            "agent-b0be2668d2cb0fb0f9b5",
+            "agent-971dfc0c3c81033e0d3a",
+            "agent-10d922526ea71fcb0bcf",
+            "agent-8b4b125cc00cddfc0369",
+            "agent-f8519985676c99db1266"
+          ],
+          "scopeIds": [
+            "agent-b0be2668d2cb0fb0f9b5",
+            "agent-971dfc0c3c81033e0d3a",
+            "agent-10d922526ea71fcb0bcf",
+            "agent-8b4b125cc00cddfc0369",
+            "agent-f8519985676c99db1266"
+          ]
+        },
+        {
+          "goalId": "AR26.3",
+          "leaderId": "romanyuta",
+          "teams": [],
+          "agents": [
+            "IT-Support",
+            "IT-Support Expert"
+          ],
+          "participantType": "agents",
+          "teamIds": [],
+          "agentIds": [
+            "agent-22df95a102a39d230604",
+            "agent-b221f21235746ad6c7e8"
+          ],
+          "scopeIds": [
+            "agent-22df95a102a39d230604",
+            "agent-b221f21235746ad6c7e8"
+          ]
+        },
+        {
+          "goalId": "AR26.3",
+          "leaderId": "zhukova",
+          "teams": [],
+          "teamIds": [],
+          "agentIds": [],
+          "scopeIds": []
+        }
+      ],
+      "category": "architecture",
+      "metric": "80% агентов · 80% новых доступов",
+      "status": "active",
+      "scopeType": "conditional",
+      "summary": "ИИ-агенты в применимом скоупе должны использовать целевые инструменты управления доступом и автоматическую выдачу новых доступов.",
+      "actions": [
+        "Сверить ИИ-агентов и API со скоупом тиража цифрового двойника и допустимыми статусами ЖЦ.",
+        "Проверить использование выведенных в ПРОМ целевых инструментов управления доступом.",
+        "Проверить долю автоматически предоставляемых новых доступов агентов."
+      ],
+      "outOfScopeReason": ""
+    },
+    {
+      "id": "AR26.4",
+      "title": "GenAI-native score ИТ-ландшафта",
+      "description": "Подразделение должно достичь установленного целевого значения зрелости GenAI-native архитектуры.",
+      "scope": "allSystems",
+      "method": "",
+      "target": "Достигнуто целевое значение по Банку по GenAI-native score ИТ-ландшафта по подразделению.",
+      "links": [
+        {
+          "label": "Дашборд GenAI-native score",
+          "url": "https://oko-qs.sigma.sbrf.ru/prom/sense/app/731e0254-e98d-4706-bb08-71a9feabc5ea/sheet/8bf0fec7-d5af-4cd3-807e-2d1815051a54/state/analysis",
+          "kind": "dashboard"
+        },
+        {
+          "label": "Описание GenAI-native score",
+          "url": "https://sbertrack.sberbank.ru/swtr/extension/plugin/v2/rest/api/swtr_wiki_migrator_plugin/v1/link/redirect?sourceUrl=https%3A%2F%2Fconfluence.sberbank.ru%2Fpages%2Fviewpage.action%3FpageId%3D22525121603",
+          "kind": "method"
+        }
+      ],
+      "curators": [
+        "Михайлова Анастасия",
+        "Ратников Максим"
+      ],
+      "assignments": [
+        {
+          "goalId": "AR26.4",
+          "leaderId": "kanaev",
+          "teams": [
+            "SAM",
+            "TReports",
+            "Заказ ИТ ресурсов"
+          ],
+          "teamIds": [
+            "team-01c2ff4af4230497d8b3",
+            "team-37dbb131867f139e8e80",
+            "team-e898ecab841ff8fb02ac"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-01c2ff4af4230497d8b3",
+            "team-37dbb131867f139e8e80",
+            "team-e898ecab841ff8fb02ac"
+          ]
+        },
+        {
+          "goalId": "AR26.4",
+          "leaderId": "sidorov",
+          "teams": [
+            "Интеллектуальный цифровой руководитель",
+            "УПЗ",
+            "Рабочее место сотрудника ОЦ",
+            "УК ОЦ"
+          ],
+          "teamIds": [
+            "team-e276e013feb92ec13e8c",
+            "team-c5cc5285b6e347294772",
+            "team-1ce1918697c8181f9ba6",
+            "team-afb6ffb8a3e44b2693de"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-e276e013feb92ec13e8c",
+            "team-c5cc5285b6e347294772",
+            "team-1ce1918697c8181f9ba6",
+            "team-afb6ffb8a3e44b2693de"
+          ]
+        },
+        {
+          "goalId": "AR26.4",
+          "leaderId": "basko",
+          "teams": [
+            "Завершение расчетов",
+            "ППРБ. Управление операционным днем",
+            "ППРБ. Диспуты",
+            "Свод продуктовых событий"
+          ],
+          "teamIds": [
+            "team-6ac6dc5405d8af811693",
+            "team-0cfccfd48c1853427510",
+            "team-969661a2e7ae157cc7a9",
+            "team-a72237ee33b308e67f62"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-6ac6dc5405d8af811693",
+            "team-0cfccfd48c1853427510",
+            "team-969661a2e7ae157cc7a9",
+            "team-a72237ee33b308e67f62"
+          ]
+        },
+        {
+          "goalId": "AR26.4",
+          "leaderId": "popov",
+          "teams": [
+            "Отчетность внутреннего учета и XBRL",
+            "СберБум",
+            "Услуги ДЗО",
+            "SberBilling"
+          ],
+          "teamIds": [
+            "team-2fd739ee2ec6b8c0bc3f",
+            "team-9f28eb83a1a1d41cf8e1",
+            "team-6d12179129bc84732822",
+            "team-004133198a86b3c18f79"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-2fd739ee2ec6b8c0bc3f",
+            "team-9f28eb83a1a1d41cf8e1",
+            "team-6d12179129bc84732822",
+            "team-004133198a86b3c18f79"
+          ]
+        },
+        {
+          "goalId": "AR26.4",
+          "leaderId": "andreev",
+          "teams": [
+            "Интеллектуальный цифровой сотрудник",
+            "Операционная GenAI-среда",
+            "Цифровые знания"
+          ],
+          "teamIds": [
+            "team-2f37602c86885bd74809",
+            "team-1e4810f7a37c483a6f84",
+            "team-9d300f8aeb7d88b3c720"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-2f37602c86885bd74809",
+            "team-1e4810f7a37c483a6f84",
+            "team-9d300f8aeb7d88b3c720"
+          ]
+        },
+        {
+          "goalId": "AR26.4",
+          "leaderId": "volnova",
+          "teams": [
+            "АП ОЦ",
+            "QuickSolutions",
+            "SberRPA"
+          ],
+          "teamIds": [
+            "team-a69518dc40898f4b75df",
+            "team-9f9d9f1d72d6f1d468a7",
+            "team-6c305b92f1d76133a618"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-a69518dc40898f4b75df",
+            "team-9f9d9f1d72d6f1d468a7",
+            "team-6c305b92f1d76133a618"
+          ]
+        },
+        {
+          "goalId": "AR26.4",
+          "leaderId": "romanyuta",
+          "teams": [
+            "Инженерные инструменты",
+            "SmartSupport"
+          ],
+          "teamIds": [
+            "team-97b128426bc6213afed9",
+            "team-2094ade1deeb630e8aa3"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-97b128426bc6213afed9",
+            "team-2094ade1deeb630e8aa3"
+          ]
+        },
+        {
+          "goalId": "AR26.4",
+          "leaderId": "zhukova",
+          "teams": [
+            "Inventory Management"
+          ],
+          "teamIds": [
+            "team-c45c45490987ef8f7ed7"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-c45c45490987ef8f7ed7"
+          ]
+        }
+      ],
+      "category": "architecture",
+      "metric": "Целевой GenAI-native score",
+      "status": "active",
+      "scopeType": "allSystems",
+      "summary": "Подразделение должно достичь установленного целевого значения зрелости GenAI-native архитектуры.",
+      "actions": [
+        "Уточнить действующее целевое значение GenAI-native score для подразделения.",
+        "Проверить текущую оценку ИТ-ландшафта и составляющие показателя.",
+        "Определить пробелы до целевого уровня и проверить их устранение."
+      ],
+      "outOfScopeReason": ""
+    },
+    {
+      "id": "ITZ26",
+      "title": "Целевое значение ИТЗ",
+      "description": "Системам в скоупе нужно обеспечить достижение установленного целевого значения ИТЗ.",
+      "scope": "specific",
+      "method": "",
+      "target": "Достигнуто целевое значение ИТЗ.",
+      "links": [
+        {
+          "label": "Дашборд ИТЗ",
+          "url": "https://oko-qs.sigma.sbrf.ru/prom/sense/app/aebb55cc-32cb-4ce9-b0fd-f06d4dc5b5a1/sheet/097ca11a-df8c-41ab-94bd-898fec1554e3/state/analysis",
+          "kind": "dashboard"
+        },
+        {
+          "label": "Описание ИТЗ",
+          "url": "https://mapp.sberbank.ru/tmi/page/105799",
+          "kind": "method"
+        }
+      ],
+      "curators": [
+        "Михайлова Анастасия"
+      ],
+      "assignments": [
+        {
+          "goalId": "ITZ26",
+          "leaderId": "kanaev",
+          "teams": [
+            "SAM",
+            "TReports"
+          ],
+          "teamIds": [
+            "team-01c2ff4af4230497d8b3",
+            "team-37dbb131867f139e8e80"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-01c2ff4af4230497d8b3",
+            "team-37dbb131867f139e8e80"
+          ]
+        },
+        {
+          "goalId": "ITZ26",
+          "leaderId": "sidorov",
+          "teams": [
+            "УПЗ",
+            "Рабочее место сотрудника ОЦ",
+            "УК ОЦ"
+          ],
+          "teamIds": [
+            "team-c5cc5285b6e347294772",
+            "team-1ce1918697c8181f9ba6",
+            "team-afb6ffb8a3e44b2693de"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-c5cc5285b6e347294772",
+            "team-1ce1918697c8181f9ba6",
+            "team-afb6ffb8a3e44b2693de"
+          ]
+        },
+        {
+          "goalId": "ITZ26",
+          "leaderId": "basko",
+          "teams": [
+            "Завершение расчетов",
+            "ППРБ. Управление операционным днем",
+            "ППРБ. Диспуты",
+            "Свод продуктовых событий"
+          ],
+          "teamIds": [
+            "team-6ac6dc5405d8af811693",
+            "team-0cfccfd48c1853427510",
+            "team-969661a2e7ae157cc7a9",
+            "team-a72237ee33b308e67f62"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-6ac6dc5405d8af811693",
+            "team-0cfccfd48c1853427510",
+            "team-969661a2e7ae157cc7a9",
+            "team-a72237ee33b308e67f62"
+          ]
+        },
+        {
+          "goalId": "ITZ26",
+          "leaderId": "popov",
+          "teams": [
+            "SberBilling"
+          ],
+          "teamIds": [
+            "team-004133198a86b3c18f79"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-004133198a86b3c18f79"
+          ]
+        },
+        {
+          "goalId": "ITZ26",
+          "leaderId": "andreev",
+          "teams": [
+            "AI HUB OPS"
+          ],
+          "teamIds": [
+            "team-f2143ad14851b54bbaa5"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-f2143ad14851b54bbaa5"
+          ]
+        },
+        {
+          "goalId": "ITZ26",
+          "leaderId": "volnova",
+          "teams": [
+            "АП ОЦ",
+            "SberRPA"
+          ],
+          "teamIds": [
+            "team-a69518dc40898f4b75df",
+            "team-6c305b92f1d76133a618"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-a69518dc40898f4b75df",
+            "team-6c305b92f1d76133a618"
+          ]
+        },
+        {
+          "goalId": "ITZ26",
+          "leaderId": "romanyuta",
+          "teams": [
+            "Автоматизация производственной деятельности МЦТП",
+            "ПКАП1084 АС Sber AssisT"
+          ],
+          "teamIds": [
+            "team-1ac32d708170bee540bf",
+            "team-54f9ae14ca812dfa245b"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-1ac32d708170bee540bf",
+            "team-54f9ae14ca812dfa245b"
+          ]
+        },
+        {
+          "goalId": "ITZ26",
+          "leaderId": "zhukova",
+          "teams": [
+            "АС «Sber AssisT»",
+            "ЕФС.Сотрудники.РМ ИТ-поддержки",
+            "ПКАП1084 АС Sber AssisT",
+            "Управление ресурсами"
+          ],
+          "teamIds": [
+            "team-90a2bab027f3b64dfc22",
+            "team-bf512d4bbde18843a7d1",
+            "team-7bf0ab985f10b293a198",
+            "team-213f60e0059553c0cf60"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-90a2bab027f3b64dfc22",
+            "team-bf512d4bbde18843a7d1",
+            "team-7bf0ab985f10b293a198",
+            "team-213f60e0059553c0cf60"
+          ]
+        }
+      ],
+      "category": "security",
+      "metric": "Целевое значение ИТЗ",
+      "status": "active",
+      "scopeType": "specific",
+      "summary": "Системам в скоупе нужно обеспечить достижение установленного целевого значения ИТЗ.",
+      "actions": [
+        "Уточнить действующее целевое значение ИТЗ и текущий результат.",
+        "Проверить факторы, которые мешают достичь целевого уровня.",
+        "Сверить итоговое значение ИТЗ по дашборду."
+      ],
+      "outOfScopeReason": ""
+    },
+    {
+      "id": "MT26",
+      "title": "Инициатива «Метла»",
+      "description": "Команды в рамках стримов выполняют поручения и задачи инициативы «Метла».",
+      "scope": "allSystems",
+      "method": "",
+      "target": "Поручения и задачи инициативы «Метла» выполнены в соответствии с планом.",
+      "links": [
+        {
+          "label": "Страница инициативы «Метла»",
+          "url": "https://confluence.sberbank.ru/pages/viewpage.action?pageId=1569326173",
+          "kind": "method"
+        }
+      ],
+      "curators": [
+        "Бугаев Александр",
+        "Смолов Роман"
+      ],
+      "assignments": [
+        {
+          "goalId": "MT26",
+          "leaderId": "kanaev",
+          "teams": [
+            "Вендор в команду",
+            "SAM",
+            "TReports"
+          ],
+          "teamIds": [
+            "team-4f6f9f43ebf4a796f2eb",
+            "team-01c2ff4af4230497d8b3",
+            "team-37dbb131867f139e8e80"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-4f6f9f43ebf4a796f2eb",
+            "team-01c2ff4af4230497d8b3",
+            "team-37dbb131867f139e8e80"
+          ]
+        },
+        {
+          "goalId": "MT26",
+          "leaderId": "sidorov",
+          "teams": [
+            "Интеллектуальный цифровой руководитель",
+            "УПЗ",
+            "Рабочее место сотрудника ОЦ",
+            "УК ОЦ"
+          ],
+          "teamIds": [
+            "team-e276e013feb92ec13e8c",
+            "team-c5cc5285b6e347294772",
+            "team-1ce1918697c8181f9ba6",
+            "team-afb6ffb8a3e44b2693de"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-e276e013feb92ec13e8c",
+            "team-c5cc5285b6e347294772",
+            "team-1ce1918697c8181f9ba6",
+            "team-afb6ffb8a3e44b2693de"
+          ]
+        },
+        {
+          "goalId": "MT26",
+          "leaderId": "basko",
+          "teams": [
+            "Завершение расчетов",
+            "ППРБ. Управление операционным днем",
+            "ППРБ. Диспуты",
+            "Свод продуктовых событий"
+          ],
+          "teamIds": [
+            "team-6ac6dc5405d8af811693",
+            "team-0cfccfd48c1853427510",
+            "team-969661a2e7ae157cc7a9",
+            "team-a72237ee33b308e67f62"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-6ac6dc5405d8af811693",
+            "team-0cfccfd48c1853427510",
+            "team-969661a2e7ae157cc7a9",
+            "team-a72237ee33b308e67f62"
+          ]
+        },
+        {
+          "goalId": "MT26",
+          "leaderId": "popov",
+          "teams": [
+            "Отчетность внутреннего учета и XBRL",
+            "СберБум",
+            "Услуги ДЗО",
+            "SberBilling"
+          ],
+          "teamIds": [
+            "team-2fd739ee2ec6b8c0bc3f",
+            "team-9f28eb83a1a1d41cf8e1",
+            "team-6d12179129bc84732822",
+            "team-004133198a86b3c18f79"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-2fd739ee2ec6b8c0bc3f",
+            "team-9f28eb83a1a1d41cf8e1",
+            "team-6d12179129bc84732822",
+            "team-004133198a86b3c18f79"
+          ]
+        },
+        {
+          "goalId": "MT26",
+          "leaderId": "andreev",
+          "teams": [
+            "Интеллектуальный цифровой сотрудник",
+            "Операционная GenAI-среда",
+            "Цифровые знания"
+          ],
+          "teamIds": [
+            "team-2f37602c86885bd74809",
+            "team-1e4810f7a37c483a6f84",
+            "team-9d300f8aeb7d88b3c720"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-2f37602c86885bd74809",
+            "team-1e4810f7a37c483a6f84",
+            "team-9d300f8aeb7d88b3c720"
+          ]
+        },
+        {
+          "goalId": "MT26",
+          "leaderId": "volnova",
+          "teams": [
+            "АП ОЦ",
+            "QuickSolutions",
+            "SberRPA"
+          ],
+          "teamIds": [
+            "team-a69518dc40898f4b75df",
+            "team-9f9d9f1d72d6f1d468a7",
+            "team-6c305b92f1d76133a618"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-a69518dc40898f4b75df",
+            "team-9f9d9f1d72d6f1d468a7",
+            "team-6c305b92f1d76133a618"
+          ]
+        },
+        {
+          "goalId": "MT26",
+          "leaderId": "romanyuta",
+          "teams": [
+            "Инженерные инструменты",
+            "SmartSupport"
+          ],
+          "teamIds": [
+            "team-97b128426bc6213afed9",
+            "team-2094ade1deeb630e8aa3"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-97b128426bc6213afed9",
+            "team-2094ade1deeb630e8aa3"
+          ]
+        },
+        {
+          "goalId": "MT26",
+          "leaderId": "zhukova",
+          "teams": [
+            "Inventory Management"
+          ],
+          "teamIds": [
+            "team-c45c45490987ef8f7ed7"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-c45c45490987ef8f7ed7"
+          ]
+        }
+      ],
+      "category": "security",
+      "metric": "Выполнение плана",
+      "status": "active",
+      "scopeType": "allSystems",
+      "summary": "Команды в рамках стримов выполняют поручения и задачи инициативы «Метла».",
+      "actions": [
+        "Сверить перечень задач и сроки с действующим планом инициативы.",
+        "Проверить выполнение задач и причины отклонений.",
+        "Подтвердить закрытие задач согласно плану."
+      ],
+      "outOfScopeReason": ""
+    },
+    {
+      "id": "IZT26",
+      "title": "Годовой мониторинг зрелости рисков технологий",
+      "description": "Индикатор зрелости рисков технологий отслеживается как годовой показатель без отдельной цели Q4.",
+      "scope": "allSystems",
+      "method": "",
+      "target": "Годовая цель: достигнуто целевое значение индикатора зрелости рисков технологий по подразделению (в мониторинге). Отдельная цель Q4 не устанавливается.",
+      "links": [],
+      "curators": [
+        "Смолов Роман"
+      ],
+      "assignments": [
+        {
+          "goalId": "IZT26",
+          "leaderId": "kanaev",
+          "teams": [
+            "Вендор в команду",
+            "SAM",
+            "TReports"
+          ],
+          "teamIds": [
+            "team-4f6f9f43ebf4a796f2eb",
+            "team-01c2ff4af4230497d8b3",
+            "team-37dbb131867f139e8e80"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-4f6f9f43ebf4a796f2eb",
+            "team-01c2ff4af4230497d8b3",
+            "team-37dbb131867f139e8e80"
+          ]
+        },
+        {
+          "goalId": "IZT26",
+          "leaderId": "sidorov",
+          "teams": [
+            "Интеллектуальный цифровой руководитель",
+            "УПЗ",
+            "Рабочее место сотрудника ОЦ",
+            "УК ОЦ"
+          ],
+          "teamIds": [
+            "team-e276e013feb92ec13e8c",
+            "team-c5cc5285b6e347294772",
+            "team-1ce1918697c8181f9ba6",
+            "team-afb6ffb8a3e44b2693de"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-e276e013feb92ec13e8c",
+            "team-c5cc5285b6e347294772",
+            "team-1ce1918697c8181f9ba6",
+            "team-afb6ffb8a3e44b2693de"
+          ]
+        },
+        {
+          "goalId": "IZT26",
+          "leaderId": "basko",
+          "teams": [
+            "Завершение расчетов",
+            "ППРБ. Управление операционным днем",
+            "ППРБ. Диспуты",
+            "Свод продуктовых событий"
+          ],
+          "teamIds": [
+            "team-6ac6dc5405d8af811693",
+            "team-0cfccfd48c1853427510",
+            "team-969661a2e7ae157cc7a9",
+            "team-a72237ee33b308e67f62"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-6ac6dc5405d8af811693",
+            "team-0cfccfd48c1853427510",
+            "team-969661a2e7ae157cc7a9",
+            "team-a72237ee33b308e67f62"
+          ]
+        },
+        {
+          "goalId": "IZT26",
+          "leaderId": "popov",
+          "teams": [
+            "Отчетность внутреннего учета и XBRL",
+            "СберБум",
+            "Услуги ДЗО",
+            "SberBilling"
+          ],
+          "teamIds": [
+            "team-2fd739ee2ec6b8c0bc3f",
+            "team-9f28eb83a1a1d41cf8e1",
+            "team-6d12179129bc84732822",
+            "team-004133198a86b3c18f79"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-2fd739ee2ec6b8c0bc3f",
+            "team-9f28eb83a1a1d41cf8e1",
+            "team-6d12179129bc84732822",
+            "team-004133198a86b3c18f79"
+          ]
+        },
+        {
+          "goalId": "IZT26",
+          "leaderId": "andreev",
+          "teams": [
+            "Интеллектуальный цифровой сотрудник",
+            "Операционная GenAI-среда",
+            "Цифровые знания"
+          ],
+          "teamIds": [
+            "team-2f37602c86885bd74809",
+            "team-1e4810f7a37c483a6f84",
+            "team-9d300f8aeb7d88b3c720"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-2f37602c86885bd74809",
+            "team-1e4810f7a37c483a6f84",
+            "team-9d300f8aeb7d88b3c720"
+          ]
+        },
+        {
+          "goalId": "IZT26",
+          "leaderId": "volnova",
+          "teams": [
+            "АП ОЦ",
+            "QuickSolutions",
+            "SberRPA"
+          ],
+          "teamIds": [
+            "team-a69518dc40898f4b75df",
+            "team-9f9d9f1d72d6f1d468a7",
+            "team-6c305b92f1d76133a618"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-a69518dc40898f4b75df",
+            "team-9f9d9f1d72d6f1d468a7",
+            "team-6c305b92f1d76133a618"
+          ]
+        },
+        {
+          "goalId": "IZT26",
+          "leaderId": "romanyuta",
+          "teams": [
+            "Инженерные инструменты",
+            "SmartSupport"
+          ],
+          "teamIds": [
+            "team-97b128426bc6213afed9",
+            "team-2094ade1deeb630e8aa3"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-97b128426bc6213afed9",
+            "team-2094ade1deeb630e8aa3"
+          ]
+        },
+        {
+          "goalId": "IZT26",
+          "leaderId": "zhukova",
+          "teams": [
+            "Inventory Management"
+          ],
+          "teamIds": [
+            "team-c45c45490987ef8f7ed7"
+          ],
+          "agentIds": [],
+          "scopeIds": [
+            "team-c45c45490987ef8f7ed7"
+          ]
+        }
+      ],
+      "category": "security",
+      "metric": "Только годовая · мониторинг",
+      "status": "monitor",
+      "scopeType": "allSystems",
+      "summary": "Индикатор зрелости рисков технологий отслеживается как годовой показатель без отдельной цели Q4.",
+      "actions": [
+        "Проверять годовой показатель зрелости рисков технологий по подразделению.",
+        "Сверять участие АС через ИТЗ и данные мониторинга."
+      ],
+      "outOfScopeReason": ""
+    }
+  ],
+  "directory": [
+    {
+      "id": "dit",
+      "name": "ДИТ OPS",
+      "type": "dit"
+    },
+    {
+      "id": "kanaev",
+      "name": "Канаев В.",
+      "type": "leader"
+    },
+    {
+      "id": "team-4f6f9f43ebf4a796f2eb",
+      "name": "Вендор в команду",
+      "type": "team",
+      "leaderId": "kanaev"
+    },
+    {
+      "id": "team-01c2ff4af4230497d8b3",
+      "name": "SAM",
+      "type": "team",
+      "leaderId": "kanaev"
+    },
+    {
+      "id": "team-37dbb131867f139e8e80",
+      "name": "TReports",
+      "type": "team",
+      "leaderId": "kanaev"
+    },
+    {
+      "id": "team-e898ecab841ff8fb02ac",
+      "name": "Заказ ИТ ресурсов",
+      "type": "team",
+      "leaderId": "kanaev"
+    },
+    {
+      "id": "agent-f3e594b8fcd4128928c8",
+      "name": "AI-агент РРП",
+      "type": "agent",
+      "leaderId": "kanaev"
+    },
+    {
+      "id": "agent-03fdc22b7ee74d0f96b2",
+      "name": "AI-агент BetaReaper007",
+      "type": "agent",
+      "leaderId": "kanaev"
+    },
+    {
+      "id": "agent-37ce7c1054ec854a725e",
+      "name": "AI-агент GenШтаб",
+      "type": "agent",
+      "leaderId": "kanaev"
+    },
+    {
+      "id": "agent-e1713251ae940b7a59bc",
+      "name": "AI-агент IRD_Search",
+      "type": "agent",
+      "leaderId": "kanaev"
+    },
+    {
+      "id": "sidorov",
+      "name": "Сидоров В.",
+      "type": "leader"
+    },
+    {
+      "id": "team-e276e013feb92ec13e8c",
+      "name": "Интеллектуальный цифровой руководитель",
+      "type": "team",
+      "leaderId": "sidorov"
+    },
+    {
+      "id": "team-c5cc5285b6e347294772",
+      "name": "УПЗ",
+      "type": "team",
+      "leaderId": "sidorov"
+    },
+    {
+      "id": "team-1ce1918697c8181f9ba6",
+      "name": "Рабочее место сотрудника ОЦ",
+      "type": "team",
+      "leaderId": "sidorov"
+    },
+    {
+      "id": "team-afb6ffb8a3e44b2693de",
+      "name": "УК ОЦ",
+      "type": "team",
+      "leaderId": "sidorov"
+    },
+    {
+      "id": "agent-60d5bb4a5aab750c961a",
+      "name": "agent-buddy-workload",
+      "type": "agent",
+      "leaderId": "sidorov"
+    },
+    {
+      "id": "agent-5ec10e78cbfcaef50eb9",
+      "name": "agent-icr-effency",
+      "type": "agent",
+      "leaderId": "sidorov"
+    },
+    {
+      "id": "agent-395703044219a09874af",
+      "name": "gatekeeper-agent",
+      "type": "agent",
+      "leaderId": "sidorov"
+    },
+    {
+      "id": "agent-edad5fe78325a91786c4",
+      "name": "icr-graph-agent",
+      "type": "agent",
+      "leaderId": "sidorov"
+    },
+    {
+      "id": "basko",
+      "name": "Баско Д.",
+      "type": "leader"
+    },
+    {
+      "id": "team-6ac6dc5405d8af811693",
+      "name": "Завершение расчетов",
+      "type": "team",
+      "leaderId": "basko"
+    },
+    {
+      "id": "team-0cfccfd48c1853427510",
+      "name": "ППРБ. Управление операционным днем",
+      "type": "team",
+      "leaderId": "basko"
+    },
+    {
+      "id": "team-969661a2e7ae157cc7a9",
+      "name": "ППРБ. Диспуты",
+      "type": "team",
+      "leaderId": "basko"
+    },
+    {
+      "id": "team-a72237ee33b308e67f62",
+      "name": "Свод продуктовых событий",
+      "type": "team",
+      "leaderId": "basko"
+    },
+    {
+      "id": "agent-4531ed96e5892e310929",
+      "name": "agent-sps-cupidon",
+      "type": "agent",
+      "leaderId": "basko"
+    },
+    {
+      "id": "popov",
+      "name": "Попов А.",
+      "type": "leader"
+    },
+    {
+      "id": "team-2fd739ee2ec6b8c0bc3f",
+      "name": "Отчетность внутреннего учета и XBRL",
+      "type": "team",
+      "leaderId": "popov"
+    },
+    {
+      "id": "team-9f28eb83a1a1d41cf8e1",
+      "name": "СберБум",
+      "type": "team",
+      "leaderId": "popov"
+    },
+    {
+      "id": "team-6d12179129bc84732822",
+      "name": "Услуги ДЗО",
+      "type": "team",
+      "leaderId": "popov"
+    },
+    {
+      "id": "team-004133198a86b3c18f79",
+      "name": "SberBilling",
+      "type": "team",
+      "leaderId": "popov"
+    },
+    {
+      "id": "team-a4d0affe4b6a28a14199",
+      "name": "КИД",
+      "type": "team",
+      "leaderId": "popov"
+    },
+    {
+      "id": "agent-d7d6dfb0bba07a4db6d7",
+      "name": "agent-sberbilling-arv",
+      "type": "agent",
+      "leaderId": "popov"
+    },
+    {
+      "id": "andreev",
+      "name": "Андреев А.",
+      "type": "leader"
+    },
+    {
+      "id": "team-2f37602c86885bd74809",
+      "name": "Интеллектуальный цифровой сотрудник",
+      "type": "team",
+      "leaderId": "andreev"
+    },
+    {
+      "id": "team-1e4810f7a37c483a6f84",
+      "name": "Операционная GenAI-среда",
+      "type": "team",
+      "leaderId": "andreev"
+    },
+    {
+      "id": "team-9d300f8aeb7d88b3c720",
+      "name": "Цифровые знания",
+      "type": "team",
+      "leaderId": "andreev"
+    },
+    {
+      "id": "team-f2143ad14851b54bbaa5",
+      "name": "AI HUB OPS",
+      "type": "team",
+      "leaderId": "andreev"
+    },
+    {
+      "id": "agent-cb94b2e878733d65bfd3",
+      "name": "agent-digknow-ragent",
+      "type": "agent",
+      "leaderId": "andreev"
+    },
+    {
+      "id": "agent-b41c6ec109a8c2e92ce0",
+      "name": "agent-digknow-uics",
+      "type": "agent",
+      "leaderId": "andreev"
+    },
+    {
+      "id": "agent-7ffc652e588201b372a4",
+      "name": "ics-ak10",
+      "type": "agent",
+      "leaderId": "andreev"
+    },
+    {
+      "id": "agent-eba6e78b237d609d0c81",
+      "name": "ics-ak12",
+      "type": "agent",
+      "leaderId": "andreev"
+    },
+    {
+      "id": "agent-60683f4d85c7852003f9",
+      "name": "ics-digread",
+      "type": "agent",
+      "leaderId": "andreev"
+    },
+    {
+      "id": "agent-1ef4dd6fefed1d2eb0ca",
+      "name": "ics-flaiv",
+      "type": "agent",
+      "leaderId": "andreev"
+    },
+    {
+      "id": "agent-e17dfd4549105f32e47c",
+      "name": "ics-kd",
+      "type": "agent",
+      "leaderId": "andreev"
+    },
+    {
+      "id": "agent-959d61a5bc04cabb40a7",
+      "name": "ics-p3283_p3284",
+      "type": "agent",
+      "leaderId": "andreev"
+    },
+    {
+      "id": "agent-0e65be2e0de001cf188e",
+      "name": "ics-pk02k",
+      "type": "agent",
+      "leaderId": "andreev"
+    },
+    {
+      "id": "agent-c3b94bddb7a4e7430497",
+      "name": "ics-prime",
+      "type": "agent",
+      "leaderId": "andreev"
+    },
+    {
+      "id": "agent-92c313a43364d255be51",
+      "name": "ics-sbsj",
+      "type": "agent",
+      "leaderId": "andreev"
+    },
+    {
+      "id": "agent-18ba572d674191f8217d",
+      "name": "ics-ul23",
+      "type": "agent",
+      "leaderId": "andreev"
+    },
+    {
+      "id": "volnova",
+      "name": "Вольнова Т.",
+      "type": "leader"
+    },
+    {
+      "id": "team-a69518dc40898f4b75df",
+      "name": "АП ОЦ",
+      "type": "team",
+      "leaderId": "volnova"
+    },
+    {
+      "id": "team-9f9d9f1d72d6f1d468a7",
+      "name": "QuickSolutions",
+      "type": "team",
+      "leaderId": "volnova"
+    },
+    {
+      "id": "team-6c305b92f1d76133a618",
+      "name": "SberRPA",
+      "type": "team",
+      "leaderId": "volnova"
+    },
+    {
+      "id": "team-d842c7f72e642ab98b47",
+      "name": "ПВ ОЦ",
+      "type": "team",
+      "leaderId": "volnova"
+    },
+    {
+      "id": "agent-b0be2668d2cb0fb0f9b5",
+      "name": "gent-qapps-typifier",
+      "type": "agent",
+      "leaderId": "volnova"
+    },
+    {
+      "id": "agent-971dfc0c3c81033e0d3a",
+      "name": "rpahelper-analyst-agent",
+      "type": "agent",
+      "leaderId": "volnova"
+    },
+    {
+      "id": "agent-10d922526ea71fcb0bcf",
+      "name": "rpahelper-mailmaster-agent",
+      "type": "agent",
+      "leaderId": "volnova"
+    },
+    {
+      "id": "agent-8b4b125cc00cddfc0369",
+      "name": "rpahelper-summarizator-agent",
+      "type": "agent",
+      "leaderId": "volnova"
+    },
+    {
+      "id": "agent-f8519985676c99db1266",
+      "name": "rpahelper-taskmaster-agent",
+      "type": "agent",
+      "leaderId": "volnova"
+    },
+    {
+      "id": "romanyuta",
+      "name": "Романюта С.",
+      "type": "leader"
+    },
+    {
+      "id": "team-97b128426bc6213afed9",
+      "name": "Инженерные инструменты",
+      "type": "team",
+      "leaderId": "romanyuta"
+    },
+    {
+      "id": "team-2094ade1deeb630e8aa3",
+      "name": "SmartSupport",
+      "type": "team",
+      "leaderId": "romanyuta"
+    },
+    {
+      "id": "team-54f9ae14ca812dfa245b",
+      "name": "ПКАП1084 АС Sber AssisT",
+      "type": "team",
+      "leaderId": "romanyuta"
+    },
+    {
+      "id": "team-06f5f8e35de031ee194e",
+      "name": "АС МЦТП",
+      "type": "team",
+      "leaderId": "romanyuta"
+    },
+    {
+      "id": "team-1ac32d708170bee540bf",
+      "name": "Автоматизация производственной деятельности МЦТП",
+      "type": "team",
+      "leaderId": "romanyuta"
+    },
+    {
+      "id": "agent-22df95a102a39d230604",
+      "name": "IT-Support",
+      "type": "agent",
+      "leaderId": "romanyuta"
+    },
+    {
+      "id": "agent-b221f21235746ad6c7e8",
+      "name": "IT-Support Expert",
+      "type": "agent",
+      "leaderId": "romanyuta"
+    },
+    {
+      "id": "zhukova",
+      "name": "Жукова С.",
+      "type": "leader"
+    },
+    {
+      "id": "team-c45c45490987ef8f7ed7",
+      "name": "Inventory Management",
+      "type": "team",
+      "leaderId": "zhukova"
+    },
+    {
+      "id": "team-0d1ac840eec11ec50ba9",
+      "name": "АУРА",
+      "type": "team",
+      "leaderId": "zhukova"
+    },
+    {
+      "id": "team-1d2dfbfe18a09ac9ffb9",
+      "name": "ЦУНДО",
+      "type": "team",
+      "leaderId": "zhukova"
+    },
+    {
+      "id": "team-db2c92cc13e5a6552c56",
+      "name": "АСУР",
+      "type": "team",
+      "leaderId": "zhukova"
+    },
+    {
+      "id": "team-bf512d4bbde18843a7d1",
+      "name": "ЕФС.Сотрудники.РМ ИТ-поддержки",
+      "type": "team",
+      "leaderId": "zhukova"
+    },
+    {
+      "id": "team-90a2bab027f3b64dfc22",
+      "name": "АС «Sber AssisT»",
+      "type": "team",
+      "leaderId": "zhukova"
+    },
+    {
+      "id": "team-7bf0ab985f10b293a198",
+      "name": "ПКАП1084 АС Sber AssisT",
+      "type": "team",
+      "leaderId": "zhukova"
+    },
+    {
+      "id": "team-213f60e0059553c0cf60",
+      "name": "Управление ресурсами",
+      "type": "team",
+      "leaderId": "zhukova"
+    }
+  ],
+  "drafts": {
+    "SW26.1": [
+      {
+        "scopeId": "dit",
+        "period": "Q4 2026",
+        "value": 100,
+        "status": "В плане",
+        "plan": "",
+        "comment": "",
+        "risk": "",
+        "asOf": "2026-11-12",
+        "author": "",
+        "mode": "manual",
+        "savedAt": "2026-11-12T09:43:40.344Z",
+        "base": null,
+        "target": null
+      }
+    ]
+  },
+  "sources": [
+    {
+      "id": "cc5722232f922b6628c92d3fef43dcc7f36ed0437d6e499b3d6d5bffda3612f8",
+      "name": "Карта целей ИТ-кластеров 2026.html",
+      "size": 121648,
+      "type": "html",
+      "uploadedAt": "2026-11-12T09:25:28.270Z",
+      "sheets": []
+    },
+    {
+      "id": "605178e94dc4bb6e3053b64b3f7b613d6096631963ebc00cc8423dfc40d240d9",
+      "name": "Статус целей q4y26_ДИТ OPS_03.11.xlsx",
+      "size": 107317,
+      "type": "xlsx",
+      "uploadedAt": "2026-11-12T09:25:28.398Z",
+      "sheets": [
+        {
+          "name": "Правила оформления",
+          "rows": 18,
+          "columns": 3,
+          "hidden": false
+        },
+        {
+          "name": "Свод",
+          "rows": 15,
+          "columns": 6,
+          "hidden": true
+        },
+        {
+          "name": "Статус 4q26 Венков А.",
+          "rows": 1932,
+          "columns": 23,
+          "hidden": false,
+          "filterRange": "B12:W410"
+        },
+        {
+          "name": "%",
+          "rows": 9,
+          "columns": 3,
+          "hidden": true
+        },
+        {
+          "name": "Лист4",
+          "rows": 15,
+          "columns": 2,
+          "hidden": true
+        }
+      ]
+    }
+  ],
+  "automations": {},
+  "runs": {},
+  "shared": {
+    "revision": null,
+    "version": 0,
+    "goals": [],
+    "history": [],
+    "checkedAt": null,
+    "error": null
+  },
+  "catalogSourceId": "cc5722232f922b6628c92d3fef43dcc7f36ed0437d6e499b3d6d5bffda3612f8"
+}
