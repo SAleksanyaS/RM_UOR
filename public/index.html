@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="ru" data-theme="system">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>ДИТ OPS · УОР</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/visualization.css">
+  <link rel="stylesheet" href="/browser.css">
+  <link rel="stylesheet" href="/weekly.css">
+  <link rel="stylesheet" href="/map-overview.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#workspace">Перейти к содержимому</a>
+  <div class="shell">
+    <aside class="sidebar" id="sidebar">
+      <a class="brand" href="#map" aria-label="ДИТ OPS · УОР, карта целей">
+        <img class="brand-icon" src="/uor-operations.png" alt="">
+        <span class="brand-name"><strong>ДИТ OPS</strong><small>Рабочее место УОР</small></span>
+      </a>
+      <nav id="navigation" class="navigation" aria-label="Разделы рабочего места"></nav>
+      <div class="sidebar-footer" id="sidebar-footer"></div>
+    </aside>
+    <div class="workspace">
+      <header class="topbar">
+        <div class="topbar-start">
+          <button id="menu-toggle" type="button" class="button ghost menu-toggle" aria-label="Открыть меню" aria-expanded="false" aria-controls="sidebar">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+          </button>
+          <span id="breadcrumb"></span>
+        </div>
+        <div id="top-actions" class="topbar-actions"></div>
+      </header>
+      <main id="workspace" tabindex="-1"><p class="muted loading">Загружаем рабочее место…</p></main>
+    </div>
+  </div>
+  <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+  <dialog id="dialog" aria-labelledby="dialog-title"></dialog>
+</body>
+</html>

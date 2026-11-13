@@ -1,0 +1,43 @@
+.browser-flow { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 13px; margin: 0; padding: 0; list-style: none; }
+.browser-flow li { display: flex; align-items: flex-start; gap: 9px; min-width: 0; padding: 13px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); }
+.browser-step { display: grid; place-items: center; width: 25px; height: 25px; flex: none; border-radius: 50%; color: var(--primary-hover); background: var(--tint); font-size: 12px; font-weight: 680; }
+.browser-flow strong { color: var(--navy); font-size: 13px; }
+.browser-flow p { margin-top: 3px; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+
+.browser-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 370px), 1fr)); align-items: start; gap: 15px; min-width: 0; }
+.browser-card { display: grid; gap: 13px; min-width: 0; }
+.browser-card-heading { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 7px 12px; }
+.browser-card-heading h2 { color: var(--navy); font-size: 20px; overflow-wrap: anywhere; }
+.browser-address { margin-top: 4px; overflow-wrap: anywhere; }
+.browser-mode { justify-self: start; padding: 3px 7px; border-radius: 5px; background: var(--base); }
+.browser-job { display: grid; gap: 3px; padding: 10px 12px; color: var(--muted); background: var(--base); border-radius: 8px; overflow-wrap: anywhere; font-size: 13px; }
+.browser-job strong { color: var(--navy); }
+.browser-job.running { background: var(--tint); }
+.browser-job.error { color: var(--error); background: var(--error-bg); }
+.browser-job.error strong { color: inherit; }
+.browser-output { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; padding-top: 11px; border-top: 1px solid var(--line); }
+.browser-output strong { display: block; margin-top: 2px; color: var(--navy); overflow-wrap: anywhere; }
+
+.browser-editor input, .browser-editor textarea { width: 100%; }
+.browser-advanced { min-width: 0; padding: 8px 11px; border: 1px solid var(--line); border-radius: 8px; background: var(--base); }
+.browser-advanced > summary { width: fit-content; max-width: 100%; padding: 3px 0; color: var(--primary-hover); font-weight: 620; cursor: pointer; }
+.browser-advanced > .stack { gap: 9px; margin-top: 8px; }
+.browser-code { font-family: "Cascadia Mono", Consolas, monospace; font-size: 13px; }
+.browser-read-settings { gap: 8px; margin-top: 3px; padding-top: 10px; border-top: 1px solid var(--line); }
+.browser-read-settings h3 { color: var(--navy); font-size: 13px; }
+
+.browser-report > summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 13px 15px; color: var(--navy); cursor: pointer; list-style: none; }
+.browser-report > summary::-webkit-details-marker { display: none; }
+.browser-report > summary::after { width: 8px; height: 8px; flex: none; margin: -3px 3px 0 0; transform: rotate(45deg); border-right: 1.5px solid var(--primary-hover); border-bottom: 1.5px solid var(--primary-hover); content: ""; }
+.browser-report[open] > summary::after { margin-top: 3px; transform: rotate(225deg); }
+.browser-report-label { display: grid; gap: 3px; min-width: 0; overflow-wrap: anywhere; }
+.browser-report-text { max-height: 56vh; overflow: auto; margin: 0 15px 13px; padding: 12px 13px; border: 1px solid var(--line); border-radius: 7px; background: var(--base); font: inherit; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+@media (max-width: 655px) {
+  .browser-flow, .browser-grid { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .browser-flow li { padding: 9px 11px; }
+}
+
+@media (pointer: coarse) {
+  .browser-actions > .button, .browser-output > .button { min-height: 44px; }
+}

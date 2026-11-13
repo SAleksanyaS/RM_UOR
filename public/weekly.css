@@ -1,0 +1,39 @@
+.weekly-weekbar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px 20px; }
+.weekly-range { margin-top: 4px; color: var(--navy); font-size: clamp(18px, 2.6vw, 24px); font-weight: 660; letter-spacing: -.025em; }
+.weekly-week-rule, .weekly-source-range { margin-top: 3px; }
+.weekly-period-controls { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 12px; }
+.weekly-step-buttons { gap: 6px; }
+.weekly-date input { width: 150px; max-width: 100%; }
+.weekly-saved-week { min-width: 150px; max-width: 100%; }
+
+.weekly-summary { border-top: 2px solid var(--primary); }
+.weekly-summary-groups { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px 18px; }
+.weekly-report-group { min-width: 0; padding: 9px 0 8px; border-top: 1px solid var(--line); }
+.weekly-report-group h3, .weekly-report-group h4 { margin: 0 0 6px; color: var(--navy); font-size: 13px; }
+.weekly-report-group ul { display: grid; gap: 7px; margin: 0; padding-left: 17px; }
+.weekly-report-group li::marker { color: var(--icon); }
+.weekly-report-achievements li::marker { color: var(--positive); }
+.weekly-report-attention li::marker { color: var(--risk); }
+.weekly-item-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.weekly-item-author { display: block; margin-top: 1px; font-size: 11px; overflow-wrap: anywhere; }
+
+.weekly-curators > h2 { color: var(--navy); font-size: 19px; letter-spacing: -.015em; }
+.weekly-curator-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); align-items: start; gap: 14px; }
+.weekly-curator { gap: 12px; }
+.weekly-curator-heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 5px 8px; }
+.weekly-curator-heading h3 { color: var(--navy); font-size: 17px; overflow-wrap: anywhere; }
+.weekly-curator-groups { display: grid; gap: 4px; }
+.weekly-curator-groups .weekly-report-group:first-child { padding-top: 0; border-top: 0; }
+.weekly-source { display: inline-flex; align-items: center; font-size: 13px; }
+.weekly-excel > summary { font-weight: 650; }
+.weekly-excel > .context-body { gap: 12px; margin-top: 12px; }
+.weekly-excel .panel { background: var(--base); }
+
+@media (max-width: 600px) {
+  .weekly-summary-groups, .weekly-curator-grid { grid-template-columns: minmax(0, 1fr); }
+  .weekly-summary-groups { gap: 3px; }
+}
+
+@media (pointer: coarse) {
+  .weekly-step-buttons .button, .weekly-date input, .weekly-saved-week select, .weekly-source { min-height: 44px; }
+}

@@ -1,0 +1,2 @@
+seed/sources/* -text -diff
+reference/* -text -diff
